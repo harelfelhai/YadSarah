@@ -1,0 +1,43 @@
+# ── Sensitive / large source material (NEVER commit) ──────────────
+# Recordings & screenshots of the existing live system — may contain real PHI.
+videos old/
+*.mp4
+*.mov
+frames/
+
+# Machine-local Claude settings (per-developer, not for the repo)
+.claude/
+
+# ── Secrets & local config ────────────────────────────────────────
+*.env
+.env*
+!*.env.example
+appsettings.*.local.json
+secrets.json
+*.pfx
+*.key
+
+# ── .NET (ASP.NET Core backend) ───────────────────────────────────
+bin/
+obj/
+*.user
+.vs/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# ── Node / React (frontend) ───────────────────────────────────────
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# ── OS / IDE ──────────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+.idea/
+*.swp
