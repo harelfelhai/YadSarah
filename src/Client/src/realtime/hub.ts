@@ -61,8 +61,25 @@ export function onLockReleased(handler: (info: { formId: string; sectionName: st
 }
 
 export function onFormSectionUpdated(
-  handler: (update: { formId: string; sectionName: string; data: unknown }) => void
+  handler: (update: {
+    formId: string; sectionName: string; data: unknown;
+    editedByUserId?: string; editedByName?: string; editedAt?: string; version?: number;
+  }) => void
 ) {
   getHub().on('FormSectionUpdated', handler);
   return () => getHub().off('FormSectionUpdated', handler);
+}
+
+export function onFormSigned(
+  handler: (info: { formId: string; signedByName: string; signedAt: string }) => void
+) {
+  getHub().on('FormSigned', handler);
+  return () => getHub().off('FormSigned', handler);
+}
+
+export function onFormAddendaChanged(
+  handler: (info: { formId: string }) => void
+) {
+  getHub().on('FormAddendaChanged', handler);
+  return () => getHub().off('FormAddendaChanged', handler);
 }

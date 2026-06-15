@@ -1,10 +1,13 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using YadSarah.Application.Services;
 using YadSarah.Infrastructure.Data;
 using YadSarah.Api.Hubs;
+using YadSarah.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,8 +17,16 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 
 // ── Services ───────────────────────────────────────────────────────────────
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<VisitService>();
 builder.Services.AddScoped<FormService>();
+builder.Services.AddScoped<SettingsService>();
+builder.Services.AddScoped<AuditService>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<YadSarah.Api.Services.FormPresenceService>();
+
+// Sanitized error responses (no stack traces) in production
+builder.Services.AddProblemDetails();
 
 // ── JWT Auth ───────────────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
@@ -33,6 +44,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "YadSarah",
             ValidAudience = builder.Configuration["Jwt:Audience"] ?? "YadSarahClient",
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+            ClockSkew = TimeSpan.FromSeconds(30), // tighten default 5-min token-expiry grace
         };
         // Allow SignalR to read token from query string
         opt.Events = new JwtBearerEvents
@@ -50,9 +62,45 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 builder.Services.AddSignalR();
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(opts =>
+    {
+        opts.JsonSerializerOptions.ReferenceHandler =
+            System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        opts.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
+        opts.JsonSerializerOptions.Converters.Add(
+            new YadSarah.Api.Converters.TimeOnlyJsonConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// ── Rate limiting (brute-force / abuse protection) ─────────────────────────
+builder.Services.AddRateLimiter(opt =>
+{
+    opt.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Strict limiter for login — per client IP
+    opt.AddPolicy("auth", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        factory: _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
+    // Lenient global limiter per IP (defense against API flooding)
+    opt.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
 
 // ── CORS (LAN only — no public origin needed) ─────────────────────────────
 builder.Services.AddCors(opt => opt.AddDefaultPolicy(p =>
@@ -70,6 +118,7 @@ using (var scope = app.Services.CreateScope())
 {
     var dbCtx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbCtx.Database.Migrate();
+    await scope.ServiceProvider.GetRequiredService<SettingsService>().EnsureDefaultsAsync();
 }
 
 if (app.Environment.IsDevelopment())
@@ -77,8 +126,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else
+{
+    // Sanitized ProblemDetails (no stack traces) + HTTP Strict Transport Security
+    app.UseExceptionHandler();
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
 
+app.UseSecurityHeaders();
 app.UseCors();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

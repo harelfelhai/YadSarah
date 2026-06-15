@@ -1,29 +1,49 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using YadSarah.Application.Services;
 
 namespace YadSarah.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(AuthService auth) : ControllerBase
+public class AuthController(AuthService auth, AuditService audit) : ControllerBase
 {
-    public record LoginRequest(string Username, string Password);
+    public record LoginRequest(
+        [param: Required, StringLength(60, MinimumLength = 1)] string Username,
+        [param: Required, StringLength(200, MinimumLength = 1)] string Password);
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Login(LoginRequest req)
     {
         var result = await auth.LoginAsync(req.Username, req.Password);
-        if (result is null) return Unauthorized(new { message = "שם משתמש או סיסמה שגויים" });
 
-        var (token, user) = result.Value;
-        return Ok(new
+        switch (result.Outcome)
         {
-            token,
-            expiresAt = DateTime.UtcNow.AddHours(12),
-            user = new { user.Id, user.Username, user.FullName, Role = user.Role.ToString() }
-        });
+            case LoginOutcome.LockedOut:
+                await audit.LogAsync(Guid.Empty, req.Username, AuditService.LockedOut, "Auth");
+                return StatusCode(StatusCodes.Status423Locked, new
+                {
+                    message = "החשבון נעול זמנית עקב ריבוי ניסיונות כושלים. נסה שוב מאוחר יותר או פנה למנהל."
+                });
+
+            case LoginOutcome.Success:
+                var user = result.User!;
+                await audit.LogAsync(user.Id, user.FullName, AuditService.Login, "Auth", user.Id);
+                return Ok(new
+                {
+                    token = result.Token,
+                    expiresAt = result.ExpiresAt,
+                    user = new { user.Id, user.Username, user.FullName, Role = user.Role.ToString() }
+                });
+
+            default: // InvalidCredentials / Inactive / Expired — generic response
+                await audit.LogAsync(Guid.Empty, req.Username, AuditService.LoginFailed, "Auth");
+                return Unauthorized(new { message = "שם משתמש או סיסמה שגויים" });
+        }
     }
 
     [HttpGet("me")]

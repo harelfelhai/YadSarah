@@ -11,6 +11,11 @@ import LoginPage from './features/auth/LoginPage';
 import QueuePage from './features/queue/QueuePage';
 import ReceptionPage from './features/reception/ReceptionPage';
 import TreatmentFormPage from './features/treatment/TreatmentFormPage';
+import AdminPage from './features/admin/AdminPage';
+import SettingsPage from './features/admin/SettingsPage';
+import AuditPage from './features/admin/AuditPage';
+import HistoryPage from './features/history/HistoryPage';
+import PatientEditPage from './features/reception/PatientEditPage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 10_000 } },
@@ -19,6 +24,11 @@ const queryClient = new QueryClient({
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
   return token ? <>{children}</> : <Navigate to="/login" replace />;
+}
+
+function DefaultRedirect() {
+  const role = useAuthStore((s) => s.user?.role);
+  return <Navigate to={role === 'Reception' ? '/reception/new' : '/queue'} replace />;
 }
 
 export default function App() {
@@ -38,7 +48,12 @@ export default function App() {
                       <Route path="/queue" element={<QueuePage />} />
                       <Route path="/reception/new" element={<ReceptionPage />} />
                       <Route path="/visits/:visitId" element={<TreatmentFormPage />} />
-                      <Route path="*" element={<Navigate to="/queue" replace />} />
+                      <Route path="/history" element={<HistoryPage />} />
+                      <Route path="/admin/users" element={<AdminPage />} />
+                      <Route path="/admin/settings" element={<SettingsPage />} />
+                      <Route path="/admin/audit" element={<AuditPage />} />
+                      <Route path="/patients/:id/edit" element={<PatientEditPage />} />
+                      <Route path="*" element={<DefaultRedirect />} />
                     </Routes>
                   </AppShellLayout>
                 </RequireAuth>

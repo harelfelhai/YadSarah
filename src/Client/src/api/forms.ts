@@ -13,14 +13,32 @@ export const formsApi = {
   updateSection: (id: string, section: string, data: unknown, version: number) =>
     api.patch<MedicalForm>(`/forms/${id}/sections/${section}`, { data, version }),
 
+  sign: (id: string) => api.post<MedicalForm>(`/forms/${id}/sign`, {}),
+
+  addAddendum: (id: string, text: string) =>
+    api.post<MedicalForm>(`/forms/${id}/addenda`, { text }),
+
+  signAddendum: (id: string, addendumId: string) =>
+    api.post<MedicalForm>(`/forms/${id}/addenda/${addendumId}/sign`, {}),
+
   acquireLock: (id: string, section: string) =>
     api.post<{ acquired: boolean; lockedBy?: string }>(`/forms/${id}/locks/${section}`, {}),
 
   releaseLock: (id: string, section: string) =>
     api.delete<void>(`/forms/${id}/locks/${section}`),
 
-  export: (id: string) =>
-    fetch(`/api/forms/${id}/export`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
-    }),
+  export: async (id: string) => {
+    const token = localStorage.getItem('auth_token') ?? '';
+    const resp = await fetch(`/api/forms/${id}/export`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return;
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `form-export-${id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };

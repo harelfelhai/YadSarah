@@ -6,9 +6,9 @@ export type IdentityType =
   | 'יילוד'
   | 'לא ידוע';
 
-export type VisitStatus = 'Waiting' | 'Called' | 'InTreatment' | 'Discharged';
+export type VisitStatus = 'Waiting' | 'Called' | 'InTreatment' | 'FinishedTreatment' | 'Discharged';
 
-export type UserRole = 'Reception' | 'Nurse' | 'Doctor' | 'Admin';
+export type UserRole = 'Reception' | 'Nurse' | 'Doctor' | 'Admin' | 'ShiftManager';
 
 export type StationType =
   | 'טריאז׳'
@@ -38,6 +38,7 @@ export interface Patient {
   lastName: string;
   firstNameLatin?: string;
   lastNameLatin?: string;
+  gender?: string;
   fatherName?: string;
   birthDate?: string;
   birthCountry?: string;
@@ -176,12 +177,37 @@ export interface Routing {
 
 // ─── Medical Form ──────────────────────────────────────────────────────────
 
+export interface FieldEdit {
+  userId: string;
+  userName: string;
+  at: string;
+}
+
+export interface Addendum {
+  id: string;
+  text: string;
+  createdByUserId: string;
+  createdByName: string;
+  createdAt: string;
+  isSigned: boolean;
+  signedByUserId?: string;
+  signedByName?: string;
+  signedAt?: string;
+}
+
 export interface MedicalForm {
   id: string;
   visitId: string;
   stationType: StationType;
   formType: FormType;
   version: number;
+  isSigned: boolean;
+  signedByUserId?: string;
+  signedByName?: string;
+  signedAt?: string;
+  postSignEditWindowMinutes: number;
+  fieldEdits: Record<string, FieldEdit>;
+  addenda: Addendum[];
   chiefComplaint?: string;
   presentIllness?: string;
   pastMedicalHistory?: string;
@@ -208,9 +234,29 @@ export interface MedicalForm {
 export interface User {
   id: string;
   username: string;
+  firstName: string;
+  lastName: string;
   fullName: string;
   role: UserRole;
   isActive: boolean;
+  identityNumber?: string;
+  gender?: string;
+  dateOfBirth?: string;
+  phone?: string;
+  mobile?: string;
+  primaryJobTitle?: string;
+  secondaryJobTitle?: string;
+  department?: string;
+  address?: string;
+  city?: string;
+  zipCode?: string;
+  country?: string;
+  notes?: string;
+  accountExpiresAt?: string;
+  lastLoginAt?: string;
+  loginFailureCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AuthToken {

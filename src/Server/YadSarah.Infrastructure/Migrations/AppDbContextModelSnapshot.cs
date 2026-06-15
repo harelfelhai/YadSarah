@@ -106,6 +106,10 @@ namespace YadSarah.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AddendaJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("AdministrationOrdersJson")
                         .IsRequired()
                         .HasColumnType("text");
@@ -137,10 +141,17 @@ namespace YadSarah.Infrastructure.Migrations
                     b.Property<string>("DiscussionAndPlan")
                         .HasColumnType("text");
 
+                    b.Property<string>("FieldEditsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("FormType")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<bool>("IsSigned")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("OrderedUnits")
                         .HasColumnType("text");
@@ -157,6 +168,15 @@ namespace YadSarah.Infrastructure.Migrations
                     b.Property<string>("RoutingJson")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<DateTime?>("SignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SignedByName")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("SignedByUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("StationType")
                         .IsRequired()
@@ -253,6 +273,9 @@ namespace YadSarah.Infrastructure.Migrations
                     b.Property<string>("FirstNameLatin")
                         .HasColumnType("text");
 
+                    b.Property<string>("Gender")
+                        .HasColumnType("text");
+
                     b.Property<string>("HealthFund")
                         .HasColumnType("text");
 
@@ -327,7 +350,48 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("IdentityNumber");
 
+                    b.HasIndex("IdentityType", "IdentityNumber")
+                        .IsUnique()
+                        .HasFilter("\"IdentityNumber\" IS NOT NULL AND \"IdentityNumber\" <> ''");
+
                     b.ToTable("Patients");
+                });
+
+            modelBuilder.Entity("YadSarah.Domain.Entities.QueueCounter", b =>
+                {
+                    b.Property<DateOnly>("DateKey")
+                        .HasColumnType("date");
+
+                    b.Property<int>("LastNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("DateKey");
+
+                    b.ToTable("QueueCounters");
+                });
+
+            modelBuilder.Entity("YadSarah.Domain.Entities.SystemSetting", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("SystemSettings");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.User", b =>
@@ -336,26 +400,88 @@ namespace YadSarah.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("AccountExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Address")
+                        .HasColumnType("text");
+
+                    b.Property<string>("City")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Country")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("DateOfBirth")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Department")
+                        .HasColumnType("text");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Gender")
+                        .HasColumnType("text");
+
+                    b.Property<string>("IdentityNumber")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTime?>("LastLoginAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("LockoutEndAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LoginFailureCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Mobile")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Phone")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PrimaryJobTitle")
                         .HasColumnType("text");
 
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("SecondaryJobTitle")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Username")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ZipCode")
                         .HasColumnType("text");
 
                     b.HasKey("Id");

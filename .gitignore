@@ -1,18 +1,27 @@
 # ── Sensitive / large source material (NEVER commit) ──────────────
-# Recordings & screenshots of the existing live system — may contain real PHI.
+# Recordings, audio & screenshots of the existing live system — may contain real PHI.
 videos old/
+audio/
 *.mp4
 *.mov
+*.mp3
+*.aac
+*.wav
 frames/
 
-# Machine-local Claude settings (per-developer, not for the repo)
-.claude/
+# Claude: share project hooks/settings; keep machine-local & transient state out
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+.claude/settings.local.json
+.claude/.security-review-pending
 
 # ── Secrets & local config ────────────────────────────────────────
 *.env
 .env*
 !*.env.example
 appsettings.*.local.json
+appsettings.Development.json
 secrets.json
 *.pfx
 *.key

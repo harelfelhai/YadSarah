@@ -1,24 +1,39 @@
-import { createTheme, MantineColorsTuple } from '@mantine/core';
+import { createTheme } from '@mantine/core';
+import type { MantineColorsTuple } from '@mantine/core';
+
+// ─── Yad Sarah brand palette: blue (primary) · red (accent) · white ──────────
 
 const medicalBlue: MantineColorsTuple = [
-  '#e8f4ff',
-  '#d0e6ff',
-  '#9fcbff',
-  '#6aaefd',
-  '#3f95fc',
-  '#2586fb',
-  '#147ef4',  // primary
-  '#0a6ddb',
-  '#0061c4',
-  '#0054ae',
+  '#e7f1fb',
+  '#cfe1f5',
+  '#9fc2eb',
+  '#6ba1e0',
+  '#4286d7',
+  '#2576d2',
+  '#0f6fc4', // primary
+  '#0a5da8',
+  '#06528f',
+  '#013f72',
+];
+
+const yadRed: MantineColorsTuple = [
+  '#fff0f0',
+  '#ffdede',
+  '#f7baba',
+  '#f09393',
+  '#ea7070',
+  '#e75a5a',
+  '#e64a4a', // accent
+  '#cd3a3a',
+  '#b62f2f',
+  '#9e2121',
 ];
 
 export const theme = createTheme({
   primaryColor: 'medicalBlue',
-  colors: { medicalBlue },
-  defaultRadius: 'sm',
+  colors: { medicalBlue, yadRed },
+  defaultRadius: 'md',
   fontFamily: 'Segoe UI, Arial, sans-serif',
-  dir: 'rtl',
   headings: {
     fontFamily: 'Segoe UI, Arial, sans-serif',
   },

@@ -1,16 +1,22 @@
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AppShell as MantineAppShell, Burger, Group, NavLink, Text, Button, Avatar,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconList, IconUserPlus, IconLogout } from '@tabler/icons-react';
+import { IconList, IconUserPlus, IconLogout, IconUsers, IconSettings, IconHistory, IconShieldLock } from '@tabler/icons-react';
 import { useAuthStore } from '../store/auth';
 import { stopHub } from '../realtime/hub';
+import Logo from '../components/Logo';
+import type { UserRole } from '../types';
 
-const NAV = [
+const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[] = [
   { href: '/queue', label: 'תור', icon: <IconList size={18} /> },
   { href: '/reception/new', label: 'קבלת מטופל', icon: <IconUserPlus size={18} /> },
+  { href: '/history', label: 'היסטוריית מטופלים', icon: <IconHistory size={18} /> },
+  { href: '/admin/users', label: 'ניהול משתמשים', icon: <IconUsers size={18} />, roles: ['Admin', 'ShiftManager'] },
+  { href: '/admin/settings', label: 'הגדרות מערכת', icon: <IconSettings size={18} />, roles: ['Admin'] },
+  { href: '/admin/audit', label: 'יומן ביקורת', icon: <IconShieldLock size={18} />, roles: ['Admin'] },
 ];
 
 export default function AppShellLayout({ children }: { children: ReactNode }) {
@@ -31,11 +37,11 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
       navbar={{ width: 220, breakpoint: 'sm', collapsed: { mobile: !opened } }}
       padding="md"
     >
-      <MantineAppShell.Header>
+      <MantineAppShell.Header style={{ borderBottom: '3px solid var(--mantine-color-yadRed-6)' }}>
         <Group h="100%" px="md" justify="space-between">
           <Group gap="sm">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            <Text fw={700} c="medicalBlue.7" size="lg">יד שרה — רפואה דחופה</Text>
+            <Logo size={34} subtitle="רפואה דחופה" />
           </Group>
           <Group gap="sm">
             {user && (
@@ -52,7 +58,7 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
       </MantineAppShell.Header>
 
       <MantineAppShell.Navbar p="sm">
-        {NAV.map((item) => (
+        {NAV.filter((item) => !item.roles || (!!user && item.roles.includes(user.role))).map((item) => (
           <NavLink
             key={item.href}
             label={item.label}

@@ -1,12 +1,15 @@
 namespace YadSarah.Domain.Entities;
 
-public enum VisitStatus { Waiting, Called, InTreatment, Discharged }
+// Numeric order must not change (EF stores enums as int).
+// Logical flow: Waiting → Called → InTreatment → FinishedTreatment → Discharged.
+// FinishedTreatment (4) is appended last to preserve existing stored values.
+public enum VisitStatus { Waiting, Called, InTreatment, Discharged, FinishedTreatment }
 
 public class Visit
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid PatientId { get; set; }
-    public Patient Patient { get; set; } = null!;
+    public Patient? Patient { get; set; }
 
     public int QueueNumber { get; set; }
     public VisitStatus Status { get; set; } = VisitStatus.Waiting;
@@ -34,6 +37,7 @@ public class Visit
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    // Navigation
+    // Navigation — excluded from API serialization
+    [System.Text.Json.Serialization.JsonIgnore]
     public ICollection<MedicalForm> Forms { get; set; } = [];
 }

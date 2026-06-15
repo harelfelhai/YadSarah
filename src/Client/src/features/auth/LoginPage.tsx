@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Button, Card, Center, PasswordInput, Stack, Text, TextInput, Title, Alert,
+  Box, Button, Card, Center, PasswordInput, Stack, Text, TextInput, Alert,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { authApi } from '../../api/auth';
 import { useAuthStore } from '../../store/auth';
 import { startHub } from '../../realtime/hub';
+import Logo from '../../components/Logo';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -39,12 +40,20 @@ export default function LoginPage() {
   };
 
   return (
-    <Center h="100vh" bg="gray.0">
-      <Card w={360} shadow="md" p="xl" radius="md">
-        <Stack gap="md">
+    <Center
+      h="100vh"
+      style={{
+        background:
+          'linear-gradient(135deg, var(--mantine-color-medicalBlue-8) 0%, var(--mantine-color-medicalBlue-6) 55%, var(--mantine-color-yadRed-6) 100%)',
+      }}
+    >
+      <Card w={380} shadow="xl" p="xl" radius="md" style={{ borderTop: '4px solid var(--mantine-color-yadRed-6)' }}>
+        <Stack gap="lg">
+          <Center>
+            <Logo size={56} subtitle="מערכת רפואה דחופה" />
+          </Center>
           <Box ta="center">
-            <Title order={2} c="medicalBlue.7">יד שרה</Title>
-            <Text size="sm" c="dimmed">מערכת רפואה דחופה</Text>
+            <Text size="sm" c="dimmed">התחברות למערכת</Text>
           </Box>
 
           {error && (

@@ -6,7 +6,7 @@ public class MedicalForm
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid VisitId { get; set; }
-    public Visit Visit { get; set; } = null!;
+    public Visit? Visit { get; set; }
 
     public string StationType { get; set; } = string.Empty;
     public string FormType { get; set; } = string.Empty;
@@ -40,9 +40,37 @@ public class MedicalForm
     // Routing: [{station, status, arrivalDate}]
     public string RoutingJson { get; set; } = "[]";
 
+    // ── Signing (doctor finalizes the form → ends treatment) ──────────────────
+    public bool IsSigned { get; set; }
+    public Guid? SignedByUserId { get; set; }
+    public string? SignedByName { get; set; }
+    public DateTime? SignedAt { get; set; }
+
+    // Per-field last-editor tracking: { sectionKey: { userId, userName, at } }
+    public string FieldEditsJson { get; set; } = "{}";
+
+    // Post-signature addenda (chained appendices, each separately signed):
+    // [{ id, text, createdByUserId, createdByName, createdAt, isSigned, signedByUserId, signedByName, signedAt }]
+    public string AddendaJson { get; set; } = "[]";
+
     // Audit
     public Guid CreatedByUserId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public Guid? UpdatedByUserId { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }
+
+// Stored inside FieldEditsJson (one entry per section key)
+public record FieldEdit(Guid UserId, string UserName, DateTime At);
+
+// Stored inside AddendaJson
+public record Addendum(
+    Guid Id,
+    string Text,
+    Guid CreatedByUserId,
+    string CreatedByName,
+    DateTime CreatedAt,
+    bool IsSigned,
+    Guid? SignedByUserId,
+    string? SignedByName,
+    DateTime? SignedAt);

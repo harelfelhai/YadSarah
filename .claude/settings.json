@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \".claude\\hooks\\security-mark.ps1\"",
+            "timeout": 15,
+            "statusMessage": "Flagging security-relevant change"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \".claude\\hooks\\security-stop.ps1\"",
+            "timeout": 15,
+            "statusMessage": "Checking security-review gate"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Edit(~/.claude/skills/pre-plan-spec/**)"
+    ]
+  }
+}

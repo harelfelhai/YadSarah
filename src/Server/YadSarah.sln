@@ -1,8 +1,7 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.0.0
-
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YadSarah.Api", "YadSarah.Api\YadSarah.Api.csproj", "{A1B2C3D4-0001-0000-0000-000000000000}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YadSarah.Application", "YadSarah.Application\YadSarah.Application.csproj", "{A1B2C3D4-0002-0000-0000-000000000000}"
@@ -11,28 +10,30 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YadSarah.Domain", "YadSarah
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YadSarah.Infrastructure", "YadSarah.Infrastructure\YadSarah.Infrastructure.csproj", "{A1B2C3D4-0004-0000-0000-000000000000}"
 EndProject
-
 Global
-  GlobalSection(SolutionConfigurationPlatforms) = preSolution
-    Debug|Any CPU = Debug|Any CPU
-    Release|Any CPU = Release|Any CPU
-  EndGlobalSection
-  GlobalSection(ProjectConfigurationPlatforms) = postSolution
-    {A1B2C3D4-0001-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-    {A1B2C3D4-0001-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
-    {A1B2C3D4-0001-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
-    {A1B2C3D4-0001-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
-    {A1B2C3D4-0002-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-    {A1B2C3D4-0002-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
-    {A1B2C3D4-0002-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
-    {A1B2C3D4-0002-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
-    {A1B2C3D4-0003-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-    {A1B2C3D4-0003-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
-    {A1B2C3D4-0003-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
-    {A1B2C3D4-0003-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
-    {A1B2C3D4-0004-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-    {A1B2C3D4-0004-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
-    {A1B2C3D4-0004-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
-    {A1B2C3D4-0004-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
-  EndGlobalSection
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1B2C3D4-0001-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-0001-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-0001-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-0001-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-0002-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-0002-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-0002-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-0002-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-0003-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-0003-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-0003-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-0003-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-0004-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-0004-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-0004-0000-0000-000000000000}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-0004-0000-0000-000000000000}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
 EndGlobal

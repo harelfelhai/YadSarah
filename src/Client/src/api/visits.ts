@@ -6,6 +6,9 @@ export const visitsApi = {
 
   getById: (id: string) => api.get<Visit>(`/visits/${id}`),
 
+  getByPatient: (patientId: string) =>
+    api.get<Visit[]>(`/visits/by-patient/${patientId}`),
+
   create: (data: VisitCreate) => api.post<Visit>('/visits', data),
 
   updateStatus: (id: string, status: VisitStatus) =>

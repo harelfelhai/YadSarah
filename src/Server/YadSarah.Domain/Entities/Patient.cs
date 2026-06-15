@@ -13,6 +13,7 @@ public class Patient
     public string LastName { get; set; } = string.Empty;
     public string? FirstNameLatin { get; set; }
     public string? LastNameLatin { get; set; }
+    public string? Gender { get; set; } // ז / נ / א
     public string? FatherName { get; set; }
     public DateOnly? BirthDate { get; set; }
     public string? BirthCountry { get; set; }
@@ -57,6 +58,7 @@ public class Patient
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-    // Navigation
+    // Navigation — excluded from API binding to prevent circular reference issues
+    [System.Text.Json.Serialization.JsonIgnore]
     public ICollection<Visit> Visits { get; set; } = [];
 }

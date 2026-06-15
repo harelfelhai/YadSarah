@@ -11,6 +11,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<FormLock> FormLocks => Set<FormLock>();
+    public DbSet<QueueCounter> QueueCounters => Set<QueueCounter>();
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -19,6 +21,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(p => p.Id);
             e.HasIndex(p => p.IdentityNumber);
+            // Block duplicate identities at the DB level (allows multiple NULL/empty,
+            // e.g. newborns / unknown). Unique per identity type + number.
+            e.HasIndex(p => new { p.IdentityType, p.IdentityNumber })
+                .IsUnique()
+                .HasFilter("\"IdentityNumber\" IS NOT NULL AND \"IdentityNumber\" <> ''");
             e.Property(p => p.FirstName).HasMaxLength(100).IsRequired();
             e.Property(p => p.LastName).HasMaxLength(100).IsRequired();
             e.Property(p => p.IdentityType).HasMaxLength(50).IsRequired();
@@ -67,6 +74,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(l => new { l.FormId, l.SectionName });
             e.HasIndex(l => l.ExpiresAt);
+        });
+
+        // QueueCounter — one row per day (PK = date)
+        b.Entity<QueueCounter>(e =>
+        {
+            e.HasKey(c => c.DateKey);
+        });
+
+        // SystemSetting — key/value config (PK = key)
+        b.Entity<SystemSetting>(e =>
+        {
+            e.HasKey(s => s.Key);
+            e.Property(s => s.Key).HasMaxLength(100);
         });
     }
 }

@@ -1,18 +1,20 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge, Box, Button, Card, Group, Loader, Stack, Table, Text, Title,
+  Badge, Box, Button, Card, Group, Loader, Stack, Table, Text, Title, Tooltip,
 } from '@mantine/core';
 import { IconUserPlus } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
+import { useAuthStore } from '../../store/auth';
 import type { Visit, VisitStatus } from '../../types';
 
 const STATUS_LABEL: Record<VisitStatus, string> = {
   Waiting: 'ממתין',
   Called: 'נקרא',
   InTreatment: 'בטיפול',
+  FinishedTreatment: 'סיים טיפול',
   Discharged: 'שוחרר',
 };
 
@@ -20,12 +22,20 @@ const STATUS_COLOR: Record<VisitStatus, string> = {
   Waiting: 'blue',
   Called: 'yellow',
   InTreatment: 'green',
+  FinishedTreatment: 'teal',
   Discharged: 'gray',
 };
+
+// Roles that have a home department and should see dept-based highlighting
+const DEPT_AWARE_ROLES = new Set(['Doctor', 'Nurse']);
+
+// Reception-side roles that handle discharge/payment after treatment ends
+const RECEPTION_ROLES = new Set(['Reception', 'ShiftManager', 'Admin']);
 
 export default function QueuePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
 
   const { data: visits = [], isLoading } = useQuery({
     queryKey: ['queue'],
@@ -33,7 +43,6 @@ export default function QueuePage() {
     refetchInterval: 30_000,
   });
 
-  // Live updates via SignalR
   useEffect(() => {
     const off = onQueueUpdate((update) => {
       queryClient.setQueryData<Visit[]>(['queue'], (prev = []) =>
@@ -55,7 +64,33 @@ export default function QueuePage() {
     navigate(`/visits/${visit.id}`);
   };
 
-  const active = visits.filter((v) => v.status !== 'Discharged');
+  const dischargePatient = async (visit: Visit) => {
+    await visitsApi.updateStatus(visit.id, 'Discharged');
+    queryClient.invalidateQueries({ queryKey: ['queue'] });
+  };
+
+  const isReception = RECEPTION_ROLES.has(user?.role ?? '');
+  // Clinical actions (call / open treatment form) require clinical roles — Reception is excluded.
+  const isClinical = ['Doctor', 'Nurse', 'ShiftManager', 'Admin'].includes(user?.role ?? '');
+
+  // Clinicians see the active treatment queue (finished patients leave it);
+  // reception-side roles also see "סיים טיפול" patients awaiting discharge/payment.
+  const active = visits.filter((v) => {
+    if (v.status === 'Discharged') return false;
+    if (v.status === 'FinishedTreatment') return isReception;
+    return true;
+  });
+
+  // Department-based sorting & highlighting only for dept-aware roles with a dept set
+  const userDept = user?.department ?? null;
+  const showDeptHighlight = !!userDept && DEPT_AWARE_ROLES.has(user?.role ?? '');
+
+  const sorted = showDeptHighlight
+    ? [
+        ...active.filter((v) => v.receptionDepartment === userDept),
+        ...active.filter((v) => v.receptionDepartment !== userDept),
+      ]
+    : active;
 
   return (
     <Stack gap="md" p="md">
@@ -66,9 +101,22 @@ export default function QueuePage() {
         </Button>
       </Group>
 
+      {showDeptHighlight && (
+        <Group gap="lg">
+          <Group gap="xs">
+            <Box w={12} h={12} style={{ background: 'var(--mantine-color-body)', border: '1px solid #dee2e6', borderRadius: 2 }} />
+            <Text size="xs" c="dimmed">מטופלי המחלקה שלך ({userDept})</Text>
+          </Group>
+          <Group gap="xs">
+            <Box w={12} h={12} style={{ background: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: 2 }} />
+            <Text size="xs" c="dimmed">מחלקות אחרות</Text>
+          </Group>
+        </Group>
+      )}
+
       {isLoading ? (
         <Box ta="center" py="xl"><Loader /></Box>
-      ) : active.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <Card withBorder p="xl" ta="center">
           <Text c="dimmed">אין מטופלים בתור כרגע</Text>
         </Card>
@@ -88,45 +136,80 @@ export default function QueuePage() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {active.map((visit) => (
-              <Table.Tr key={visit.id}>
-                <Table.Td fw={700}>{visit.queueNumber}</Table.Td>
-                <Table.Td>
-                  {visit.patient
-                    ? `${visit.patient.firstName} ${visit.patient.lastName}`
-                    : '—'}
-                </Table.Td>
-                <Table.Td>{visit.patient?.identityNumber ?? '—'}</Table.Td>
-                <Table.Td>{calcAge(visit.patient?.birthDate)}</Table.Td>
-                <Table.Td>{visit.admissionTime}</Table.Td>
-                <Table.Td>{visit.receptionDepartment ?? '—'}</Table.Td>
-                <Table.Td>{visit.admissionReason ?? visit.admissionReasonFree ?? '—'}</Table.Td>
-                <Table.Td>
-                  <Badge color={STATUS_COLOR[visit.status]} variant="light">
-                    {STATUS_LABEL[visit.status]}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Group gap="xs">
-                    {visit.status === 'Waiting' && (
-                      <Button size="xs" variant="light" onClick={() => callPatient(visit)}>
-                        קרא למטופל
-                      </Button>
-                    )}
-                    {(visit.status === 'Called' || visit.status === 'Waiting') && (
-                      <Button size="xs" onClick={() => startTreatment(visit)}>
-                        פתח טופס
-                      </Button>
-                    )}
-                    {visit.status === 'InTreatment' && (
-                      <Button size="xs" variant="outline" onClick={() => navigate(`/visits/${visit.id}`)}>
-                        המשך טיפול
-                      </Button>
-                    )}
-                  </Group>
-                </Table.Td>
-              </Table.Tr>
-            ))}
+            {sorted.map((visit) => {
+              const isOtherDept = showDeptHighlight && visit.receptionDepartment !== userDept;
+              return (
+                <Table.Tr
+                  key={visit.id}
+                  style={isOtherDept ? { opacity: 0.55, background: '#f8f9fa' } : undefined}
+                >
+                  <Table.Td fw={700}>{visit.queueNumber}</Table.Td>
+                  <Table.Td>
+                    {visit.patient
+                      ? `${visit.patient.firstName} ${visit.patient.lastName}`
+                      : '—'}
+                  </Table.Td>
+                  <Table.Td>{visit.patient?.identityNumber ?? '—'}</Table.Td>
+                  <Table.Td>{calcAge(visit.patient?.birthDate)}</Table.Td>
+                  <Table.Td>{visit.admissionTime}</Table.Td>
+                  <Table.Td>
+                    {visit.receptionDepartment
+                      ? (
+                        <Badge
+                          variant={isOtherDept ? 'outline' : 'light'}
+                          color={isOtherDept ? 'gray' : 'medicalBlue'}
+                          size="sm"
+                        >
+                          {visit.receptionDepartment}
+                        </Badge>
+                      )
+                      : '—'}
+                  </Table.Td>
+                  <Table.Td>{visit.admissionReason ?? visit.admissionReasonFree ?? '—'}</Table.Td>
+                  <Table.Td>
+                    <Badge color={STATUS_COLOR[visit.status]} variant="light">
+                      {STATUS_LABEL[visit.status]}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap="xs">
+                      {isClinical && visit.status === 'Waiting' && (
+                        <Button size="xs" variant="light" onClick={() => callPatient(visit)}>
+                          קרא למטופל
+                        </Button>
+                      )}
+                      {isClinical && (visit.status === 'Called' || visit.status === 'Waiting') && (
+                        <Button size="xs" onClick={() => startTreatment(visit)}>
+                          פתח טופס
+                        </Button>
+                      )}
+                      {isClinical && visit.status === 'InTreatment' && (
+                        <Button size="xs" variant="outline" onClick={() => navigate(`/visits/${visit.id}`)}>
+                          המשך טיפול
+                        </Button>
+                      )}
+                      {visit.status === 'FinishedTreatment' && isReception && (
+                        <Button size="xs" color="teal" onClick={() => dischargePatient(visit)}>
+                          שחרר (תשלום)
+                        </Button>
+                      )}
+                      {visit.patient && (
+                        <Tooltip label="עריכת פרטי מטופל">
+                          <Button
+                            size="xs"
+                            variant="subtle"
+                            color="gray"
+                            onClick={() => navigate(`/patients/${visit.patient!.id}/edit`)}
+                          >
+                            עריכת פרטים
+                          </Button>
+                        </Tooltip>
+                      )}
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              );
+            })}
           </Table.Tbody>
         </Table>
       )}

@@ -9,18 +9,58 @@ using YadSarah.Infrastructure.Data;
 
 namespace YadSarah.Application.Services;
 
+public enum LoginOutcome { Success, InvalidCredentials, LockedOut, Expired, Inactive }
+
+public record LoginResult(LoginOutcome Outcome, string? Token = null, User? User = null, DateTime? ExpiresAt = null);
+
 public class AuthService(AppDbContext db, IConfiguration config)
 {
-    public async Task<(string token, User user)?> LoginAsync(string username, string password)
+    // Brute-force lockout policy: 5 failures → 15-minute lockout (admin can reset).
+    private const int MaxFailedAttempts = 5;
+    private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+
+    private TimeSpan TokenLifetime =>
+        TimeSpan.FromHours(config.GetValue("Jwt:AccessTokenHours", 12));
+
+    public async Task<LoginResult> LoginAsync(string username, string password)
     {
-        var user = await db.Users
-            .FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
 
-        if (user is null || !BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
-            return null;
+        // Generic outcome when user is unknown — do not reveal account existence.
+        if (user is null)
+            return new LoginResult(LoginOutcome.InvalidCredentials);
 
-        var token = GenerateToken(user);
-        return (token, user);
+        if (!user.IsActive)
+            return new LoginResult(LoginOutcome.Inactive);
+
+        if (user.LockoutEndAt.HasValue && user.LockoutEndAt.Value > DateTime.UtcNow)
+            return new LoginResult(LoginOutcome.LockedOut);
+
+        if (user.AccountExpiresAt.HasValue && user.AccountExpiresAt.Value < DateTime.UtcNow)
+            return new LoginResult(LoginOutcome.Expired);
+
+        if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+        {
+            user.LoginFailureCount++;
+            if (user.LoginFailureCount >= MaxFailedAttempts)
+            {
+                user.LockoutEndAt = DateTime.UtcNow.Add(LockoutDuration);
+                user.LoginFailureCount = 0; // reset counter once locked
+            }
+            await db.SaveChangesAsync();
+            return user.LockoutEndAt.HasValue && user.LockoutEndAt.Value > DateTime.UtcNow
+                ? new LoginResult(LoginOutcome.LockedOut)
+                : new LoginResult(LoginOutcome.InvalidCredentials);
+        }
+
+        // Success — clear counters and lockout
+        user.LastLoginAt = DateTime.UtcNow;
+        user.LoginFailureCount = 0;
+        user.LockoutEndAt = null;
+        await db.SaveChangesAsync();
+
+        var expiresAt = DateTime.UtcNow.Add(TokenLifetime);
+        return new LoginResult(LoginOutcome.Success, GenerateToken(user), user, expiresAt);
     }
 
     public string HashPassword(string password) =>
@@ -45,7 +85,7 @@ public class AuthService(AppDbContext db, IConfiguration config)
             issuer: config["Jwt:Issuer"] ?? "YadSarah",
             audience: config["Jwt:Audience"] ?? "YadSarahClient",
             claims: claims,
-            expires: DateTime.UtcNow.AddHours(12),
+            expires: DateTime.UtcNow.Add(TokenLifetime),
             signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
 
         return new JwtSecurityTokenHandler().WriteToken(token);

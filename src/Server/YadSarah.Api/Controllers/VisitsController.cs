@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using YadSarah.Application.Services;
 using YadSarah.Domain.Entities;
+using YadSarah.Api.Dtos;
 using YadSarah.Api.Hubs;
 
 namespace YadSarah.Api.Controllers;
@@ -10,7 +11,7 @@ namespace YadSarah.Api.Controllers;
 [ApiController]
 [Route("api/visits")]
 [Authorize]
-public class VisitsController(VisitService svc, IHubContext<MainHub> hub) : ControllerBase
+public class VisitsController(VisitService svc, IHubContext<MainHub> hub, AuditService audit) : ControllerBase
 {
     [HttpGet("queue")]
     public async Task<IActionResult> GetQueue() => Ok(await svc.GetQueueAsync());
@@ -19,14 +20,28 @@ public class VisitsController(VisitService svc, IHubContext<MainHub> hub) : Cont
     public async Task<IActionResult> GetById(Guid id)
     {
         var v = await svc.GetByIdAsync(id);
-        return v is null ? NotFound() : Ok(v);
+        if (v is null) return NotFound();
+        await audit.LogAsync(AuditService.Viewed, "Visit", id);
+        return Ok(v);
+    }
+
+    // GET /api/visits/by-patient/{patientId} — full visit history for a patient
+    [HttpGet("by-patient/{patientId:guid}")]
+    public async Task<IActionResult> GetByPatient(Guid patientId)
+    {
+        await audit.LogAsync(AuditService.Viewed, "Visit", patientId, "byPatient");
+        return Ok(await svc.GetByPatientAsync(patientId));
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create(Visit visit)
+    [Authorize(Roles = "Reception,ShiftManager,Admin")]
+    public async Task<IActionResult> Create([FromBody] VisitRequest req)
     {
-        var created = await svc.CreateAsync(visit);
-        // Notify all connected clients
+        if (!await svc.PatientExistsAsync(req.PatientId))
+            return BadRequest(new { message = "מטופל לא קיים." });
+
+        var created = await svc.CreateAsync(req.ToEntity());
+        await audit.LogAsync(AuditService.Created, "Visit", created.Id);
         await hub.Clients.All.SendAsync("QueueUpdate", new
         {
             visitId = created.Id,
@@ -36,6 +51,22 @@ public class VisitsController(VisitService svc, IHubContext<MainHub> hub) : Cont
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = "Reception,ShiftManager,Admin")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] VisitRequest req)
+    {
+        try
+        {
+            var updated = await svc.UpdateAsync(id, req.ToEntity());
+            await audit.LogAsync(AuditService.Updated, "Visit", id);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
     [HttpPatch("{id:guid}/status")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateStatusRequest req)
     {
@@ -43,6 +74,7 @@ public class VisitsController(VisitService svc, IHubContext<MainHub> hub) : Cont
             return BadRequest("Invalid status");
 
         var updated = await svc.UpdateStatusAsync(id, status);
+        await audit.LogAsync(AuditService.StatusChanged, "Visit", id, "Status", newValue: status.ToString());
         await hub.Clients.All.SendAsync("QueueUpdate", new
         {
             visitId = updated.Id,

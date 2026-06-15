@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: yadsarah-postgres
+    environment:
+      POSTGRES_DB: yadsarah
+      POSTGRES_USER: yadsarah
+      POSTGRES_PASSWORD: yadsarah_app_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - yadsarah-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yadsarah -d yadsarah"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  yadsarah-pgdata:
