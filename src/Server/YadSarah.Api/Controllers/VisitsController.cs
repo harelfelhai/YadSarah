@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -13,8 +14,25 @@ namespace YadSarah.Api.Controllers;
 [Authorize]
 public class VisitsController(VisitService svc, IHubContext<MainHub> hub, AuditService audit) : ControllerBase
 {
+    private Guid UserId =>
+        Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
+
     [HttpGet("queue")]
-    public async Task<IActionResult> GetQueue() => Ok(await svc.GetQueueAsync());
+    public async Task<IActionResult> GetQueue([FromQuery] bool all = false) =>
+        Ok(await svc.GetQueueAsync(includeDischarged: all));
+
+    // GET /api/visits/history — paged patient-history view (default: last day; or filtered).
+    [HttpGet("history")]
+    public async Task<IActionResult> History(
+        [FromQuery] string? q, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
+        [FromQuery] string? staff, [FromQuery] string? department, [FromQuery] int page = 0)
+    {
+        if (q is { Length: > 80 }) q = q[..80];
+        if (staff is { Length: > 80 }) staff = staff[..80];
+        var result = await svc.GetHistoryAsync(UserId, q, from, to, staff, department, page);
+        await audit.LogAsync(AuditService.Searched, "Visit", fieldName: "history");
+        return Ok(result);
+    }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
@@ -68,6 +86,7 @@ public class VisitsController(VisitService svc, IHubContext<MainHub> hub, AuditS
     }
 
     [HttpPatch("{id:guid}/status")]
+    [Authorize(Roles = "Reception,ShiftManager,Admin")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateStatusRequest req)
     {
         if (!Enum.TryParse<VisitStatus>(req.Status, out var status))

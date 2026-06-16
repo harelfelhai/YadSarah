@@ -2,15 +2,12 @@ import { useState } from 'react';
 import { useAuthStore } from '../../store/auth';
 import {
   Title, Button, Table, Badge, Group, Modal, TextInput, Select, Textarea,
-  Checkbox, NumberInput, Text, ActionIcon, Tooltip, SimpleGrid, Divider,
-  Stack, Alert,
+  Checkbox, Text, ActionIcon, Tooltip, SimpleGrid, Divider, Stack,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  IconPlus, IconEdit, IconRefresh, IconAlertCircle,
-} from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconRefresh } from '@tabler/icons-react';
 import { usersApi, type CreateUserPayload, type UpdateUserPayload } from '../../api/users';
 import { DEPARTMENTS } from '../../constants/departments';
 import type { User, UserRole } from '../../types';
@@ -77,10 +74,10 @@ const EMPTY_FORM: FormValues = {
 
 function roleBadge(role: UserRole) {
   const colors: Record<UserRole, string> = {
-    Admin: 'red', Doctor: 'blue', Nurse: 'teal', Reception: 'orange',
+    Admin: 'red', Doctor: 'blue', Nurse: 'teal', Reception: 'orange', ShiftManager: 'grape',
   };
   const labels: Record<UserRole, string> = {
-    Admin: 'מנהל', Doctor: 'רופא', Nurse: 'אחות', Reception: 'קבלה',
+    Admin: 'מנהל', Doctor: 'רופא', Nurse: 'אחות', Reception: 'קבלה', ShiftManager: 'מנהל משמרת',
   };
   return <Badge color={colors[role]} size="sm">{labels[role]}</Badge>;
 }
@@ -103,7 +100,7 @@ export default function AdminPage() {
       firstName: (v) => v.trim() ? null : 'שם פרטי חובה',
       lastName: (v) => v.trim() ? null : 'שם משפחה חובה',
       username: (v) => v.trim() ? null : 'שם משתמש חובה',
-      password: (v, vals) => {
+      password: (v) => {
         if (!editingId && !v.trim()) return 'סיסמה חובה';
         if (v && v.length < 8) return 'סיסמה חייבת להיות לפחות 8 תווים';
         return null;

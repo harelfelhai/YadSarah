@@ -4,10 +4,11 @@ import {
   AppShell as MantineAppShell, Burger, Group, NavLink, Text, Button, Avatar,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconList, IconUserPlus, IconLogout, IconUsers, IconSettings, IconHistory, IconShieldLock } from '@tabler/icons-react';
+import { IconList, IconUserPlus, IconLogout, IconUsers, IconSettings, IconHistory, IconShieldLock, IconMessageReport } from '@tabler/icons-react';
 import { useAuthStore } from '../store/auth';
 import { stopHub } from '../realtime/hub';
 import Logo from '../components/Logo';
+import FeedbackWidget from '../components/FeedbackWidget';
 import type { UserRole } from '../types';
 
 const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[] = [
@@ -16,6 +17,7 @@ const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[
   { href: '/history', label: 'היסטוריית מטופלים', icon: <IconHistory size={18} /> },
   { href: '/admin/users', label: 'ניהול משתמשים', icon: <IconUsers size={18} />, roles: ['Admin', 'ShiftManager'] },
   { href: '/admin/settings', label: 'הגדרות מערכת', icon: <IconSettings size={18} />, roles: ['Admin'] },
+  { href: '/admin/feedback', label: 'דיווחי משתמשים', icon: <IconMessageReport size={18} />, roles: ['Admin'] },
   { href: '/admin/audit', label: 'יומן ביקורת', icon: <IconShieldLock size={18} />, roles: ['Admin'] },
 ];
 
@@ -71,6 +73,7 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
 
       <MantineAppShell.Main>
         {children}
+        <FeedbackWidget />
       </MantineAppShell.Main>
     </MantineAppShell>
   );

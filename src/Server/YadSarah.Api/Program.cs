@@ -22,6 +22,11 @@ builder.Services.AddScoped<VisitService>();
 builder.Services.AddScoped<FormService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<AuditService>();
+builder.Services.AddScoped<MedicationCatalogService>();
+builder.Services.AddScoped<FeedbackService>();
+// Typed HttpClient for the MoH drug-registry sync (timeout guards against a hung WAF).
+builder.Services.AddHttpClient<MedicationSyncService>(c => c.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddHostedService<YadSarah.Api.Services.MedicationSyncBackgroundService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<YadSarah.Api.Services.FormPresenceService>();
 

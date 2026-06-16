@@ -1,7 +1,9 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using YadSarah.Application.Services;
 using YadSarah.Domain.Entities;
@@ -14,7 +16,7 @@ namespace YadSarah.Api.Controllers;
 // Medical forms hold clinical PHI — restricted to clinical staff (need-to-know).
 // Reception is intentionally excluded. Sign/addenda are further limited to Doctor in the service.
 [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin")]
-public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditService audit) : ControllerBase
+public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditService audit, AuthService auth) : ControllerBase
 {
     private Guid UserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
@@ -22,6 +24,16 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         User.FindFirstValue("fullName") ?? User.Identity?.Name ?? "Unknown";
     private UserRole UserRole =>
         Enum.TryParse<UserRole>(User.FindFirstValue(ClaimTypes.Role), out var r) ? r : UserRole.Reception;
+
+    // Re-authentication gate for signing: the user must re-enter their own username+password.
+    // Returns true only when the credentials are valid AND belong to the logged-in user
+    // (a signature must be attributable to the person actually present, not to whoever's
+    // session happens to be open). A single generic failure path avoids a credential oracle.
+    private async Task<bool> ReauthAsync(SignRequest req)
+    {
+        var verified = await auth.VerifyCredentialsAsync(req.Username, req.Password);
+        return verified is not null && verified.Id == UserId;
+    }
 
     // Parses a JSON column, falling back to a default when empty/blank (legacy rows)
     private static JsonElement ParseJson(string? json, string fallback) =>
@@ -144,9 +156,17 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
     // ── Signing ───────────────────────────────────────────────────────────
 
     // POST /api/forms/{id}/sign
+    // Signing requires step-up re-authentication: the doctor re-enters their own
+    // username+password. Rate-limited to thwart password brute-force on a stolen session.
     [HttpPost("api/forms/{id:guid}/sign")]
-    public async Task<IActionResult> Sign(Guid id)
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> Sign(Guid id, [FromBody] SignRequest req)
     {
+        if (!await ReauthAsync(req))
+        {
+            await audit.LogAsync(AuditService.SignReauthFailed, "MedicalForm", id);
+            return Unauthorized(new { message = "אימות נכשל — שם המשתמש או הסיסמה שגויים, או אינם תואמים למשתמש המחובר." });
+        }
         try
         {
             var form = await svc.SignAsync(id, UserId, UserName, UserRole);
@@ -171,6 +191,7 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         try
         {
             var form = await svc.AddAddendumAsync(id, req.Text, UserId, UserName);
+            await audit.LogAsync(AuditService.Created, "MedicalFormAddendum", id, "addendum");
             await hub.Clients.Group($"form_{id}").SendAsync("FormAddendaChanged", new { formId = id });
             return Ok(MapForm(form));
         }
@@ -180,12 +201,20 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
     }
 
     // POST /api/forms/{id}/addenda/{addendumId}/sign
+    // Each post-signature addendum is a separate signature → same step-up re-auth.
     [HttpPost("api/forms/{id:guid}/addenda/{addendumId:guid}/sign")]
-    public async Task<IActionResult> SignAddendum(Guid id, Guid addendumId)
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> SignAddendum(Guid id, Guid addendumId, [FromBody] SignRequest req)
     {
+        if (!await ReauthAsync(req))
+        {
+            await audit.LogAsync(AuditService.SignReauthFailed, "MedicalForm", id, "addendum");
+            return Unauthorized(new { message = "אימות נכשל — שם המשתמש או הסיסמה שגויים, או אינם תואמים למשתמש המחובר." });
+        }
         try
         {
             var form = await svc.SignAddendumAsync(id, addendumId, UserId, UserName, UserRole);
+            await audit.LogAsync(AuditService.Signed, "MedicalFormAddendum", id, "addendum", newValue: addendumId.ToString());
             await hub.Clients.Group($"form_{id}").SendAsync("FormAddendaChanged", new { formId = id });
             return Ok(MapForm(form));
         }
@@ -240,4 +269,11 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
     public record CreateFormRequest(string StationType, string FormType);
     public record UpdateSectionRequest(object? Data, int Version);
     public record AddAddendumRequest(string Text);
+
+    // Step-up re-authentication payload for signing a form / addendum.
+    // NB: validation attributes target the constructor PARAMETER (no `property:` prefix) —
+    // ASP.NET model validation requires them on the record parameter, not the property.
+    public record SignRequest(
+        [Required, StringLength(100)] string Username,
+        [Required, StringLength(200)] string Password);
 }

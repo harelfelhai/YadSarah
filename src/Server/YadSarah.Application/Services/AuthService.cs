@@ -63,6 +63,24 @@ public class AuthService(AppDbContext db, IConfiguration config)
         return new LoginResult(LoginOutcome.Success, GenerateToken(user), user, expiresAt);
     }
 
+    /// <summary>
+    /// Re-authentication for high-assurance actions (e.g. signing a medical form).
+    /// Verifies username+password against the stored hash WITHOUT issuing a token.
+    /// Returns the user only when active, not locked-out and not expired; otherwise null.
+    /// Intentionally does NOT increment the brute-force counter or lock the account —
+    /// a wrong password at signing must not lock a clinician out mid-shift (the endpoint
+    /// is rate-limited instead). An already-locked account still cannot be used to sign.
+    /// </summary>
+    public async Task<User?> VerifyCredentialsAsync(string username, string password)
+    {
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username);
+        if (user is null || !user.IsActive) return null;
+        if (user.LockoutEndAt.HasValue && user.LockoutEndAt.Value > DateTime.UtcNow) return null;
+        if (user.AccountExpiresAt.HasValue && user.AccountExpiresAt.Value < DateTime.UtcNow) return null;
+        if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash)) return null;
+        return user;
+    }
+
     public string HashPassword(string password) =>
         BCrypt.Net.BCrypt.HashPassword(password, workFactor: 12);
 

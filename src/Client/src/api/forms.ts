@@ -13,13 +13,15 @@ export const formsApi = {
   updateSection: (id: string, section: string, data: unknown, version: number) =>
     api.patch<MedicalForm>(`/forms/${id}/sections/${section}`, { data, version }),
 
-  sign: (id: string) => api.post<MedicalForm>(`/forms/${id}/sign`, {}),
+  // Signing requires step-up re-authentication (the doctor's own username + password).
+  sign: (id: string, username: string, password: string) =>
+    api.post<MedicalForm>(`/forms/${id}/sign`, { username, password }),
 
   addAddendum: (id: string, text: string) =>
     api.post<MedicalForm>(`/forms/${id}/addenda`, { text }),
 
-  signAddendum: (id: string, addendumId: string) =>
-    api.post<MedicalForm>(`/forms/${id}/addenda/${addendumId}/sign`, {}),
+  signAddendum: (id: string, addendumId: string, username: string, password: string) =>
+    api.post<MedicalForm>(`/forms/${id}/addenda/${addendumId}/sign`, { username, password }),
 
   acquireLock: (id: string, section: string) =>
     api.post<{ acquired: boolean; lockedBy?: string }>(`/forms/${id}/locks/${section}`, {}),

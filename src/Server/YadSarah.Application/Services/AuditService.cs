@@ -20,6 +20,7 @@ public class AuditService(AppDbContext db, IHttpContextAccessor http)
     public const string Updated = "Updated";
     public const string StatusChanged = "StatusChanged";
     public const string Signed = "Signed";
+    public const string SignReauthFailed = "SignReauthFailed";
     public const string Login = "Login";
     public const string LoginFailed = "LoginFailed";
     public const string LockedOut = "LockedOut";

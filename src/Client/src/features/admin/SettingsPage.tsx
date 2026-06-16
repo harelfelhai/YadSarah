@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Card, Group, Stack, Title, Text, Button, Select, Box, Loader, Alert,
+  Card, Group, Stack, Title, Text, Button, Select, Box, Loader, Alert, Badge,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { IconClock, IconDeviceFloppy, IconInfoCircle, IconLock } from '@tabler/icons-react';
+import {
+  IconClock, IconDeviceFloppy, IconInfoCircle, IconLock, IconPill, IconRefresh, IconUpload,
+} from '@tabler/icons-react';
 import { settingsApi } from '../../api/settings';
+import { medicationsApi } from '../../api/medications';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { useAuthStore } from '../../store/auth';
 
@@ -44,6 +47,35 @@ export default function SettingsPage() {
   }, [resetSetting?.value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetDirty = !!resetSetting && resetHour !== resetSetting.value;
+
+  // ── Medication catalog ──
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { data: medStatus } = useQuery({
+    queryKey: ['medStatus'],
+    queryFn: () => medicationsApi.getStatus(),
+    enabled: isAdmin,
+  });
+
+  const syncMut = useMutation({
+    mutationFn: () => medicationsApi.sync(),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['medStatus'] });
+      notifications.show({ color: 'green', message: r.message });
+    },
+    onError: (e) => notifications.show({ color: 'red', message: apiErrorMessage(e, 'סנכרון מסד התרופות נכשל') }),
+  });
+
+  const importMut = useMutation({
+    mutationFn: (file: File) => medicationsApi.importFile(file),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['medStatus'] });
+      notifications.show({ color: 'green', message: r.message });
+    },
+    onError: (e) => notifications.show({ color: 'red', message: apiErrorMessage(e, 'ייבוא הקובץ נכשל') }),
+  });
+
+  const formatSync = (iso?: string | null) =>
+    iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : 'מעולם לא';
 
   if (!isAdmin) {
     return (
@@ -96,8 +128,65 @@ export default function SettingsPage() {
         </Alert>
       </Card>
 
-      {/* Future settings cards will be added here */}
-      <Text size="xs" c="dimmed">הגדרות נוספות יתווספו כאן בהמשך.</Text>
+      {/* ── Medication catalog ── */}
+      <Card withBorder p="md" radius="md">
+        <Group gap="xs" mb="sm">
+          <IconPill size={18} />
+          <Text fw={600}>מסד התרופות</Text>
+          <Badge variant="light" color="blue">{medStatus?.count ?? 0} תרופות</Badge>
+        </Group>
+
+        <Text size="sm" c="dimmed" mb="xs">
+          המאגר מבוסס על פנקס התכשירים של משרד הבריאות (שם + מספר רישום). הזנת תרופה בטופס
+          נשלפת מהמאגר הפנימי — ללא תלות באינטרנט. המשיכה מתבצעת אוטומטית כל {medStatus?.intervalDays ?? 7} ימים,
+          וניתן לעדכן ידנית כאן.
+        </Text>
+
+        <Group gap="lg" mb="sm">
+          <Text size="sm">סנכרון אחרון: <b>{formatSync(medStatus?.lastSyncAt)}</b></Text>
+          {medStatus?.lastSyncStatus && (
+            <Text size="xs" c="dimmed">({medStatus.lastSyncStatus})</Text>
+          )}
+        </Group>
+
+        <Group gap="md">
+          <Button
+            leftSection={<IconRefresh size={16} />}
+            loading={syncMut.isPending}
+            onClick={() => syncMut.mutate()}
+          >
+            עדכון מסד התרופות (משיכה מ-API)
+          </Button>
+
+          <Button
+            variant="outline"
+            leftSection={<IconUpload size={16} />}
+            loading={importMut.isPending}
+            onClick={() => fileRef.current?.click()}
+          >
+            ייבוא מקובץ (Excel / CSV)
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.currentTarget.files?.[0];
+              if (f) importMut.mutate(f);
+              e.currentTarget.value = '';
+            }}
+          />
+        </Group>
+
+        <Alert icon={<IconInfoCircle size={15} />} color="blue" variant="light" mt="sm" p="xs">
+          <Text size="xs">
+            ייבוא רשמי: הורד את "פנקס התרופות הרשומות" (קובץ Excel) מאתר משרד הבריאות / חופש המידע,
+            והעלה אותו כאן. המערכת מזהה אוטומטית את עמודות מספר הרישום והשם (עברי/אנגלי).
+            הייבוא מחליף את כל המאגר בתמונת-המצב החדשה.
+          </Text>
+        </Alert>
+      </Card>
     </Stack>
   );
 }

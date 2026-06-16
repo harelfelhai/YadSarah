@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge, Box, Button, Card, Group, Loader, Stack, Table, Text, Title, Tooltip,
+  Badge, Box, Button, Card, Group, Loader, Modal, Stack, Switch, Table, Text, Title, Tooltip,
 } from '@mantine/core';
-import { IconUserPlus } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
+import { IconUserPlus, IconLogout } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
@@ -36,23 +37,37 @@ export default function QueuePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const [showAll, setShowAll] = useState(false);
+  const [dischargeTarget, setDischargeTarget] = useState<Visit | null>(null);
+  const [discharging, setDischarging] = useState(false);
 
   const { data: visits = [], isLoading } = useQuery({
-    queryKey: ['queue'],
-    queryFn: visitsApi.getQueue,
+    queryKey: ['queue', showAll],
+    queryFn: () => visitsApi.getQueue(showAll),
     refetchInterval: 30_000,
   });
 
   useEffect(() => {
-    const off = onQueueUpdate((update) => {
-      queryClient.setQueryData<Visit[]>(['queue'], (prev = []) =>
-        prev.map((v) =>
-          v.id === update.visitId ? { ...v, status: update.status } : v
-        )
-      );
+    const off = onQueueUpdate(() => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
     });
     return off;
   }, [queryClient]);
+
+  const confirmDischarge = async () => {
+    if (!dischargeTarget) return;
+    setDischarging(true);
+    try {
+      await visitsApi.updateStatus(dischargeTarget.id, 'Discharged');
+      notifications.show({ color: 'teal', message: 'המטופל שוחרר' });
+      setDischargeTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+    } catch {
+      notifications.show({ color: 'red', message: 'שחרור המטופל נכשל' });
+    } finally {
+      setDischarging(false);
+    }
+  };
 
   const callPatient = async (visit: Visit) => {
     await visitsApi.updateStatus(visit.id, 'Called');
@@ -64,18 +79,14 @@ export default function QueuePage() {
     navigate(`/visits/${visit.id}`);
   };
 
-  const dischargePatient = async (visit: Visit) => {
-    await visitsApi.updateStatus(visit.id, 'Discharged');
-    queryClient.invalidateQueries({ queryKey: ['queue'] });
-  };
-
   const isReception = RECEPTION_ROLES.has(user?.role ?? '');
   // Clinical actions (call / open treatment form) require clinical roles — Reception is excluded.
   const isClinical = ['Doctor', 'Nurse', 'ShiftManager', 'Admin'].includes(user?.role ?? '');
 
   // Clinicians see the active treatment queue (finished patients leave it);
   // reception-side roles also see "סיים טיפול" patients awaiting discharge/payment.
-  const active = visits.filter((v) => {
+  // "Show all today" overrides the filter and lists everyone admitted this queue-day.
+  const active = showAll ? visits : visits.filter((v) => {
     if (v.status === 'Discharged') return false;
     if (v.status === 'FinishedTreatment') return isReception;
     return true;
@@ -96,9 +107,16 @@ export default function QueuePage() {
     <Stack gap="md" p="md">
       <Group justify="space-between">
         <Title order={3}>תור — רפואה דחופה</Title>
-        <Button leftSection={<IconUserPlus size={16} />} onClick={() => navigate('/reception/new')}>
-          קבלת מטופל
-        </Button>
+        <Group gap="md">
+          <Switch
+            label="הצג את כל מטופלי היום"
+            checked={showAll}
+            onChange={(e) => setShowAll(e.currentTarget.checked)}
+          />
+          <Button leftSection={<IconUserPlus size={16} />} onClick={() => navigate('/reception/new')}>
+            קבלת מטופל
+          </Button>
+        </Group>
       </Group>
 
       {showDeptHighlight && (
@@ -188,9 +206,11 @@ export default function QueuePage() {
                           המשך טיפול
                         </Button>
                       )}
-                      {visit.status === 'FinishedTreatment' && isReception && (
-                        <Button size="xs" color="teal" onClick={() => dischargePatient(visit)}>
-                          שחרר (תשלום)
+                      {visit.status !== 'Discharged' && (
+                        <Button size="xs" color="teal" variant={visit.status === 'FinishedTreatment' ? 'filled' : 'light'}
+                          leftSection={<IconLogout size={14} />}
+                          onClick={() => setDischargeTarget(visit)}>
+                          שחרר
                         </Button>
                       )}
                       {visit.patient && (
@@ -213,6 +233,23 @@ export default function QueuePage() {
           </Table.Tbody>
         </Table>
       )}
+
+      <Modal opened={!!dischargeTarget} onClose={() => setDischargeTarget(null)} title="שחרור מטופל" centered>
+        <Stack gap="sm">
+          <Text size="sm">
+            לשחרר את {dischargeTarget?.patient
+              ? `${dischargeTarget.patient.firstName} ${dischargeTarget.patient.lastName}`
+              : 'המטופל'} (מס׳ תור {dischargeTarget?.queueNumber})?
+            המטופל יוסר מהתור הפעיל.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="subtle" onClick={() => setDischargeTarget(null)}>ביטול</Button>
+            <Button color="teal" loading={discharging} leftSection={<IconLogout size={16} />} onClick={confirmDischarge}>
+              שחרר מטופל
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }

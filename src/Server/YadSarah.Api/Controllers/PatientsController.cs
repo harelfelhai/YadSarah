@@ -22,13 +22,25 @@ public class PatientsController(AppDbContext db, AuditService audit) : Controlle
         if (string.IsNullOrWhiteSpace(q)) return Ok(Array.Empty<object>());
         if (q.Length > 50) q = q[..50]; // cap to bound query cost
 
-        var results = await db.Patients
-            .Where(p =>
-                (p.IdentityNumber != null && p.IdentityNumber.Contains(q)) ||
-                p.FirstName.Contains(q) ||
-                p.LastName.Contains(q))
-            .Take(20)
-            .ToListAsync();
+        // Match each whitespace-separated token against any name/identity field, so a
+        // full-name query like "הראל פלהיימר" matches (first name + last name), not just
+        // a single field. All tokens must match (AND); each may hit first/last/identity (OR).
+        var tokens = q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                      .Take(5).ToArray();
+
+        var query = db.Patients.AsQueryable();
+        foreach (var token in tokens)
+        {
+            var t = token; // capture per-iteration for the closure
+            query = query.Where(p =>
+                (p.IdentityNumber != null && p.IdentityNumber.Contains(t)) ||
+                p.FirstName.Contains(t) ||
+                p.LastName.Contains(t) ||
+                (p.FirstNameLatin != null && p.FirstNameLatin.Contains(t)) ||
+                (p.LastNameLatin != null && p.LastNameLatin.Contains(t)));
+        }
+
+        var results = await query.Take(20).ToListAsync();
 
         await audit.LogAsync(AuditService.Searched, "Patient", newValue: q);
         return Ok(results);

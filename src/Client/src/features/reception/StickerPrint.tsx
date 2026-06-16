@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Button, Group, Stack, Title, Text, Paper, Divider, Box } from '@mantine/core';
 import { IconPrinter, IconArrowLeft, IconUserPlus } from '@tabler/icons-react';
 import type { Patient, Visit } from '../../types';
@@ -25,14 +25,17 @@ function formatTime(t?: string): string {
 
 export default function StickerPrint({ patient, visit, onContinue, onAdmitAnother }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const autoPrinted = useRef(false);
 
+  // Print via a hidden iframe (not window.open) so it can also be triggered
+  // automatically on mount without being blocked as a pop-up.
   const handlePrint = () => {
     const content = printRef.current;
-    if (!content) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    printWindow.opener = null; // sever opener access (we keep the ref to write content)
-    printWindow.document.write(`
+    const doc = frameRef.current?.contentWindow?.document;
+    if (!content || !doc) return;
+    doc.open();
+    doc.write(`
       <html dir="rtl">
         <head>
           <meta charset="UTF-8" />
@@ -55,15 +58,21 @@ export default function StickerPrint({ patient, visit, onContinue, onAdmitAnothe
             .small-sticker .barcode-text { font-family: monospace; font-size: 8pt; letter-spacing: 2px; }
           </style>
         </head>
-        <body>
-          <div class="sticker-page">
-            ${content.innerHTML}
-          </div>
-        </body>
+        <body><div class="sticker-page">${content.innerHTML}</div></body>
       </html>`);
-    printWindow.document.close();
-    printWindow.print();
+    doc.close();
+    frameRef.current?.contentWindow?.focus();
+    frameRef.current?.contentWindow?.print();
   };
+
+  // Auto-open the print dialog once, when the sticker screen appears.
+  useEffect(() => {
+    if (autoPrinted.current) return;
+    autoPrinted.current = true;
+    const t = setTimeout(handlePrint, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const admissionTime = formatTime(visit.admissionTime);
   const admissionDate = formatDate(visit.admissionDate);
@@ -151,6 +160,8 @@ export default function StickerPrint({ patient, visit, onContinue, onAdmitAnothe
           ))}
         </Box>
       </div>
+
+      <iframe ref={frameRef} title="הדפסת מדבקות" style={{ display: 'none' }} />
     </Stack>
   );
 }

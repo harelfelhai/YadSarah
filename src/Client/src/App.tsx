@@ -11,9 +11,11 @@ import LoginPage from './features/auth/LoginPage';
 import QueuePage from './features/queue/QueuePage';
 import ReceptionPage from './features/reception/ReceptionPage';
 import TreatmentFormPage from './features/treatment/TreatmentFormPage';
+import VisitSummaryPage from './features/treatment/VisitSummaryPage';
 import AdminPage from './features/admin/AdminPage';
 import SettingsPage from './features/admin/SettingsPage';
 import AuditPage from './features/admin/AuditPage';
+import FeedbackPage from './features/admin/FeedbackPage';
 import HistoryPage from './features/history/HistoryPage';
 import PatientEditPage from './features/reception/PatientEditPage';
 
@@ -48,10 +50,12 @@ export default function App() {
                       <Route path="/queue" element={<QueuePage />} />
                       <Route path="/reception/new" element={<ReceptionPage />} />
                       <Route path="/visits/:visitId" element={<TreatmentFormPage />} />
+                      <Route path="/visits/:visitId/summary" element={<VisitSummaryPage />} />
                       <Route path="/history" element={<HistoryPage />} />
                       <Route path="/admin/users" element={<AdminPage />} />
                       <Route path="/admin/settings" element={<SettingsPage />} />
                       <Route path="/admin/audit" element={<AuditPage />} />
+                      <Route path="/admin/feedback" element={<FeedbackPage />} />
                       <Route path="/patients/:id/edit" element={<PatientEditPage />} />
                       <Route path="*" element={<DefaultRedirect />} />
                     </Routes>

@@ -14,6 +14,8 @@ import {
 } from '@tabler/icons-react';
 import { visitsApi } from '../../api/visits';
 import { formsApi } from '../../api/forms';
+import { medicationsApi } from '../../api/medications';
+import ReauthModal from '../../components/ReauthModal';
 import { useAuthStore } from '../../store/auth';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
 import {
@@ -26,13 +28,6 @@ import type {
 } from '../../types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-const COMMON_DRUGS = [
-  'PARACETAMOL', 'DIPYRONE', 'IBUPROFEN', 'AMOXICILLIN', 'AZITHROMYCIN',
-  'METFORMIN', 'AMLODIPINE', 'LISINOPRIL', 'ATORVASTATIN', 'OMEPRAZOLE',
-  'ASPIRIN', 'CLOPIDOGREL', 'METOPROLOL', 'FUROSEMIDE', 'PREDNISONE',
-  'ONDANSETRON', 'DEXAMETHASONE', 'MORPHINE', 'TRAMADOL', 'CODEINE',
-];
 
 const STATION_OPTIONS: StationType[] = [
   'טריאז׳', 'טריאז׳ ילדים', 'רופא ר.דחופה', 'רופא ילדים', 'רופאת הריון',
@@ -85,7 +80,6 @@ export default function TreatmentFormPage() {
   const [localTextValues, setLocalTextValues] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<Record<string, SaveState>>({});
   const [signConfirm, setSignConfirm] = useState(false);
-  const [signing, setSigning] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
 
   // Refs for serialized auto-save (always uses the latest version)
@@ -185,7 +179,7 @@ export default function TreatmentFormPage() {
       const cur = formRef.current;
       if (!cur) return;
       // Skip redundant text saves (value unchanged)
-      if (typeof value === 'string' && value === String((cur as Record<string, unknown>)[section] ?? '')) {
+      if (typeof value === 'string' && value === String((cur as unknown as Record<string, unknown>)[section] ?? '')) {
         return;
       }
       setSaveState((s) => ({ ...s, [section]: 'saving' }));
@@ -216,7 +210,7 @@ export default function TreatmentFormPage() {
   const handleTextBlur = (section: string) => {
     if (!activeForm) return;
     if (debounce.current[section]) clearTimeout(debounce.current[section]);
-    const value = localTextValues[section] ?? String((activeForm as Record<string, unknown>)[section] ?? '');
+    const value = localTextValues[section] ?? String((activeForm as unknown as Record<string, unknown>)[section] ?? '');
     persistSection(section, value);
     formsApi.releaseLock(activeForm.id, section).catch(() => {});
   };
@@ -227,21 +221,17 @@ export default function TreatmentFormPage() {
   }, [persistSection]);
 
   // ── Signing ────────────────────────────────────────────────────────────────
-  const doSign = async () => {
+  // Re-authentication required: errors propagate so the ReauthModal shows them inline.
+  const handleSign = async (username: string, password: string) => {
     if (!activeForm) return;
-    setSigning(true);
-    try {
-      const updated = await formsApi.sign(activeForm.id) as unknown as MedicalForm;
-      formRef.current = updated;
-      setActiveForm(updated);
-      setSignConfirm(false);
-      notifications.show({ color: 'green', message: 'הטופס נחתם והטיפול הסתיים' });
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-    } catch (e) {
-      notifications.show({ color: 'red', message: apiErrorMessage(e, 'החתימה נכשלה') });
-    } finally {
-      setSigning(false);
-    }
+    const updated = await formsApi.sign(activeForm.id, username, password) as unknown as MedicalForm;
+    formRef.current = updated;
+    setActiveForm(updated);
+    setSignConfirm(false);
+    notifications.show({ color: 'green', message: 'הטופס נחתם והטיפול הסתיים' });
+    queryClient.invalidateQueries({ queryKey: ['queue'] });
+    // Open the printable PDF summary automatically after signing.
+    navigate(`/visits/${visitId}/summary?print=1`);
   };
 
   const isDoctor = user?.role === 'Doctor';
@@ -334,7 +324,7 @@ export default function TreatmentFormPage() {
                 </Group>
                 {isText ? (
                   <TextSectionEditor
-                    value={localTextValues[key] ?? String((activeForm as Record<string, unknown>)[key] ?? '')}
+                    value={localTextValues[key] ?? String((activeForm as unknown as Record<string, unknown>)[key] ?? '')}
                     readOnly={readOnly}
                     onFocus={() => handleFocus(key)}
                     onChange={(v) => handleTextChange(key, v)}
@@ -397,22 +387,15 @@ export default function TreatmentFormPage() {
         </Group>
       </Group>
 
-      {/* Sign confirmation */}
-      <Modal opened={signConfirm} onClose={() => setSignConfirm(false)} title="חתימה על הטופס" centered>
-        <Stack gap="sm">
-          <Text size="sm">
-            לאחר החתימה הטופס יינעל לעריכה והטיפול יסומן כ"סיים טיפול".
-            שינויים לאחר מכן יתאפשרו רק למנהל משמרת בחלון של {activeForm?.postSignEditWindowMinutes ?? 10} דקות,
-            או באמצעות "תוספת לאחר חתימה".
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="subtle" onClick={() => setSignConfirm(false)}>ביטול</Button>
-            <Button color="teal" loading={signing} onClick={doSign} leftSection={<IconWriting size={16} />}>
-              חתום וסיים טיפול
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      {/* Sign — requires step-up re-authentication */}
+      <ReauthModal
+        opened={signConfirm}
+        onClose={() => setSignConfirm(false)}
+        onConfirm={handleSign}
+        title="חתימה וסיום טיפול"
+        description={`לאחר החתימה הטופס יינעל לעריכה והטיפול יסומן כ"סיים טיפול" (שינויים לאחר מכן רק למנהל משמרת בחלון של ${activeForm?.postSignEditWindowMinutes ?? 10} דקות, או כ"תוספת לאחר חתימה"). לאישור — הזן מחדש את שם המשתמש והסיסמה שלך.`}
+        confirmLabel="חתום וסיים טיפול"
+      />
     </Stack>
   );
 }
@@ -443,6 +426,51 @@ function TextSectionEditor({ value, readOnly, onFocus, onChange, onBlur }: TextE
   );
 }
 
+// ─── Drug autocomplete (official MoH catalog, server-backed) ───────────────────
+// Suggests medications from the internal catalog as "NAME (regNum)". Free text is
+// still allowed (a drug not yet in the catalog can be typed manually).
+interface DrugAutocompleteProps {
+  label?: string;
+  value?: string;
+  error?: React.ReactNode;
+  onChange?: (value: string) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
+}
+
+function DrugAutocomplete({ label = 'שם תרופה *', value, error, onChange, onBlur, onFocus }: DrugAutocompleteProps) {
+  const [data, setData] = useState<string[]>([]);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const handleChange = (v: string) => {
+    onChange?.(v);
+    if (timer.current) clearTimeout(timer.current);
+    const q = v.trim();
+    if (!q) { setData([]); return; }
+    timer.current = setTimeout(async () => {
+      try {
+        const res = await medicationsApi.search(q, 20);
+        setData(res.map((m) => `${m.englishName || m.hebrewName} (${m.registrationNumber})`));
+      } catch { setData([]); }
+    }, 250);
+  };
+
+  return (
+    <Autocomplete
+      label={label}
+      value={value ?? ''}
+      data={data}
+      error={error}
+      onChange={handleChange}
+      onBlur={onBlur}
+      onFocus={onFocus}
+      limit={20}
+      placeholder="הקלד שם תרופה — מהמאגר הרשמי"
+      comboboxProps={{ withinPortal: true }}
+    />
+  );
+}
+
 // ─── Addenda section ───────────────────────────────────────────────────────────
 
 function AddendaSection({ form, isDoctor, onChange }: {
@@ -452,6 +480,7 @@ function AddendaSection({ form, isDoctor, onChange }: {
 }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [signingAddendumId, setSigningAddendumId] = useState<string | null>(null);
 
   const addAddendum = async () => {
     if (!text.trim()) return;
@@ -467,13 +496,13 @@ function AddendaSection({ form, isDoctor, onChange }: {
     }
   };
 
-  const signAddendum = async (addendumId: string) => {
-    try {
-      const updated = await formsApi.signAddendum(form.id, addendumId) as unknown as MedicalForm;
-      onChange(updated);
-    } catch (e) {
-      notifications.show({ color: 'red', message: apiErrorMessage(e, 'חתימה על תוספת נכשלה') });
-    }
+  // Re-authentication required per addendum; errors propagate to the ReauthModal.
+  const handleSignAddendum = async (username: string, password: string) => {
+    if (!signingAddendumId) return;
+    const updated = await formsApi.signAddendum(
+      form.id, signingAddendumId, username, password) as unknown as MedicalForm;
+    onChange(updated);
+    setSigningAddendumId(null);
   };
 
   return (
@@ -502,7 +531,7 @@ function AddendaSection({ form, isDoctor, onChange }: {
               <Group justify="flex-end" mt="xs">
                 <Button size="xs" color="teal" variant="light"
                   leftSection={<IconWriting size={14} />}
-                  onClick={() => signAddendum(a.id)}>
+                  onClick={() => setSigningAddendumId(a.id)}>
                   חתום על התוספת
                 </Button>
               </Group>
@@ -524,6 +553,16 @@ function AddendaSection({ form, isDoctor, onChange }: {
           </Button>
         </Group>
       </Stack>
+
+      {/* Addendum signing — requires step-up re-authentication */}
+      <ReauthModal
+        opened={signingAddendumId !== null}
+        onClose={() => setSigningAddendumId(null)}
+        onConfirm={handleSignAddendum}
+        title="חתימה על תוספת"
+        description="לאישור החתימה על התוספת הזן מחדש את שם המשתמש והסיסמה שלך."
+        confirmLabel="חתום על התוספת"
+      />
     </Card>
   );
 }
@@ -556,7 +595,7 @@ function printForm(form: MedicalForm, visit: import('../../types').Visit) {
   // Text sections — only if filled
   for (const { key, label } of SECTIONS) {
     if (TEXT_SECTION_KEYS.includes(key)) {
-      const val = (form as Record<string, unknown>)[key];
+      const val = (form as unknown as Record<string, unknown>)[key];
       if (val && String(val).trim()) {
         parts.push(`<section><h2>${esc(label)}</h2><p>${esc(val).replace(/\n/g, '<br/>')}</p></section>`);
       }
@@ -1087,7 +1126,7 @@ function TreatmentsEditor({ rows, locked, saving, onFocus, onSave }: TreatmentsE
       <Modal opened={open} onClose={() => setOpen(false)} title={editingId ? 'עריכת תרופה/טיפול' : 'הוספת תרופה/טיפול'} size="sm">
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="xs">
-            <Autocomplete label="שם תרופה *" data={COMMON_DRUGS} {...form.getInputProps('drugName')} />
+            <DrugAutocomplete label="שם תרופה *" {...form.getInputProps('drugName')} />
             <TextInput label="מינון" {...form.getInputProps('dosage')} />
             <TextInput label="תאריך התחלה" type="date" {...form.getInputProps('startDate')} />
             <TextInput label="משך טיפול" placeholder="לדוגמה: 5 ימים" {...form.getInputProps('duration')} />
@@ -1241,7 +1280,7 @@ function DischargeMedsEditor({ rows, locked, saving, onFocus, onSave }: Discharg
       <Modal opened={open} onClose={() => setOpen(false)} title={editingId ? 'עריכת תרופת שחרור' : 'הוספת תרופת שחרור'} size="sm">
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="xs">
-            <Autocomplete label="שם תרופה *" data={COMMON_DRUGS} {...form.getInputProps('drugName')} />
+            <DrugAutocomplete label="שם תרופה *" {...form.getInputProps('drugName')} />
             <TextInput label="מינון" {...form.getInputProps('dosage')} />
             <Textarea label="הערות" {...form.getInputProps('notes')} />
             <Group justify="flex-end"><Button type="submit" size="sm">שמור</Button></Group>

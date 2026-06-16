@@ -13,6 +13,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<FormLock> FormLocks => Set<FormLock>();
     public DbSet<QueueCounter> QueueCounters => Set<QueueCounter>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+    public DbSet<Medication> Medications => Set<Medication>();
+    public DbSet<FeedbackReport> FeedbackReports => Set<FeedbackReport>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -87,6 +89,32 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(s => s.Key);
             e.Property(s => s.Key).HasMaxLength(100);
+        });
+
+        // Medication — official drug catalog (internal copy of the MoH registry)
+        b.Entity<Medication>(e =>
+        {
+            e.HasKey(m => m.Id);
+            e.Property(m => m.RegistrationNumber).HasMaxLength(50).IsRequired();
+            e.Property(m => m.HebrewName).HasMaxLength(300).IsRequired();
+            e.Property(m => m.EnglishName).HasMaxLength(300);
+            e.HasIndex(m => m.RegistrationNumber).IsUnique();
+            // Search indexes for autocomplete (prefix/ILIKE on names)
+            e.HasIndex(m => m.HebrewName);
+            e.HasIndex(m => m.EnglishName);
+        });
+
+        // FeedbackReport — user-submitted bug/fix/improvement reports (Admin-managed)
+        b.Entity<FeedbackReport>(e =>
+        {
+            e.HasKey(f => f.Id);
+            e.Property(f => f.Screen).HasMaxLength(100).IsRequired();
+            e.Property(f => f.FieldName).HasMaxLength(150).IsRequired();
+            e.Property(f => f.Description).HasMaxLength(4000).IsRequired();
+            e.Property(f => f.ReportType).HasConversion<string>();
+            e.Property(f => f.Status).HasConversion<string>();
+            e.HasIndex(f => f.Status);
+            e.HasIndex(f => f.CreatedAt);
         });
     }
 }
