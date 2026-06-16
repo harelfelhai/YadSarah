@@ -108,7 +108,8 @@
   רופא באמצע משמרת בגלל שגיאת-הקלדה); ההגנה מפני brute-force היא **הגבלת-קצב** על נתיב
   החתימה (`[EnableRateLimiting("auth")]`). חשבון שכבר נעול אינו יכול לחתום.
 - **תיעוד:** כל ניסיון כושל נרשם ל-audit כפעולה `SignReauthFailed` (עם IP); חתימה מוצלחת
-  נרשמת כ-`Signed`.
+  נרשמת כ-`Signed`. גם פעולות התוספת (addenda) על מסמך חתום נרשמות ל-audit: הוספת תוספת
+  כ-`Created` וחתימת תוספת כ-`Signed`, שתיהן על `EntityType="MedicalFormAddendum"`.
 
 קבצים: `Api/Controllers/FormsController.cs` (`Sign`, `SignAddendum`, `ReauthAsync`,
 `SignRequest`), `Application/Services/AuthService.cs` (`VerifyCredentialsAsync`),
@@ -160,7 +161,22 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 `Api/Controllers/FeedbackController.cs`, `Client/src/api/feedback.ts`,
 `components/FeedbackWidget.tsx`, `features/admin/FeedbackPage.tsx`.
 
-## 12. סיכונים שיוריים (Residual Risks)
+## 12. תצוגת היסטוריית מטופלים (`GET /api/visits/history`)
+
+חיפוש/דפדוף בביקורי מטופלים (שם, ת"ז, תאריך, מחלקה, צוות מטפל, סטטוס).
+
+- **הרשאות:** כל משתמש מחובר — מסך ההיסטוריה הוגדר **מכוונת** כנגיש לכל הצוות (החלטת לקוח;
+  סביר לצוות מלר"ד קטן). חושף מטא-דאטה של ביקור + שמות צוות מטפל בלבד — **לא** תוכן קליני
+  (טפסים נשלפים רק דרך `FormsController` המוגן; תצוגת ה-PDF עוברת דרכו).
+- **תיעוד:** כל קריאה נרשמת ל-audit (`Searched`, `Visit`).
+- **הקשחת קלט:** `q`/`staff` מוגבלים ל-80 תווים; כל הסינון/המיון/הספירה דרך EF פרמטרי (אין SQLi).
+- **scale:** סינון, מיון ו-`COUNT` מתבצעים ב-DB על כלל הרשומות; מוחזר עמוד אחד בלבד (50),
+  כדי שלא לטעון נתוני-יתר לזיכרון/רשת.
+
+קבצים: `Application/Services/VisitService.cs` (`GetHistoryAsync`),
+`Api/Controllers/VisitsController.cs`, `Client/src/features/history/HistoryPage.tsx`.
+
+## 13. סיכונים שיוריים (Residual Risks)
 
 | סיכון | החלטה / בקרה מפצה |
 |------|--------------------|
@@ -168,4 +184,4 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 | TLS/הצפנה-בנייחה/גיבוי | תלויי-פריסה — ראו §6 במסמך הדרישות. |
 | סיסמת admin ראשונית (9 תווים) | יש להחליף לסיסמה תואמת-מדיניות לפני עלייה לייצור. |
 | סנכרון תרופות מ-API חיצוני (משרד הבריאות) | מחוץ לנתיב הקריטי; כשל אינו משבית את המערכת. ה-API מאחורי WAF — גיבוי ודאי ע"י ייבוא קובץ. יש לאמת זמינות מהשרת בישראל בעת הפריסה. |
-| **שחרור מטופל ללא הגבלת תפקיד** | לפי החלטת לקוח ("כרגע ע"י כל אחד") — `PATCH /visits/{id}/status` פתוח לכל משתמש מחובר, **מתועד** כ-`StatusChanged` (מי/מתי/IP). מומלץ לצמצם לקבלה/מנהל-משמרת לפני ייצור. |
+| ~~שחרור מטופל ללא הגבלת תפקיד~~ (נסגר) | `PATCH /visits/{id}/status` הוגבל ל-`[Authorize(Roles="Reception,ShiftManager,Admin")]` (כמו `Create`/`Update`); רופא/אחות אינם יכולים עוד לשנות סטטוס/לשחרר. הפעולה ממשיכה להירשם כ-`StatusChanged` (מי/מתי/IP). |
