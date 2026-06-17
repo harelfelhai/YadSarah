@@ -64,8 +64,8 @@ export default function FeedbackWidget() {
         onClick={() => setOpen(true)}
         leftSection={<IconMessageReport size={18} />}
         size="sm"
-        radius="xl"
-        color="medicalBlue"
+        radius="sm"
+        color="steel"
         styles={{ root: { position: 'fixed', insetInlineStart: 20, bottom: 20, zIndex: 200, boxShadow: 'var(--mantine-shadow-md)' } }}
       >
         דיווח

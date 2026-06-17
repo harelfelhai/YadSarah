@@ -23,7 +23,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(body || `HTTP ${res.status}`);
+    // The API returns errors as JSON ({ message: "..." }); surface that message,
+    // falling back to the raw body or the status code.
+    let message = body;
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed.message === 'string') message = parsed.message;
+    } catch {
+      // Not JSON — use the raw body text as-is.
+    }
+    throw new Error(message || `HTTP ${res.status}`);
   }
 
   if (res.status === 204) return undefined as T;

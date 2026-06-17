@@ -16,8 +16,8 @@ const STATUS_LABEL: Record<VisitStatus, string> = {
   FinishedTreatment: 'סיים טיפול', Discharged: 'שוחרר',
 };
 const STATUS_COLOR: Record<VisitStatus, string> = {
-  Waiting: 'blue', Called: 'yellow', InTreatment: 'green',
-  FinishedTreatment: 'teal', Discharged: 'gray',
+  Waiting: 'steel', Called: 'ochre', InTreatment: 'moss',
+  FinishedTreatment: 'pine', Discharged: 'slate',
 };
 
 function fmtDate(iso?: string): string {
@@ -147,15 +147,15 @@ export default function HistoryPage() {
                   {rows.map((v: VisitHistoryItem) => (
                     <Table.Tr
                       key={v.visitId}
-                      bg={v.relatedTier === 0 ? 'var(--mantine-color-medicalBlue-0)' : undefined}
+                      bg={v.relatedTier === 0 ? 'var(--mantine-color-steel-0)' : undefined}
                     >
                       <Table.Td style={{ whiteSpace: 'nowrap' }}>{fmtDate(v.admissionDate)}</Table.Td>
                       <Table.Td>{v.admissionTime?.slice(0, 5) ?? '—'}</Table.Td>
                       <Table.Td>
                         <Group gap={6} wrap="nowrap">
                           <Text fw={600}>{v.patientName}</Text>
-                          {v.relatedTier === 0 && <Badge size="xs" color="medicalBlue">שלי</Badge>}
-                          {v.relatedTier === 1 && <Badge size="xs" variant="light" color="blue">מחלקתי</Badge>}
+                          {v.relatedTier === 0 && <Badge size="xs" color="steel">שלי</Badge>}
+                          {v.relatedTier === 1 && <Badge size="xs" variant="light" color="slate">מחלקתי</Badge>}
                         </Group>
                       </Table.Td>
                       <Table.Td>{v.identityNumber ?? '—'}</Table.Td>

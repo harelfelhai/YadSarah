@@ -35,8 +35,8 @@ function Emblem({ size = 36 }: { size?: number }) {
     >
       <defs>
         <linearGradient id="ys-heart" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#0f6fc4" />
-          <stop offset="1" stopColor="#e03131" />
+          <stop offset="0" stopColor="#2e5a7d" />
+          <stop offset="1" stopColor="#b23a3a" />
         </linearGradient>
       </defs>
       <path
@@ -50,8 +50,9 @@ function Emblem({ size = 36 }: { size?: number }) {
   );
 }
 
-export default function Logo({ size = 36, withText = true, subtitle, color = 'medicalBlue.8' }: LogoProps) {
+export default function Logo({ size = 36, withText = true, subtitle, color = 'var(--ink)' }: LogoProps) {
   const [officialFailed, setOfficialFailed] = useState(false);
+  const onDark = color === 'white' || color === '#fff' || color === '#ffffff';
 
   // Official logo (already includes the wordmark + subtitle)
   if (!officialFailed) {
@@ -71,11 +72,20 @@ export default function Logo({ size = 36, withText = true, subtitle, color = 'me
       <Emblem size={size} />
       {withText && (
         <Stack gap={0}>
-          <Text fw={800} c={color} lh={1.05} style={{ fontSize: size * 0.62, letterSpacing: '-0.5px' }}>
+          <Text
+            fw={800}
+            lh={1.05}
+            style={{
+              fontSize: size * 0.62,
+              letterSpacing: '-0.5px',
+              fontFamily: '"Frank Ruhl Libre", Georgia, serif',
+              color: onDark ? '#fff' : color,
+            }}
+          >
             יד שרה
           </Text>
           {subtitle && (
-            <Text c="yadRed.7" fw={600} lh={1.1} style={{ fontSize: size * 0.32 }}>
+            <Text fw={600} lh={1.1} style={{ fontSize: size * 0.32, color: onDark ? 'var(--mantine-color-slate-3)' : 'var(--accent)' }}>
               {subtitle}
             </Text>
           )}

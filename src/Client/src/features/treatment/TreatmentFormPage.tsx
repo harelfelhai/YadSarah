@@ -17,6 +17,7 @@ import { formsApi } from '../../api/forms';
 import { medicationsApi } from '../../api/medications';
 import ReauthModal from '../../components/ReauthModal';
 import { useAuthStore } from '../../store/auth';
+import { newId } from '../../utils/id';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
 import {
   joinForm, leaveForm, onLockAcquired, onLockReleased,
@@ -749,7 +750,7 @@ function AllergiesEditor({ rows, locked, saving, onFocus, onSave }: AllergyEdito
   function handleSubmit(values: typeof form.values) {
     const next = editingId
       ? localRows.map((x) => x.id === editingId ? { ...x, ...values } : x)
-      : [...localRows, { id: crypto.randomUUID(), ...values }];
+      : [...localRows, { id: newId(), ...values }];
     commit(next);
     setOpen(false);
   }
@@ -951,7 +952,7 @@ function VitalSignsEditor({ rows, locked, saving, onFocus, onSave }: VitalSignsE
   }
 
   function handleSubmit(values: typeof form.values) {
-    const row: VitalSign = { id: editingId ?? crypto.randomUUID(), ...values };
+    const row: VitalSign = { id: editingId ?? newId(), ...values };
     const next = editingId ? localRows.map((x) => x.id === editingId ? row : x) : [...localRows, row];
     commit(next);
     setOpen(false);
@@ -1090,7 +1091,7 @@ function TreatmentsEditor({ rows, locked, saving, onFocus, onSave }: TreatmentsE
   }
 
   function handleSubmit(values: typeof form.values) {
-    const row: Treatment = { id: editingId ?? crypto.randomUUID(), ...values };
+    const row: Treatment = { id: editingId ?? newId(), ...values };
     const next = editingId ? localRows.map((x) => x.id === editingId ? row : x) : [...localRows, row];
     commit(next);
     setOpen(false);
@@ -1165,7 +1166,7 @@ function DiagnosesEditor({ rows, locked, saving, onFocus, onSave }: DiagnosesEdi
   }
 
   function handleSubmit(values: typeof form.values) {
-    const row: Diagnosis = { id: editingId ?? crypto.randomUUID(), ...values };
+    const row: Diagnosis = { id: editingId ?? newId(), ...values };
     const next = editingId ? localRows.map((x) => x.id === editingId ? row : x) : [...localRows, row];
     commit(next);
     setOpen(false);
@@ -1248,7 +1249,7 @@ function DischargeMedsEditor({ rows, locked, saving, onFocus, onSave }: Discharg
   }
 
   function handleSubmit(values: typeof form.values) {
-    const row: DischargeMedication = { id: editingId ?? crypto.randomUUID(), ...values };
+    const row: DischargeMedication = { id: editingId ?? newId(), ...values };
     const next = editingId ? localRows.map((x) => x.id === editingId ? row : x) : [...localRows, row];
     commit(next);
     setOpen(false);
@@ -1317,7 +1318,7 @@ function RoutingEditor({ rows, locked, saving, onFocus, onSave }: RoutingEditorP
   }
 
   function handleSubmit(values: typeof form.values) {
-    const row: Routing = { id: editingId ?? crypto.randomUUID(), station: values.station as StationType, status: values.status, arrivalDate: values.arrivalDate };
+    const row: Routing = { id: editingId ?? newId(), station: values.station as StationType, status: values.status, arrivalDate: values.arrivalDate };
     const next = editingId ? localRows.map((x) => x.id === editingId ? row : x) : [...localRows, row];
     commit(next);
     setOpen(false);

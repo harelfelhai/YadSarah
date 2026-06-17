@@ -1,4 +1,74 @@
-/* Mantine handles all styling */
+/* Self-hosted fonts (bundled → works offline / CSP default-src 'self') */
+@import '@fontsource/assistant/400.css';
+@import '@fontsource/assistant/600.css';
+@import '@fontsource/assistant/700.css';
+@import '@fontsource/frank-ruhl-libre/500.css';
+@import '@fontsource/frank-ruhl-libre/700.css';
+@import '@fontsource/frank-ruhl-libre/900.css';
+
+:root {
+  --ink: #1c2a39;       /* charcoal-navy — text, headers */
+  --accent: #2e5a7d;    /* muted steel — interactive */
+  --alert: #b23a3a;     /* brick red — urgency + mark only */
+  --paper: #edf0f3;     /* cool technical paper — app bg */
+  --surface: #ffffff;   /* cards / board */
+  --line: #d5dce3;      /* cool hairline */
+  --thead: #eef2f5;     /* table header fill */
+
+  /* Tune Mantine globals to the system */
+  --mantine-color-text: var(--ink);
+}
+
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); }
 #root { min-height: 100vh; }
+
+/* ── Tables, app-wide ──────────────────────────────────────────────────────
+   All table text centered (content + headers); cells vertically centered.
+   Headers carry the institutional serif. Action buttons get a fixed slot so
+   they align down the column regardless of their own width. */
+.mantine-Table-table th,
+.mantine-Table-table td {
+  text-align: center;
+  vertical-align: middle;
+}
+.mantine-Table-thead th {
+  font-family: 'Frank Ruhl Libre', Georgia, serif;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--thead);
+  letter-spacing: 0.01em;
+}
+.mantine-Table-table td .mantine-Button-root { min-width: 96px; }
+/* keep multi-button action cells tidy and centered */
+.mantine-Table-table td .mantine-Group-root { justify-content: center; }
+
+/* ── Login: stack to one column on small screens (form on top) ────────── */
+@media (max-width: 48em) {
+  .login-grid { grid-template-columns: 1fr !important; }
+  .login-form { order: 1 !important; }
+  .login-panel { order: 2 !important; min-height: 200px; }
+}
+
+/* ── Accessibility floor ──────────────────────────────────────────────── */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Motion (restrained, meaningful only) ─────────────────────────────── */
+@keyframes ys-row-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes ys-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+.ys-row-in { animation: ys-row-in 0.32s ease-out both; }
+.ys-overdue { animation: ys-pulse 1.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

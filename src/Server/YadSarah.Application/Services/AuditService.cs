@@ -24,6 +24,10 @@ public class AuditService(AppDbContext db, IHttpContextAccessor http)
     public const string Login = "Login";
     public const string LoginFailed = "LoginFailed";
     public const string LockedOut = "LockedOut";
+    // Demo/seed operations (non-production only) — wiping & generating test data
+    public const string DemoSeeded = "DemoSeeded";
+    public const string DemoQueueFilled = "DemoQueueFilled";
+    public const string DemoQueueCleared = "DemoQueueCleared";
 
     // Uses the current authenticated user from the request context.
     public Task LogAsync(string action, string entityType, Guid entityId = default,

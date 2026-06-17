@@ -176,7 +176,31 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 קבצים: `Application/Services/VisitService.cs` (`GetHistoryAsync`),
 `Api/Controllers/VisitsController.cs`, `Client/src/features/history/HistoryPage.tsx`.
 
-## 13. סיכונים שיוריים (Residual Risks)
+## 13. מצב הדגמה / זריעת נתונים (`/api/demo/*`)
+
+כלי הדגמות שמייצר מאגר נתונים גדול שנראה אמיתי (משתמשים, ~1,000 טיפולים, מאגר תור של 300),
+ומאפשר להזרים מטופלים לתור בלחיצה. **נתוני בדיקה בלבד — לעולם לא נתוני אמת.**
+
+- **שער כפול (חובה):** (1) `[Authorize(Roles="Admin")]`; (2) דגל תצורה `Demo:Enabled` חייב להיות
+  `true`. ברירת המחדל **כבויה** — הדגל מופיע רק ב-`appsettings.Development.json`. בפרודקשן
+  (ללא הדגל) endpoints הפעולה מחזירים **404** — היכולת בלתי-נראית וחסומה לחלוטין.
+- **הרסניות:** `POST /api/demo/seed` מבצע `TRUNCATE` ל-Patients/Visits/MedicalForms/Users/
+  FeedbackReports/AuditLogs/FormLocks/QueueCounters. **נשמרים** מאגר התרופות (`Medications`)
+  וההגדרות (`SystemSettings`) — נתוני-עזר/תצורה אמיתיים, לא נתוני בדיקה.
+- **שאר הפעולות:** `POST /api/demo/fill-queue?count&replace` (מזריק מתוך מאגר ה-300 לתור היום,
+  סטטוסים מעורבים), `POST /api/demo/clear-today` (מנקה את תור היום), `GET /api/demo/status`
+  (ספירות + האם המצב פעיל; השער-לפי-דגל לא חל עליו כדי שה-UI ידע לדווח "כבוי").
+- **תיעוד:** כל פעולה נרשמת ל-audit (`DemoSeeded` / `DemoQueueFilled` / `DemoQueueCleared`)
+  **לאחר** הזריעה, כך שהרשומה שורדת את ה-TRUNCATE.
+- **אימות:** נבדק — admin→200, רופא→403, אנונימי→401; הזריעה מייצרת 17/925/1000/300 ושומרת
+  5,412 תרופות; ID ישראלי עם ספרת ביקורת תקינה; ה-UI (כרטיס "מצב הדגמה" בעמוד ההגדרות)
+  גלוי רק כשהדגל דולק.
+
+קבצים: `Application/Services/DemoDataService.cs`, `Api/Controllers/DemoController.cs`,
+`appsettings.Development.json` (`Demo:Enabled`), `Client/src/api/demo.ts`,
+`Client/src/features/admin/SettingsPage.tsx`.
+
+## 14. סיכונים שיוריים (Residual Risks)
 
 | סיכון | החלטה / בקרה מפצה |
 |------|--------------------|
@@ -185,3 +209,4 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 | סיסמת admin ראשונית (9 תווים) | יש להחליף לסיסמה תואמת-מדיניות לפני עלייה לייצור. |
 | סנכרון תרופות מ-API חיצוני (משרד הבריאות) | מחוץ לנתיב הקריטי; כשל אינו משבית את המערכת. ה-API מאחורי WAF — גיבוי ודאי ע"י ייבוא קובץ. יש לאמת זמינות מהשרת בישראל בעת הפריסה. |
 | ~~שחרור מטופל ללא הגבלת תפקיד~~ (נסגר) | `PATCH /visits/{id}/status` הוגבל ל-`[Authorize(Roles="Reception,ShiftManager,Admin")]` (כמו `Create`/`Update`); רופא/אחות אינם יכולים עוד לשנות סטטוס/לשחרר. הפעולה ממשיכה להירשם כ-`StatusChanged` (מי/מתי/IP). |
+| endpoint הזריעה ההרסני (`/api/demo/seed`) | חסום בפרודקשן ע"י דגל `Demo:Enabled` (ברירת מחדל כבוי → 404) **בנוסף** ל-`Admin` בלבד; מתועד ב-audit. יש לוודא שהדגל אינו מופעל בתצורת הייצור (ראו §13). |

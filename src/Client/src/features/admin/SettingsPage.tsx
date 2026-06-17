@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Card, Group, Stack, Title, Text, Button, Select, Box, Loader, Alert, Badge,
+  Modal, Table, Code, SimpleGrid, Divider, NumberInput,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   IconClock, IconDeviceFloppy, IconInfoCircle, IconLock, IconPill, IconRefresh, IconUpload,
+  IconDatabase, IconUsersGroup, IconPlayerPlay, IconTrash, IconAlertTriangle,
 } from '@tabler/icons-react';
 import { settingsApi } from '../../api/settings';
 import { medicationsApi } from '../../api/medications';
+import { demoApi, type SeedResult } from '../../api/demo';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { useAuthStore } from '../../store/auth';
 
@@ -76,6 +79,52 @@ export default function SettingsPage() {
 
   const formatSync = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : 'מעולם לא';
+
+  // ── Demo mode (presentations) ──
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const [fillCount, setFillCount] = useState<number>(50);
+  const [seedConfirmOpen, setSeedConfirmOpen] = useState(false);
+  const [seedResult, setSeedResult] = useState<SeedResult | null>(null);
+
+  const { data: demoStatus } = useQuery({
+    queryKey: ['demoStatus'],
+    queryFn: () => demoApi.status(),
+    enabled: isAdmin,
+  });
+
+  const refreshAfterDemo = () => {
+    qc.invalidateQueries({ queryKey: ['demoStatus'] });
+    qc.invalidateQueries({ queryKey: ['queue'] });
+    qc.invalidateQueries({ queryKey: ['history'] });
+  };
+
+  const fillMut = useMutation({
+    mutationFn: () => demoApi.fillQueue(fillCount, true),
+    onSuccess: (r) => {
+      refreshAfterDemo();
+      notifications.show({ color: 'green', message: `${r.added} מטופלים נכנסו לתור היום (התור אופס)` });
+    },
+    onError: (e) => notifications.show({ color: 'red', message: apiErrorMessage(e, 'הזרמת התור נכשלה') }),
+  });
+
+  const clearMut = useMutation({
+    mutationFn: () => demoApi.clearToday(),
+    onSuccess: (r) => {
+      refreshAfterDemo();
+      notifications.show({ color: 'green', message: `תור היום נוקה (${r.removed} ביקורים הוסרו)` });
+    },
+    onError: (e) => notifications.show({ color: 'red', message: apiErrorMessage(e, 'ניקוי התור נכשל') }),
+  });
+
+  const seedMut = useMutation({
+    mutationFn: () => demoApi.seed(),
+    onSuccess: (r) => {
+      setSeedConfirmOpen(false);
+      setSeedResult(r);
+      qc.invalidateQueries();
+    },
+    onError: (e) => notifications.show({ color: 'red', message: apiErrorMessage(e, 'איפוס וזריעת הנתונים נכשלו') }),
+  });
 
   if (!isAdmin) {
     return (
@@ -187,6 +236,150 @@ export default function SettingsPage() {
           </Text>
         </Alert>
       </Card>
+
+      {/* ── Demo mode (presentations) — only when enabled (non-production) ── */}
+      {demoStatus?.enabled && (
+        <Card withBorder p="md" radius="md" style={{ borderColor: 'var(--mantine-color-grape-4)' }}>
+          <Group gap="xs" mb="sm">
+            <IconDatabase size={18} />
+            <Text fw={600}>מצב הדגמה (DEMO)</Text>
+            <Badge variant="light" color="grape">לא לפרודקשן</Badge>
+          </Group>
+
+          <Text size="sm" c="dimmed" mb="sm">
+            כלי להדגמות מול המנהל: הזרמת מטופלים לתור בלחיצה, וזריעת מאגר נתונים גדול שנראה אמיתי.
+            פעיל רק כשהדגל <Code>Demo:Enabled</Code> דולק (סביבת פיתוח) — בפרודקשן הכלי מוסתר.
+          </Text>
+
+          <SimpleGrid cols={{ base: 2, sm: 4 }} mb="md">
+            <StatTile label="מטופלים" value={demoStatus.patients} />
+            <StatTile label="ביקורים" value={demoStatus.visits} />
+            <StatTile label="בתור היום" value={demoStatus.todayQueue} />
+            <StatTile label="מאגר זמין" value={demoStatus.poolAvailable} />
+          </SimpleGrid>
+
+          <Group align="flex-end" gap="md">
+            <NumberInput
+              label="כמות לתור"
+              value={fillCount}
+              onChange={(v) => setFillCount(typeof v === 'number' ? v : 50)}
+              min={1}
+              max={200}
+              w={120}
+            />
+            <Button
+              color="grape"
+              leftSection={<IconPlayerPlay size={16} />}
+              loading={fillMut.isPending}
+              onClick={() => fillMut.mutate()}
+            >
+              הזרם לתור (מחליף את תור היום)
+            </Button>
+            <Button
+              variant="outline"
+              color="gray"
+              leftSection={<IconTrash size={16} />}
+              loading={clearMut.isPending}
+              onClick={() => {
+                if (window.confirm('לנקות את כל ביקורי היום מהתור?')) clearMut.mutate();
+              }}
+            >
+              נקה תור היום
+            </Button>
+          </Group>
+
+          <Divider my="md" />
+
+          <Group justify="space-between" align="center">
+            <Box>
+              <Text size="sm" fw={600}>אפס וזרע נתוני הדגמה</Text>
+              <Text size="xs" c="dimmed">
+                מוחק את כל המטופלים/הביקורים/הטפסים/המשתמשים ויוצר ~1,000 טיפולים + מאגר תור.
+                מאגר התרופות וההגדרות נשמרים.
+              </Text>
+            </Box>
+            <Button
+              color="red"
+              variant="light"
+              leftSection={<IconUsersGroup size={16} />}
+              onClick={() => setSeedConfirmOpen(true)}
+            >
+              אפס וזרע
+            </Button>
+          </Group>
+        </Card>
+      )}
+
+      {/* Seed confirmation */}
+      <Modal opened={seedConfirmOpen} onClose={() => setSeedConfirmOpen(false)} title="אישור איפוס וזריעה" centered>
+        <Alert icon={<IconAlertTriangle size={16} />} color="red" mb="md">
+          פעולה הרסנית: כל המטופלים, הביקורים, הטפסים, הדיווחים, יומן הביקורת והמשתמשים יימחקו
+          וייווצרו מחדש. מאגר התרופות וההגדרות יישמרו. המשך?
+        </Alert>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => setSeedConfirmOpen(false)}>ביטול</Button>
+          <Button color="red" loading={seedMut.isPending} onClick={() => seedMut.mutate()}>
+            כן, אפס וזרע
+          </Button>
+        </Group>
+      </Modal>
+
+      {/* Credentials after seeding */}
+      <Modal
+        opened={!!seedResult}
+        onClose={() => setSeedResult(null)}
+        title="נתוני ההדגמה נוצרו"
+        size="lg"
+        centered
+      >
+        {seedResult && (
+          <Stack gap="sm">
+            <Text size="sm">
+              נוצרו <b>{seedResult.users}</b> משתמשים, <b>{seedResult.patients}</b> מטופלים,
+              {' '}<b>{seedResult.visits}</b> ביקורים ומאגר תור של <b>{seedResult.poolPatients}</b>.
+            </Text>
+            <Alert color="orange" icon={<IconAlertTriangle size={16} />}>
+              המשתמשים אופסו — יש להתחבר מחדש. הסיסמה לכל המשתמשים: <Code>{demoStatus?.demoPassword}</Code>
+            </Alert>
+            <Box style={{ maxHeight: 320, overflow: 'auto' }}>
+              <Table striped withTableBorder withColumnBorders stickyHeader>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>שם משתמש</Table.Th>
+                    <Table.Th>שם מלא</Table.Th>
+                    <Table.Th>תפקיד</Table.Th>
+                    <Table.Th>מחלקה</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {seedResult.credentials.map((c) => (
+                    <Table.Tr key={c.username}>
+                      <Table.Td><Code>{c.username}</Code></Table.Td>
+                      <Table.Td>{c.fullName}</Table.Td>
+                      <Table.Td>{c.role}</Table.Td>
+                      <Table.Td>{c.department ?? '—'}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Box>
+            <Group justify="flex-end">
+              <Button color="blue" onClick={() => { setSeedResult(null); clearAuth(); window.location.href = '/login'; }}>
+                התחבר מחדש
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </Stack>
+  );
+}
+
+function StatTile({ label, value }: { label: string; value: number }) {
+  return (
+    <Card withBorder p="xs" radius="md" ta="center">
+      <Text size="xl" fw={700}>{value.toLocaleString('he-IL')}</Text>
+      <Text size="xs" c="dimmed">{label}</Text>
+    </Card>
   );
 }

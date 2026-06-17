@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/assistant": "^5.2.9",
+    "@fontsource/frank-ruhl-libre": "^5.2.8",
     "@mantine/core": "^9.3.1",
     "@mantine/form": "^9.3.1",
     "@mantine/hooks": "^9.3.1",

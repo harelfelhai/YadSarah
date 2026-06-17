@@ -5,6 +5,11 @@ const BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
 let connection: signalR.HubConnection | null = null;
 
+// The form group the user is currently in. SignalR re-establishes the connection and
+// its `.on` handlers on automatic reconnect, but server-side GROUP membership is lost —
+// so we track the active form and re-join it in `onreconnected`.
+let activeFormId: string | null = null;
+
 export function getHub(): signalR.HubConnection {
   if (!connection) {
     connection = new signalR.HubConnectionBuilder()
@@ -13,6 +18,12 @@ export function getHub(): signalR.HubConnection {
       })
       .withAutomaticReconnect()
       .build();
+
+    connection.onreconnected(() => {
+      if (activeFormId) {
+        connection?.invoke('JoinForm', activeFormId).catch(() => {});
+      }
+    });
   }
   return connection;
 }
@@ -38,11 +49,21 @@ export function onQueueUpdate(handler: (update: QueueUpdate) => void) {
 // ─── Form presence & locking ───────────────────────────────────────────────
 
 export async function joinForm(formId: string) {
-  await getHub().invoke('JoinForm', formId);
+  activeFormId = formId;
+  try {
+    await getHub().invoke('JoinForm', formId);
+  } catch {
+    // Connection not ready / reconnecting — onreconnected will re-join activeFormId.
+  }
 }
 
 export async function leaveForm(formId: string) {
-  await getHub().invoke('LeaveForm', formId);
+  if (activeFormId === formId) activeFormId = null;
+  try {
+    await getHub().invoke('LeaveForm', formId);
+  } catch {
+    // Already disconnected — nothing to leave.
+  }
 }
 
 export function onPresenceUpdate(handler: (update: PresenceUpdate) => void) {

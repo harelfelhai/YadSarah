@@ -201,7 +201,9 @@ export default function ReceptionPage() {
       const visit = await visitsApi.create({
         patientId: patient.id,
         status: 'Waiting',
-        admissionDate: now.toISOString().split('T')[0],
+        // Local date (en-CA → YYYY-MM-DD) to stay consistent with the local admissionTime
+        // below; toISOString() would use UTC and shift the date near midnight.
+        admissionDate: now.toLocaleDateString('en-CA'),
         admissionTime: now.toTimeString().slice(0, 5),
         ...visitForm.values,
         commitmentExpiryDate: visitForm.values.commitmentExpiryDate || undefined,
