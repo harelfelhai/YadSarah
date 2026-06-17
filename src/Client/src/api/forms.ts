@@ -28,19 +28,4 @@ export const formsApi = {
 
   releaseLock: (id: string, section: string) =>
     api.delete<void>(`/forms/${id}/locks/${section}`),
-
-  export: async (id: string) => {
-    const token = localStorage.getItem('auth_token') ?? '';
-    const resp = await fetch(`/api/forms/${id}/export`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!resp.ok) return;
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `form-export-${id}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  },
 };

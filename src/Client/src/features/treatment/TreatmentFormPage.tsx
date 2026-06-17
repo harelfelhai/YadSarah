@@ -9,7 +9,7 @@ import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconCheck, IconClock, IconDownload, IconEdit, IconInfoCircle, IconLock, IconLockOpen,
+  IconCheck, IconClock, IconEdit, IconInfoCircle, IconLock, IconLockOpen,
   IconPlus, IconPrinter, IconTrash, IconWriting,
 } from '@tabler/icons-react';
 import { visitsApi } from '../../api/visits';
@@ -360,13 +360,6 @@ export default function TreatmentFormPage() {
       <Group justify="space-between">
         <Button variant="subtle" onClick={() => navigate('/queue')}>חזרה לתור</Button>
         <Group>
-          <Button
-            leftSection={<IconDownload size={16} />}
-            variant="outline"
-            onClick={() => activeForm && formsApi.export(activeForm.id)}
-          >
-            ייצוא (JSON)
-          </Button>
           {formSigned && activeForm && visit && (
             <Button
               leftSection={<IconPrinter size={16} />}
@@ -439,21 +432,39 @@ interface DrugAutocompleteProps {
   onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
 }
 
+// Label for a single medication option. Never exposes the Hebrew name:
+// `${englishName} — ${registrationNumber}`, or just the registration number when
+// there is no English name.
+function medicationLabel(m: import('../../api/medications').Medication): string {
+  const eng = m.englishName?.trim();
+  return eng ? `${eng} — ${m.registrationNumber}` : m.registrationNumber;
+}
+
 function DrugAutocomplete({ label = 'שם תרופה *', value, error, onChange, onBlur, onFocus }: DrugAutocompleteProps) {
   const [data, setData] = useState<string[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const handleChange = (v: string) => {
-    onChange?.(v);
+  // Fetch medications for a query (empty query → top results, so the dropdown
+  // opens with a populated list on focus). Debounced ~250ms.
+  const runSearch = useCallback((q: string) => {
     if (timer.current) clearTimeout(timer.current);
-    const q = v.trim();
-    if (!q) { setData([]); return; }
     timer.current = setTimeout(async () => {
       try {
-        const res = await medicationsApi.search(q, 20);
-        setData(res.map((m) => `${m.englishName || m.hebrewName} (${m.registrationNumber})`));
+        const res = await medicationsApi.search(q.trim(), 20);
+        setData(res.map(medicationLabel));
       } catch { setData([]); }
     }, 250);
+  }, []);
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Open the dropdown with an initial list of medications.
+    if (data.length === 0) runSearch(value ?? '');
+    onFocus?.(e);
+  };
+
+  const handleChange = (v: string) => {
+    onChange?.(v);
+    runSearch(v);
   };
 
   return (
@@ -464,7 +475,7 @@ function DrugAutocomplete({ label = 'שם תרופה *', value, error, onChange,
       error={error}
       onChange={handleChange}
       onBlur={onBlur}
-      onFocus={onFocus}
+      onFocus={handleFocus}
       limit={20}
       placeholder="הקלד שם תרופה — מהמאגר הרשמי"
       comboboxProps={{ withinPortal: true }}
