@@ -180,8 +180,8 @@ export default function QueuePage() {
                 <Table.Th>ת.ז / מזהה</Table.Th>
                 <Table.Th style={{ width: 56 }}>גיל</Table.Th>
                 <Table.Th style={{ width: 90 }}>שעת הגעה</Table.Th>
-                <Table.Th style={{ width: 96 }}>המתנה</Table.Th>
-                <Table.Th>מחלקה</Table.Th>
+                <Table.Th style={{ width: 120, whiteSpace: 'nowrap' }}>המתנה</Table.Th>
+                <Table.Th style={{ minWidth: 150, whiteSpace: 'nowrap' }}>מחלקה</Table.Th>
                 <Table.Th>סיבת קבלה</Table.Th>
                 <Table.Th style={{ width: 110 }}>סטטוס</Table.Th>
                 <Table.Th style={{ width: 230 }}>פעולות</Table.Th>
