@@ -16,6 +16,7 @@ import { visitsApi } from '../../api/visits';
 import { formsApi } from '../../api/forms';
 import { medicationsApi } from '../../api/medications';
 import ReauthModal from '../../components/ReauthModal';
+import DateField from '../../components/DateField';
 import { useAuthStore } from '../../store/auth';
 import { newId } from '../../utils/id';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
@@ -87,6 +88,11 @@ export default function TreatmentFormPage() {
   const formRef = useRef<MedicalForm | null>(null);
   const saveChain = useRef<Promise<void>>(Promise.resolve());
   const debounce = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Guards the post-sign auto-open of the printable summary: holds the id of the
+  // form whose summary we already opened, so the summary opens EXACTLY ONCE right
+  // after the local sign action and never re-opens on close, re-renders, or a
+  // FormSigned SignalR echo.
+  const openedForSignId = useRef<string | null>(null);
 
   useEffect(() => { formRef.current = activeForm; }, [activeForm]);
 
@@ -231,8 +237,14 @@ export default function TreatmentFormPage() {
     setSignConfirm(false);
     notifications.show({ color: 'green', message: 'הטופס נחתם והטיפול הסתיים' });
     queryClient.invalidateQueries({ queryKey: ['queue'] });
-    // Open the printable PDF summary automatically after signing.
-    navigate(`/visits/${visitId}/summary?print=1`);
+    // Open the printable PDF summary automatically after signing — but only once
+    // per signed form. The ref guard ensures that returning to this page (which
+    // re-renders with formSigned=true) or a FormSigned SignalR echo never re-opens
+    // the summary the user has already closed.
+    if (openedForSignId.current !== updated.id) {
+      openedForSignId.current = updated.id;
+      navigate(`/visits/${visitId}/summary?print=1`);
+    }
   };
 
   const isDoctor = user?.role === 'Doctor';
@@ -801,7 +813,7 @@ function AllergiesEditor({ rows, locked, saving, onFocus, onSave }: AllergyEdito
             <TextInput label="שם תרופה *" {...form.getInputProps('drugName')} />
             <TextInput label="סוג" {...form.getInputProps('type')} />
             <TextInput label="השפעה" {...form.getInputProps('effect')} />
-            <TextInput label="ת.קביעה" type="date" {...form.getInputProps('determinationDate')} />
+            <DateField label="ת.קביעה" {...form.getInputProps('determinationDate')} />
             <Group justify="flex-end"><Button type="submit" size="sm">שמור</Button></Group>
           </Stack>
         </form>
@@ -1013,7 +1025,7 @@ function VitalSignsEditor({ rows, locked, saving, onFocus, onSave }: VitalSignsE
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="sm">
             <Group grow>
-              <TextInput label="תאריך *" type="date" {...form.getInputProps('date')} />
+              <DateField label="תאריך *" {...form.getInputProps('date')} />
               <TextInput label="שעה *" type="time" {...form.getInputProps('time')} />
             </Group>
             <Group grow align="flex-start">
@@ -1140,7 +1152,7 @@ function TreatmentsEditor({ rows, locked, saving, onFocus, onSave }: TreatmentsE
           <Stack gap="xs">
             <DrugAutocomplete label="שם תרופה *" {...form.getInputProps('drugName')} />
             <TextInput label="מינון" {...form.getInputProps('dosage')} />
-            <TextInput label="תאריך התחלה" type="date" {...form.getInputProps('startDate')} />
+            <DateField label="תאריך התחלה" {...form.getInputProps('startDate')} />
             <TextInput label="משך טיפול" placeholder="לדוגמה: 5 ימים" {...form.getInputProps('duration')} />
             <Textarea label="הערות" {...form.getInputProps('notes')} />
             <Group justify="flex-end"><Button type="submit" size="sm">שמור</Button></Group>
@@ -1216,8 +1228,8 @@ function DiagnosesEditor({ rows, locked, saving, onFocus, onSave }: DiagnosesEdi
           <Stack gap="xs">
             <TextInput label="אבחנה *" {...form.getInputProps('diagnosis')} />
             <Group grow>
-              <TextInput label="ת.התחלה" type="date" {...form.getInputProps('startDate')} />
-              <TextInput label="ת.סיום" type="date" {...form.getInputProps('endDate')} />
+              <DateField label="ת.התחלה" {...form.getInputProps('startDate')} />
+              <DateField label="ת.סיום" {...form.getInputProps('endDate')} />
             </Group>
             <Group grow>
               <TextInput label="סטטוס" {...form.getInputProps('status')} />
@@ -1363,7 +1375,7 @@ function RoutingEditor({ rows, locked, saving, onFocus, onSave }: RoutingEditorP
           <Stack gap="xs">
             <Select label="תחנה *" data={STATION_OPTIONS} searchable {...form.getInputProps('station')} />
             <TextInput label="סטטוס" {...form.getInputProps('status')} />
-            <TextInput label="תאריך הגעה" type="date" {...form.getInputProps('arrivalDate')} />
+            <DateField label="תאריך הגעה" {...form.getInputProps('arrivalDate')} />
             <Group justify="flex-end"><Button type="submit" size="sm">שמור</Button></Group>
           </Stack>
         </form>

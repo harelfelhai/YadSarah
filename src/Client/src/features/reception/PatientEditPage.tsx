@@ -11,6 +11,7 @@ import { IconAlertCircle } from '@tabler/icons-react';
 import { patientsApi } from '../../api/patients';
 import { useAuthStore } from '../../store/auth';
 import type { IdentityType, Patient } from '../../types';
+import DateField from '../../components/DateField';
 
 const IDENTITY_TYPES: IdentityType[] = [
   'תעודת זהות', 'דרכון', 'זמני', 'ת"ז פלסטינית', 'יילוד', 'לא ידוע',
@@ -137,7 +138,7 @@ export default function PatientEditPage() {
             <TextInput label="שם האב" {...form.getInputProps('fatherName')} />
           </Grid.Col>
           <Grid.Col span={3}>
-            <TextInput label="תאריך לידה" type="date" {...form.getInputProps('birthDate')} />
+            <DateField label="תאריך לידה" {...form.getInputProps('birthDate')} />
           </Grid.Col>
           <Grid.Col span={2}>
             <TextInput label="ארץ לידה" {...form.getInputProps('birthCountry')} />

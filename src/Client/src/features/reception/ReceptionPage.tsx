@@ -14,6 +14,7 @@ import { patientsApi } from '../../api/patients';
 import { visitsApi } from '../../api/visits';
 import type { IdentityType, Patient, Visit } from '../../types';
 import StickerPrint from './StickerPrint';
+import DateField from '../../components/DateField';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -346,7 +347,7 @@ export default function ReceptionPage() {
                   <TextInput label="שם האב" {...patientForm.getInputProps('fatherName')} />
                 </Grid.Col>
                 <Grid.Col span={3}>
-                  <TextInput label="תאריך לידה" type="date" {...patientForm.getInputProps('birthDate')} />
+                  <DateField label="תאריך לידה" {...patientForm.getInputProps('birthDate')} />
                 </Grid.Col>
                 <Grid.Col span={2}>
                   <TextInput label="ארץ לידה" {...patientForm.getInputProps('birthCountry')} />
@@ -497,7 +498,7 @@ export default function ReceptionPage() {
                   <TextInput label="מספר התחייבות" {...visitForm.getInputProps('commitmentNumber')} />
                 </Grid.Col>
                 <Grid.Col span={4}>
-                  <TextInput label="תוקף התחייבות" type="date" {...visitForm.getInputProps('commitmentExpiryDate')} />
+                  <DateField label="תוקף התחייבות" {...visitForm.getInputProps('commitmentExpiryDate')} />
                 </Grid.Col>
                 <Grid.Col span={4}>
                   <TextInput label="פעילות בקבלה" {...visitForm.getInputProps('receptionActivity')} />

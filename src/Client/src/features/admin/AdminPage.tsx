@@ -11,6 +11,7 @@ import { IconPlus, IconEdit, IconRefresh } from '@tabler/icons-react';
 import { usersApi, type CreateUserPayload, type UpdateUserPayload } from '../../api/users';
 import { DEPARTMENTS } from '../../constants/departments';
 import type { User, UserRole } from '../../types';
+import DateField from '../../components/DateField';
 
 const ROLES: { value: UserRole; label: string }[] = [
   { value: 'Reception', label: 'קבלה' },
@@ -322,9 +323,8 @@ export default function AdminPage() {
                 clearable
                 {...form.getInputProps('gender')}
               />
-              <TextInput
+              <DateField
                 label="ת. לידה"
-                type="date"
                 {...form.getInputProps('dateOfBirth')}
               />
               <TextInput label="טלפון" {...form.getInputProps('phone')} />
@@ -341,9 +341,8 @@ export default function AdminPage() {
                 mt="xl"
                 {...form.getInputProps('isActive', { type: 'checkbox' })}
               />
-              <TextInput
+              <DateField
                 label="תוקף חשבון"
-                type="date"
                 {...form.getInputProps('accountExpiresAt')}
               />
             </SimpleGrid>

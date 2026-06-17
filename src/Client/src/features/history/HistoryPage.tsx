@@ -10,6 +10,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { visitsApi, type VisitHistoryItem } from '../../api/visits';
 import { DEPARTMENTS } from '../../constants/departments';
 import type { VisitStatus } from '../../types';
+import DateField from '../../components/DateField';
 
 const STATUS_LABEL: Record<VisitStatus, string> = {
   Waiting: 'ממתין', Called: 'נקרא', InTreatment: 'בטיפול',
@@ -100,8 +101,8 @@ export default function HistoryPage() {
             w={170}
           />
           <Select label="מחלקה" data={[...DEPARTMENTS]} clearable value={department} onChange={onFilter(setDepartment)} w={150} />
-          <TextInput label="מתאריך" type="date" value={from} onChange={(e) => onFilter(setFrom)(e.currentTarget.value)} w={150} />
-          <TextInput label="עד תאריך" type="date" value={to} onChange={(e) => onFilter(setTo)(e.currentTarget.value)} w={150} />
+          <DateField label="מתאריך" value={from} onChange={(e) => onFilter(setFrom)(e.currentTarget.value)} w={150} />
+          <DateField label="עד תאריך" value={to} onChange={(e) => onFilter(setTo)(e.currentTarget.value)} w={150} />
         </Group>
 
         <Group justify="space-between" mt="sm">
