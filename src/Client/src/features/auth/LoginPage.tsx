@@ -96,13 +96,13 @@ export default function LoginPage() {
         </Box>
       </Center>
 
-      {/* Brand panel */}
+      {/* Brand panel — light, so the official blue/red logo reads as the hero */}
       <Box
         className="login-panel"
         style={{
           order: 1,
-          background: 'linear-gradient(180deg, var(--ink) 0%, #16222e 100%)',
-          color: '#fff',
+          background: 'var(--surface)',
+          borderInlineEnd: '1px solid var(--line)',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
@@ -111,39 +111,32 @@ export default function LoginPage() {
           overflow: 'hidden',
         }}
       >
-        {/* faint technical grid */}
+        {/* faint technical grid (ink, very low opacity) */}
         <Box
           aria-hidden
           style={{
-            position: 'absolute', inset: 0, opacity: 0.06, pointerEvents: 'none',
+            position: 'absolute', inset: 0, opacity: 0.04, pointerEvents: 'none',
             backgroundImage:
-              'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
+              'linear-gradient(var(--ink) 1px, transparent 1px), linear-gradient(90deg, var(--ink) 1px, transparent 1px)',
             backgroundSize: '28px 28px',
           }}
         />
-        <Box style={{ position: 'relative' }}>
-          <Logo size={48} color="white" />
-        </Box>
 
-        <Stack gap="xs" style={{ position: 'relative' }}>
-          <Group gap={8} c="var(--mantine-color-steel-3)">
-            <IconActivityHeartbeat size={18} />
-            <Text size="sm" fw={600} style={{ letterSpacing: '0.04em' }}>מערכת ניהול מוקד רפואה דחופה</Text>
-          </Group>
-          <Title
-            order={1}
-            style={{ color: '#fff', fontSize: 40, lineHeight: 1.1, fontWeight: 900 }}
-          >
-            מלר״ד יד שרה
-          </Title>
-          <Text size="sm" c="var(--mantine-color-slate-3)" maw={420}>
+        <Group gap={8} c="var(--accent)" style={{ position: 'relative' }}>
+          <IconActivityHeartbeat size={18} />
+          <Text size="sm" fw={700} style={{ letterSpacing: '0.04em' }}>מערכת ניהול מוקד רפואה דחופה</Text>
+        </Group>
+
+        <Center style={{ position: 'relative', flex: 1 }}>
+          <Logo size={150} />
+        </Center>
+
+        <Stack gap={4} style={{ position: 'relative' }}>
+          <Text size="sm" c="dimmed" maw={440}>
             קבלה, תור, טיפול ותיעוד רפואי — מערכת פנים-ארגונית מאובטחת לניהול המוקד.
           </Text>
+          <Text size="xs" c="var(--mantine-color-slate-5)">גרסת הדגמה · נתוני בדיקה בלבד</Text>
         </Stack>
-
-        <Text size="xs" c="var(--mantine-color-slate-4)" style={{ position: 'relative' }}>
-          גרסת הדגמה · נתוני בדיקה בלבד
-        </Text>
       </Box>
     </Box>
   );

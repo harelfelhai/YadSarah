@@ -70,7 +70,19 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" color="#fff" />
-            <Logo size={32} color="white" subtitle="רפואה דחופה" />
+            <Box
+              style={{
+                background: '#fff',
+                borderRadius: 4,
+                padding: '4px 9px',
+                display: 'flex',
+                alignItems: 'center',
+                lineHeight: 0,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.28)',
+              }}
+            >
+              <Logo size={32} />
+            </Box>
           </Group>
 
           <Group gap="lg" wrap="nowrap">
