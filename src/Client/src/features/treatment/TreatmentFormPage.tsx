@@ -148,8 +148,38 @@ export default function TreatmentFormPage() {
           setLocks((prev) => { const n = { ...prev }; delete n[info.sectionName]; return n; });
       }),
       onFormSectionUpdated((upd) => {
-        if (upd.formId === activeForm.id && upd.editedByUserId !== user?.id) {
-          // Another user changed a field — pull the authoritative form
+        if (upd.formId !== activeForm.id || upd.editedByUserId === user?.id) return;
+        // Drop any stale local text override for the section another user just
+        // changed — otherwise it would permanently shadow the incoming value and
+        // the two views would diverge. (Section locks prevent us from editing the
+        // same section concurrently, so we're not clobbering live local input.)
+        setLocalTextValues((p) => {
+          if (!(upd.sectionName in p)) return p;
+          const n = { ...p }; delete n[upd.sectionName]; return n;
+        });
+        // Apply the pushed value DIRECTLY to local state — the same proven pattern
+        // the lock/presence events use — so the change shows immediately, with no
+        // refetch round-trip (which in practice did not repaint the view). The event
+        // already carries the authoritative value, the new form version, and who
+        // edited it. Fall back to a refetch only if the payload lacks the data.
+        if (upd.data !== undefined) {
+          setActiveForm((prev) => {
+            if (!prev || prev.id !== upd.formId) return prev;
+            return {
+              ...prev,
+              [upd.sectionName]: upd.data,
+              version: upd.version ?? prev.version,
+              fieldEdits: {
+                ...prev.fieldEdits,
+                [upd.sectionName]: {
+                  userId: upd.editedByUserId ?? '',
+                  userName: upd.editedByName ?? '',
+                  at: upd.editedAt ?? new Date().toISOString(),
+                },
+              },
+            } as MedicalForm;
+          });
+        } else {
           queryClient.invalidateQueries({ queryKey: ['forms', visitId] });
         }
       }),
@@ -185,20 +215,50 @@ export default function TreatmentFormPage() {
     saveChain.current = saveChain.current.then(async () => {
       const cur = formRef.current;
       if (!cur) return;
+      const curRec = cur as unknown as Record<string, unknown>;
       // Skip redundant text saves (value unchanged)
-      if (typeof value === 'string' && value === String((cur as unknown as Record<string, unknown>)[section] ?? '')) {
+      if (typeof value === 'string' && value === String(curRec[section] ?? '')) {
         return;
       }
       setSaveState((s) => ({ ...s, [section]: 'saving' }));
-      try {
-        const updated = await formsApi.updateSection(cur.id, section, value, cur.version) as unknown as MedicalForm;
-        formRef.current = updated;
-        setActiveForm(updated);
-        setSaveState((s) => ({ ...s, [section]: 'saved' }));
-      } catch (e) {
-        setSaveState((s) => ({ ...s, [section]: 'error' }));
-        notifications.show({ color: 'red', message: apiErrorMessage(e, 'שמירה נכשלה') });
-        queryClient.invalidateQueries({ queryKey: ['forms', visitId] });
+
+      // Baseline value of THIS section as we last knew it from the server. Used to
+      // distinguish a real same-section conflict (must surface) from a false one
+      // caused by another user saving a DIFFERENT section (just re-base and retry).
+      const baseline = JSON.stringify(curRec[section] ?? null);
+      let version = cur.version;
+
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const updated = await formsApi.updateSection(cur.id, section, value, version) as unknown as MedicalForm;
+          formRef.current = updated;
+          setActiveForm(updated);
+          setSaveState((s) => ({ ...s, [section]: 'saved' }));
+          return;
+        } catch (e) {
+          const conflict = (e as { status?: number }).status === 409;
+          if (conflict && attempt < 4) {
+            // Pull the authoritative form. The form-level version bumps on ANY field
+            // save, so a conflict usually means a *different* field changed. If OUR
+            // field is still what we started from, it's safe to re-base our write on
+            // top of the latest version (the edits merge). Only a genuine change to
+            // OUR field is surfaced as an error.
+            try {
+              const fresh = await formsApi.getById(cur.id) as unknown as MedicalForm;
+              formRef.current = fresh;
+              setActiveForm(fresh);
+              const freshSection = JSON.stringify((fresh as unknown as Record<string, unknown>)[section] ?? null);
+              if (freshSection === baseline) {
+                version = fresh.version;
+                continue; // re-base + retry — no error shown
+              }
+            } catch { /* fall through to surfacing the original error */ }
+          }
+          setSaveState((s) => ({ ...s, [section]: 'error' }));
+          notifications.show({ color: 'red', message: apiErrorMessage(e, 'שמירה נכשלה') });
+          queryClient.invalidateQueries({ queryKey: ['forms', visitId] });
+          return;
+        }
       }
     });
   }, [queryClient, visitId]);

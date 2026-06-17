@@ -10,13 +10,39 @@ let connection: signalR.HubConnection | null = null;
 // so we track the active form and re-join it in `onreconnected`.
 let activeFormId: string | null = null;
 
+// Set true only on explicit logout so the self-healing reconnect below doesn't fight it.
+let intentionallyStopped = false;
+let restartTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Tracks the in-flight initial start() so startHub() and joinForm() share ONE
+// connect attempt (never double-start) and can both await it.
+let startPromise: Promise<void> | null = null;
+
+// Keep trying to bring the connection back after it closes for good. A brief server
+// blip (e.g. a restart) otherwise left the default policy exhausted after ~30s and the
+// connection permanently dead — silently killing presence + live form sync until a
+// manual page refresh.
+function scheduleRestart(delay = 3000) {
+  if (intentionallyStopped || restartTimer) return;
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    if (intentionallyStopped) return;
+    startHub().catch(() => scheduleRestart(Math.min(delay * 2, 15000)));
+  }, delay);
+}
+
 export function getHub(): signalR.HubConnection {
   if (!connection) {
     connection = new signalR.HubConnectionBuilder()
       .withUrl(`${BASE_URL}/hubs/main`, {
         accessTokenFactory: () => localStorage.getItem('auth_token') ?? '',
       })
-      .withAutomaticReconnect()
+      // Retry indefinitely (capped exponential backoff) instead of the default policy
+      // that gives up after ~30s — so the connection survives a transient outage.
+      .withAutomaticReconnect({
+        nextRetryDelayInMilliseconds: (ctx) =>
+          Math.min(1000 * 2 ** Math.min(ctx.previousRetryCount, 4), 10000),
+      })
       .build();
 
     connection.onreconnected(() => {
@@ -24,18 +50,49 @@ export function getHub(): signalR.HubConnection {
         connection?.invoke('JoinForm', activeFormId).catch(() => {});
       }
     });
+
+    // Closed despite auto-reconnect (or it never started) → keep trying, unless we
+    // logged out on purpose.
+    connection.onclose(() => {
+      if (!intentionallyStopped) scheduleRestart();
+    });
   }
   return connection;
 }
 
-export async function startHub(): Promise<void> {
+// Ensure the socket is connected, starting it if needed. Returns a promise that
+// resolves once connected. Crucially, as soon as the socket comes up it (re)joins
+// the active form — this covers the INITIAL connect, not just reconnects
+// (`onreconnected` only fires on reconnect). Without this, a form opened on a fresh
+// page load could invoke JoinForm before the socket was ready, fail silently, and
+// end up connected but NOT in the group → no presence, no locks, no live updates.
+function ensureConnected(): Promise<void> {
   const hub = getHub();
-  if (hub.state === signalR.HubConnectionState.Disconnected) {
-    await hub.start();
+  if (hub.state === signalR.HubConnectionState.Connected) return Promise.resolve();
+  if (hub.state === signalR.HubConnectionState.Disconnected && !startPromise) {
+    startPromise = hub.start()
+      .then(() => {
+        if (activeFormId) hub.invoke('JoinForm', activeFormId).catch(() => {});
+      })
+      .catch((e) => {
+        // Server not up yet (e.g. opened the app before the API) — retry in background.
+        scheduleRestart();
+        throw e;
+      })
+      .finally(() => { startPromise = null; });
   }
+  // Mid-connect → await that attempt; reconnecting → resolve and let onreconnected re-join.
+  return startPromise ?? Promise.resolve();
+}
+
+export async function startHub(): Promise<void> {
+  intentionallyStopped = false;
+  await ensureConnected();
 }
 
 export async function stopHub(): Promise<void> {
+  intentionallyStopped = true;
+  if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
   await connection?.stop();
 }
 
@@ -51,9 +108,12 @@ export function onQueueUpdate(handler: (update: QueueUpdate) => void) {
 export async function joinForm(formId: string) {
   activeFormId = formId;
   try {
+    // Wait for the socket to be connected before joining — otherwise the invoke
+    // throws and is swallowed, leaving us connected but NOT in the group.
+    await ensureConnected();
     await getHub().invoke('JoinForm', formId);
   } catch {
-    // Connection not ready / reconnecting — onreconnected will re-join activeFormId.
+    // Still not ready / reconnecting — the start chain or onreconnected re-joins activeFormId.
   }
 }
 
