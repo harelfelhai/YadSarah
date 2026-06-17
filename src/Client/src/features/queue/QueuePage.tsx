@@ -172,7 +172,7 @@ export default function QueuePage() {
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1080}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
@@ -234,7 +234,7 @@ export default function QueuePage() {
                         {STATUS_LABEL[visit.status]}
                       </Badge>
                     </Table.Td>
-                    <Table.Td style={{ overflowX: 'auto' }}>
+                    <Table.Td>
                       <Group gap="xs" justify="center" wrap="nowrap">
                         {isClinical && visit.status === 'Waiting' && (
                           <Button size="xs" variant="light" onClick={() => callPatient(visit)}>
