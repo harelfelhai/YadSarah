@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using YadSarah.Domain.Entities;
 using YadSarah.Infrastructure.Data;
@@ -33,6 +34,65 @@ public class MedicationCatalogService(AppDbContext db)
             .OrderBy(m => m.HebrewName)
             .Take(take)
             .ToListAsync();
+    }
+
+    /// <summary>
+    /// The drug names a doctor uses most, across the medication sections (discharge meds,
+    /// treatments, administration orders) of the forms THEY signed. Returns the raw
+    /// drugName strings (already in "english — regNo" label form for catalog picks),
+    /// most-used first. Empty for users who haven't signed forms (e.g. nurses) → caller
+    /// falls back to a plain catalog list.
+    /// </summary>
+    public async Task<List<string>> GetFrequentForDoctorAsync(Guid userId, int take)
+    {
+        take = Math.Clamp(take, 1, 50);
+
+        var rows = await db.MedicalForms.AsNoTracking()
+            .Where(f => f.IsSigned && f.SignedByUserId == userId)
+            .Select(f => new { f.DischargeMedicationsJson, f.TreatmentsJson, f.AdministrationOrdersJson })
+            .ToListAsync();
+
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows)
+        {
+            AddDrugNames(r.DischargeMedicationsJson, counts);
+            AddDrugNames(r.TreatmentsJson, counts);
+            AddDrugNames(r.AdministrationOrdersJson, counts);
+        }
+
+        return counts
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key)
+            .Take(take)
+            .Select(kv => kv.Key)
+            .ToList();
+    }
+
+    // Parse a JSON array of {drugName, ...} objects and tally each non-empty drugName.
+    private static void AddDrugNames(string? json, Dictionary<string, int> counts)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return;
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                if (el.ValueKind != JsonValueKind.Object) continue;
+                foreach (var prop in el.EnumerateObject())
+                {
+                    if (!string.Equals(prop.Name, "drugName", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var name = prop.Value.GetString()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(name))
+                            counts[name] = counts.GetValueOrDefault(name) + 1;
+                    }
+                    break;
+                }
+            }
+        }
+        catch { /* skip malformed JSON defensively */ }
     }
 
     public Task<int> CountActiveAsync() => db.Medications.CountAsync(m => m.IsActive);

@@ -35,6 +35,12 @@ public class MedicationsController(
         }));
     }
 
+    // GET /api/medications/frequent?take=10  → the signed-in doctor's most-used drugs,
+    // for pre-populating the medication picker on focus (before any search).
+    [HttpGet("frequent")]
+    public async Task<IActionResult> Frequent([FromQuery] int take = 10)
+        => Ok(await catalog.GetFrequentForDoctorAsync(UserId, take));
+
     // GET /api/medications/status  → sync metadata for the admin settings screen
     [HttpGet("status")]
     [Authorize(Roles = "Admin")]

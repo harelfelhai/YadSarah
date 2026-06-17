@@ -469,8 +469,13 @@ function DrugAutocomplete({ label = 'שם תרופה *', value, error, onChange,
   }, []);
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    // Open the dropdown with an initial list of medications.
-    if (data.length === 0) runSearch(value ?? '');
+    // Open with the doctor's most-frequent medications; fall back to a catalog list.
+    if (data.length === 0) {
+      if (timer.current) clearTimeout(timer.current);
+      medicationsApi.frequent(10)
+        .then((names) => { if (names.length > 0) setData(names); else runSearch(value ?? ''); })
+        .catch(() => runSearch(value ?? ''));
+    }
     onFocus?.(e);
   };
 

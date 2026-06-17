@@ -23,6 +23,11 @@ export const medicationsApi = {
   search: (q: string, take = 20) =>
     api.get<Medication[]>(`/medications?q=${encodeURIComponent(q)}&take=${take}`),
 
+  // The signed-in doctor's most-frequently-used drug names (already in
+  // "english — regNo" label form). Shown on focus, before any search.
+  frequent: (take = 10) =>
+    api.get<string[]>(`/medications/frequent?take=${take}`),
+
   getStatus: () => api.get<MedicationStatus>('/medications/status'),
 
   sync: () => api.post<MedicationSyncResponse>('/medications/sync', {}),
