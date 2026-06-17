@@ -234,8 +234,8 @@ export default function QueuePage() {
                         {STATUS_LABEL[visit.status]}
                       </Badge>
                     </Table.Td>
-                    <Table.Td>
-                      <Group gap="xs" justify="center">
+                    <Table.Td style={{ overflowX: 'auto' }}>
+                      <Group gap="xs" justify="center" wrap="nowrap">
                         {isClinical && visit.status === 'Waiting' && (
                           <Button size="xs" variant="light" onClick={() => callPatient(visit)}>
                             קרא למטופל
