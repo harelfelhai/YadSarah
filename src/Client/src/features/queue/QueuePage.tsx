@@ -172,7 +172,7 @@ export default function QueuePage() {
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1080}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1320} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
