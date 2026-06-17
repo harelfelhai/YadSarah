@@ -15,6 +15,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<Medication> Medications => Set<Medication>();
     public DbSet<FeedbackReport> FeedbackReports => Set<FeedbackReport>();
+    public DbSet<Workstation> Workstations => Set<Workstation>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -39,6 +40,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(v => v.Id);
             e.HasOne(v => v.Patient).WithMany(p => p.Visits).HasForeignKey(v => v.PatientId);
             e.Property(v => v.Status).HasConversion<string>();
+            e.Property(v => v.TreatingUserRole).HasConversion<string>();
             e.HasIndex(v => v.Status);
             // Auto-increment queue number per day handled in service layer
         });
@@ -115,6 +117,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(f => f.Status).HasConversion<string>();
             e.HasIndex(f => f.Status);
             e.HasIndex(f => f.CreatedAt);
+        });
+
+        // Workstation — one row per LAN computer (device id → fixed room)
+        b.Entity<Workstation>(e =>
+        {
+            e.HasKey(w => w.Id);
+            e.Property(w => w.DeviceId).HasMaxLength(120).IsRequired();
+            e.HasIndex(w => w.DeviceId).IsUnique();
+            e.Property(w => w.RoomName).HasMaxLength(60).IsRequired();
+            // Store role as its string name, consistent with User.Role / Visit.TreatingUserRole
+            e.Property(w => w.CurrentUserRole).HasConversion<string>();
         });
     }
 }

@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,10 +13,14 @@ namespace YadSarah.Api.Controllers;
 [ApiController]
 [Route("api/visits")]
 [Authorize]
-public class VisitsController(VisitService svc, IHubContext<MainHub> hub, AuditService audit) : ControllerBase
+public class VisitsController(
+    VisitService svc, IHubContext<MainHub> hub, AuditService audit, WorkstationService workstations) : ControllerBase
 {
     private Guid UserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
+    private string UserName => User.FindFirstValue("fullName") ?? User.Identity?.Name ?? "";
+    private UserRole CallerRole =>
+        Enum.TryParse<UserRole>(User.FindFirstValue(ClaimTypes.Role), out var r) ? r : UserRole.Reception;
 
     [HttpGet("queue")]
     public async Task<IActionResult> GetQueue([FromQuery] bool all = false) =>
@@ -86,22 +91,48 @@ public class VisitsController(VisitService svc, IHubContext<MainHub> hub, AuditS
     }
 
     [HttpPatch("{id:guid}/status")]
-    [Authorize(Roles = "Reception,ShiftManager,Admin")]
     public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateStatusRequest req)
     {
         if (!Enum.TryParse<VisitStatus>(req.Status, out var status))
             return BadRequest("Invalid status");
 
-        var updated = await svc.UpdateStatusAsync(id, status);
+        // FinishedTreatment is reached ONLY by signing the form (FormsController.Sign,
+        // which enforces step-up re-auth). Allowing it via a plain status PATCH would
+        // bypass that integrity/non-repudiation control — so it is never settable here.
+        if (status == VisitStatus.FinishedTreatment)
+            return Forbid();
+
+        // Discharge is an administrative release — reception / shift-manager / admin only.
+        // Clinical staff (doctor/nurse) drive the in-treatment workflow (call patient,
+        // start treatment) but end a treatment by signing the form, not by discharging.
+        if (status == VisitStatus.Discharged &&
+            !(User.IsInRole("Reception") || User.IsInRole("ShiftManager") || User.IsInRole("Admin")))
+            return Forbid();
+
+        // When a clinician starts treatment, stamp them as the (single) treating owner and
+        // the room of the workstation they're acting from — feeds the shift-status board.
+        string? room = null;
+        if (status == VisitStatus.InTreatment)
+            room = await workstations.ResolveRoomAsync(req.DeviceId);
+
+        var updated = await svc.UpdateStatusAsync(
+            id, status,
+            actingUserId: status == VisitStatus.InTreatment ? UserId : null,
+            actingUserName: status == VisitStatus.InTreatment ? UserName : null,
+            actingRole: status == VisitStatus.InTreatment ? CallerRole : null,
+            room: room);
+
         await audit.LogAsync(AuditService.StatusChanged, "Visit", id, "Status", newValue: status.ToString());
         await hub.Clients.All.SendAsync("QueueUpdate", new
         {
             visitId = updated.Id,
             status = updated.Status.ToString(),
             queueNumber = updated.QueueNumber,
+            treatingUserName = updated.TreatingUserName,
+            room = updated.TreatmentRoom,
         });
         return Ok(updated);
     }
 
-    public record UpdateStatusRequest(string Status);
+    public record UpdateStatusRequest(string Status, [param: StringLength(120)] string? DeviceId = null);
 }

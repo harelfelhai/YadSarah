@@ -87,13 +87,21 @@ export default function QueuePage() {
   };
 
   const callPatient = async (visit: Visit) => {
-    await visitsApi.updateStatus(visit.id, 'Called');
-    queryClient.invalidateQueries({ queryKey: ['queue'] });
+    try {
+      await visitsApi.updateStatus(visit.id, 'Called');
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+    } catch {
+      notifications.show({ color: 'brick', message: 'הקריאה למטופל נכשלה' });
+    }
   };
 
   const startTreatment = async (visit: Visit) => {
-    await visitsApi.updateStatus(visit.id, 'InTreatment');
-    navigate(`/visits/${visit.id}`);
+    try {
+      await visitsApi.updateStatus(visit.id, 'InTreatment');
+      navigate(`/visits/${visit.id}`);
+    } catch {
+      notifications.show({ color: 'brick', message: 'פתיחת הטופס נכשלה' });
+    }
   };
 
   const isReception = RECEPTION_ROLES.has(user?.role ?? '');
@@ -233,6 +241,13 @@ export default function QueuePage() {
                       <Badge color={STATUS_COLOR[visit.status]} variant="light">
                         {STATUS_LABEL[visit.status]}
                       </Badge>
+                      {visit.status === 'InTreatment' && (visit.treatingUserName || visit.treatmentRoom) && (
+                        <Text size="xs" c="dimmed" mt={4} style={{ whiteSpace: 'nowrap' }}>
+                          {visit.treatingUserName ?? ''}
+                          {visit.treatingUserName && visit.treatmentRoom ? ' · ' : ''}
+                          {visit.treatmentRoom ?? ''}
+                        </Text>
+                      )}
                     </Table.Td>
                     <Table.Td>
                       <Group gap="xs" justify="center" wrap="nowrap">
@@ -251,7 +266,7 @@ export default function QueuePage() {
                             המשך טיפול
                           </Button>
                         )}
-                        {visit.status !== 'Discharged' && (
+                        {isReception && visit.status !== 'Discharged' && (
                           <Button
                             size="xs"
                             color="pine"

@@ -222,12 +222,27 @@ public class VisitService(AppDbContext db, SettingsService settings)
         }
     }
 
-    public async Task<Visit> UpdateStatusAsync(Guid id, VisitStatus status)
+    public async Task<Visit> UpdateStatusAsync(Guid id, VisitStatus status,
+        Guid? actingUserId = null, string? actingUserName = null,
+        UserRole? actingRole = null, string? room = null)
     {
         var visit = await db.Visits.FindAsync(id)
             ?? throw new KeyNotFoundException($"Visit {id} not found");
         visit.Status = status;
         visit.UpdatedAt = DateTime.UtcNow;
+
+        // Moving into treatment stamps the single owner (whoever took the patient) and
+        // the room of the workstation they acted from — the basis for the shift board's
+        // busy/free state. A later transition by someone else replaces ownership.
+        if (status == VisitStatus.InTreatment && actingUserId.HasValue)
+        {
+            visit.TreatingUserId = actingUserId;
+            visit.TreatingUserName = actingUserName;
+            visit.TreatingUserRole = actingRole;
+            visit.TreatmentStartedAt = DateTime.UtcNow;
+            visit.TreatmentRoom = room;
+        }
+
         await db.SaveChangesAsync();
         return visit;
     }

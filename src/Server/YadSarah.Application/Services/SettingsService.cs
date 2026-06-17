@@ -8,6 +8,7 @@ public class SettingsService(AppDbContext db)
 {
     // Known setting keys
     public const string QueueResetHourKey = "queue.resetHour";
+    public const string ShiftStartHoursKey = "shift.startHours";
     public const string MedSyncIntervalDaysKey = "medications.syncIntervalDays";
     public const string MedApiUrlKey = "medications.apiUrl";
     public const string MedLastSyncAtKey = "medications.lastSyncAt";
@@ -22,6 +23,7 @@ public class SettingsService(AppDbContext db)
     private static readonly (string Key, string Value, string Description)[] Defaults =
     [
         (QueueResetHourKey, "18", "שעת איפוס מונה התור היומי (0–23, שעון ישראל)"),
+        (ShiftStartHoursKey, "07,15,23", "שעות תחילת משמרת (0–23, מופרדות בפסיק) — לקביעת מי 'במשמרת' בלוח הסטטוס"),
         (MedSyncIntervalDaysKey, "7", "תדירות סנכרון מסד התרופות (בימים)"),
         (MedApiUrlKey, MedApiUrlDefault, "כתובת API למשיכת מאגר התרופות של משרד הבריאות"),
         (MedLastSyncAtKey, "", "מועד הסנכרון האחרון של מסד התרופות (UTC)"),

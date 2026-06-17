@@ -8,11 +8,12 @@ namespace YadSarah.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public class AuthController(AuthService auth, AuditService audit) : ControllerBase
+public class AuthController(AuthService auth, AuditService audit, WorkstationService workstations) : ControllerBase
 {
     public record LoginRequest(
         [param: Required, StringLength(60, MinimumLength = 1)] string Username,
-        [param: Required, StringLength(200, MinimumLength = 1)] string Password);
+        [param: Required, StringLength(200, MinimumLength = 1)] string Password,
+        [param: StringLength(120)] string? DeviceId = null);
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -33,11 +34,16 @@ public class AuthController(AuthService auth, AuditService audit) : ControllerBa
             case LoginOutcome.Success:
                 var user = result.User!;
                 await audit.LogAsync(user.Id, user.FullName, AuditService.Login, "Auth", user.Id);
+                // Record this user as the current occupant of their computer (if the device
+                // is already mapped to a room) and tell the client the room — a null room
+                // means the device is new and the client should prompt to set it.
+                var room = await workstations.SetOccupantAsync(req.DeviceId, user.Id, user.FullName, user.Role);
                 return Ok(new
                 {
                     token = result.Token,
                     expiresAt = result.ExpiresAt,
-                    user = new { user.Id, user.Username, user.FullName, Role = user.Role.ToString() }
+                    user = new { user.Id, user.Username, user.FullName, Role = user.Role.ToString() },
+                    workstationRoom = room,
                 });
 
             default: // InvalidCredentials / Inactive / Expired — generic response

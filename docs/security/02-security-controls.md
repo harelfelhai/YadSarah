@@ -28,7 +28,9 @@
 | יצירת/עדכון מטופל | ✓ | עדכון | עדכון | ✓ | ✓ |
 | שינוי **ת"ז** של מטופל | ✗ | ✗ | ✗ | ✓ | ✓ |
 | יצירת/עדכון ביקור | ✓ | ✗ | ✗ | ✓ | ✓ |
-| שינוי סטטוס בתור | ✓ | ✓ | ✓ | ✓ | ✓ |
+| שינוי סטטוס קליני בתור (קריאה / פתיחת טיפול) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **שחרור מטופל** (`Discharged`) | ✓ | ✗ | ✗ | ✓ | ✓ |
+| **`FinishedTreatment`** (רק דרך חתימת טופס, לא דרך שינוי-סטטוס) | ✗ | ✗ | חתימה | ✗ | ✗ |
 | **טופס רפואי (PHI קליני) — קריאה/עריכה** | ✗ | ✓ | ✓ | ✓ | ✓ |
 | **חתימת טופס / תוספות** | ✗ | ✗ | ✓ | ✗ | ✗ |
 | ניהול משתמשים (צפייה/עריכה) | ✗ | ✗ | ✗ | ✓ | ✓ |
@@ -41,6 +43,10 @@
 - **מניעת הסלמה:** `UsersController.Update` חוסם מנהל-משמרת מעריכת חשבון Admin או הענקת Admin.
 - **מניעת דליפת PHI דרך ביקור:** `VisitService.GetByIdAsync` אינו טוען טפסים; טפסים נשלפים רק
   דרך ה-controller המוגן. גם בצד הלקוח, כפתורי הפעולה הקליניים מוסתרים מקבלה (`QueuePage`).
+- **שינוי סטטוס ביקור — הרשאה לפי מעבר-יעד:** `VisitsController.UpdateStatus` אוכף את הכלל
+  ברמת הפעולה (לא חסימת-תפקיד גורפת): `Discharged` ל-Reception/ShiftManager/Admin בלבד,
+  `FinishedTreatment` חסום (מושג רק דרך חתימה — ראו §9), ויתר המעברים הקליניים פתוחים לצוות
+  הקליני. בצד הלקוח כפתור "שחרר" מוסתר מרופא/אחות (`QueuePage`, `isReception`).
 - **מסך היסטוריה (`GET /api/visits/history`):** נגיש לכל משתמש מחובר (כפי שהוחלט — היסטוריה
   פתוחה לכולם), **ומתועד** כ-`Searched`. חושף דמוגרפיה + מטא-דאטה של ביקור + **שמות** הצוות
   המטפל בלבד (רופא חותם / עורכי הטופס) — **לא** תוכן קליני (הטפסים נטענים פנימית רק לחילוץ
@@ -200,7 +206,35 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 `appsettings.Development.json` (`Demo:Enabled`), `Client/src/api/demo.ts`,
 `Client/src/features/admin/SettingsPage.tsx`.
 
-## 14. סיכונים שיוריים (Residual Risks)
+## 14. סטטוס משמרת, מיפוי עמדה→חדר וייחוס מטפל
+
+לוח **סטטוס משמרת** (חדרים + רוסטר עובדים, מצב פנוי/עסוק) למנהלים; מיפוי כל מחשב לחדר קבוע;
+ושמירת **המטפל היחיד** בביקור בעת מעבר ל-`InTreatment` (הבסיס למצב עסוק/פנוי).
+
+- **הרשאות (need-to-know):** `GET /api/shift-status` מוגן ב-`[Authorize(Roles="Admin,ShiftManager")]`
+  — הלוח, החושף שמות מטופלים בטיפול + מיקום הצוות, נגיש למנהלים בלבד (אומת: רופא→`403`).
+  ניהול עמדות — `GET /api/workstation` ו-`PUT /api/workstation/{id}` ל-Admin בלבד.
+  `GET /api/workstation/me`, `GET /api/workstation/rooms` ו-`POST /api/workstation` פתוחים לכל
+  משתמש מחובר **במכוון** (הגדרת חדר בפעם הראשונה ע"י כל עובד) — חושפים **שמות חדרים בלבד**, לא PHI.
+- **חשיפת PHI ותיעוד:** הלוח מחזיר **שם** מטופל בטיפול (PHI) → כל צפייה נרשמת ל-audit
+  (`Viewed`, `Visit`, שדה `shiftStatus`). שם הצוות + החדר שנוספו ל-broadcast של `QueueUpdate`
+  ולתצוגת התור הם **מטא-דאטה תפעולי** (לא תוכן קליני), בהתאמה לנראות התור הקיימת לצוות.
+- **מניעת over-posting / התחזות-מטפל:** זהות המטפל נחתמת **בשרת מתוך ה-JWT** (claims), לא מקלט
+  הלקוח — הלקוח שולח רק `status` ו-`deviceId`. כך לא ניתן לייחס טיפול למשתמש אחר. החדר נגזר
+  בשרת מ-`deviceId` דרך `WorkstationService.ResolveRoomAsync`.
+- **בקרת קלט:** DTOs עם `[Required]`/`[StringLength]` — `deviceId` חסום ל-120 ו-`room` ל-60 בכל
+  הנתיבים (כולל `deviceId` ב-`UpdateStatusRequest`); שם החדר עובר `Trim` בשרת.
+- **SQLi:** כל גישת הנתונים (חיפוש `deviceId`, שאילתת אירועי ה-`Login` לחישוב הרוסטר) פרמטרית (EF).
+- **On-Prem:** מזהה-העמדה נשמר ב-`localStorage` ונשלח בכניסה — אין תלות באינטרנט. חלון המשמרת
+  נגזר מהגדרה `shift.startHours` (שעון ישראל), ללא קריאת-חוץ.
+
+קבצים: `Domain/Entities/Workstation.cs`, `Domain/Entities/Visit.cs` (שדות `TreatingUser*`/`TreatmentRoom`),
+`Application/Services/{WorkstationService,ShiftStatusService,VisitService}.cs`,
+`Api/Controllers/{ShiftStatusController,WorkstationController,VisitsController,AuthController}.cs`,
+`Client/src/features/shift/ShiftStatusPage.tsx`, `Client/src/components/WorkstationSetupModal.tsx`,
+`Client/src/utils/deviceId.ts`, `Client/src/api/{shiftStatus,workstation}.ts`.
+
+## 15. סיכונים שיוריים (Residual Risks)
 
 | סיכון | החלטה / בקרה מפצה |
 |------|--------------------|
@@ -208,5 +242,6 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 | TLS/הצפנה-בנייחה/גיבוי | תלויי-פריסה — ראו §6 במסמך הדרישות. |
 | סיסמת admin ראשונית (9 תווים) | יש להחליף לסיסמה תואמת-מדיניות לפני עלייה לייצור. |
 | סנכרון תרופות מ-API חיצוני (משרד הבריאות) | מחוץ לנתיב הקריטי; כשל אינו משבית את המערכת. ה-API מאחורי WAF — גיבוי ודאי ע"י ייבוא קובץ. יש לאמת זמינות מהשרת בישראל בעת הפריסה. |
-| ~~שחרור מטופל ללא הגבלת תפקיד~~ (נסגר) | `PATCH /visits/{id}/status` הוגבל ל-`[Authorize(Roles="Reception,ShiftManager,Admin")]` (כמו `Create`/`Update`); רופא/אחות אינם יכולים עוד לשנות סטטוס/לשחרר. הפעולה ממשיכה להירשם כ-`StatusChanged` (מי/מתי/IP). |
+| ~~שחרור מטופל ללא הגבלת תפקיד~~ (נסגר) | `PATCH /visits/{id}/status` אוכף הרשאה **לפי מעבר-יעד**, לא חסימה גורפת של ה-endpoint: **שחרור** (`Discharged`) — Reception/ShiftManager/Admin בלבד (`User.IsInRole`, אחרת `403`); **`FinishedTreatment`** חסום כאן לחלוטין (מושג רק דרך חתימה ב-`FormsController` עם step-up re-auth — מניעת מעקף בקרת השלמות); מעברים קליניים (`Called`/`InTreatment`) פתוחים לצוות הקליני כך שרופא/אחות יכולים לפתוח טיפול. הפעולה ממשיכה להירשם כ-`StatusChanged` (מי/מתי/IP). *הערה: הגרסה הקודמת חסמה את כל ה-endpoint ל-3 התפקידים — מה שמנע מרופא לפתוח טיפול; המעבר ל-RBAC לפי-מעבר מתקן זאת תוך שמירת הגבלת השחרור.* |
 | endpoint הזריעה ההרסני (`/api/demo/seed`) | חסום בפרודקשן ע"י דגל `Demo:Enabled` (ברירת מחדל כבוי → 404) **בנוסף** ל-`Admin` בלבד; מתועד ב-audit. יש לוודא שהדגל אינו מופעל בתצורת הייצור (ראו §13). |
+| `deviceId` של העמדה נקבע בצד הלקוח (`localStorage`) | משתמש מאומת יכול לטעון `deviceId` של עמדה אחרת ולשבש את שיוך-החדר בלוח. **השפעה תפעולית בלבד** (תצוגת חדר בלוח/בתור) — אינו מקנה גישת-PHI, אינו עוקף אימות/RBAC, ודורש משתמש מאומת. מקובל לסביבת On-Prem אמינה; ניתן לקבע עמדה ע"י מנהל (`PUT /api/workstation`) בעת הצורך. |

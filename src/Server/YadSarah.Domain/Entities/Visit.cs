@@ -33,6 +33,17 @@ public class Visit
     public decimal? TotalToCollect { get; set; }
     public string? ExemptionReason { get; set; }
 
+    // ── Treating staff (single owner) ─────────────────────────────────────────
+    // Stamped when a clinician moves the visit to InTreatment (the user who took the
+    // patient + the room of the workstation they acted from). A later opener replaces
+    // ownership. Kept after treatment ends for history/queue display; "busy" is derived
+    // purely from Status == InTreatment, so no clearing is needed on discharge.
+    public Guid? TreatingUserId { get; set; }
+    public string? TreatingUserName { get; set; }
+    public UserRole? TreatingUserRole { get; set; }
+    public DateTime? TreatmentStartedAt { get; set; }
+    public string? TreatmentRoom { get; set; }
+
     // Audit
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

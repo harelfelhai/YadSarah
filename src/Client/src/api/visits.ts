@@ -1,5 +1,6 @@
 import { api } from './client';
 import type { Visit, VisitCreate, VisitStatus } from '../types';
+import { getOrCreateDeviceId } from '../utils/deviceId';
 
 export interface VisitHistoryItem {
   visitId: string;
@@ -54,8 +55,9 @@ export const visitsApi = {
 
   create: (data: VisitCreate) => api.post<Visit>('/visits', data),
 
+  // deviceId is sent so the server can stamp the treating room when status → InTreatment.
   updateStatus: (id: string, status: VisitStatus) =>
-    api.patch<Visit>(`/visits/${id}/status`, { status }),
+    api.patch<Visit>(`/visits/${id}/status`, { status, deviceId: getOrCreateDeviceId() }),
 
   update: (id: string, data: Partial<VisitCreate>) =>
     api.put<Visit>(`/visits/${id}`, data),

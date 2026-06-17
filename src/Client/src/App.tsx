@@ -13,6 +13,7 @@ import ReceptionPage from './features/reception/ReceptionPage';
 import TreatmentFormPage from './features/treatment/TreatmentFormPage';
 import VisitSummaryPage from './features/treatment/VisitSummaryPage';
 import AdminPage from './features/admin/AdminPage';
+import ShiftStatusPage from './features/shift/ShiftStatusPage';
 import SettingsPage from './features/admin/SettingsPage';
 import AuditPage from './features/admin/AuditPage';
 import FeedbackPage from './features/admin/FeedbackPage';
@@ -53,6 +54,7 @@ export default function App() {
                       <Route path="/visits/:visitId/summary" element={<VisitSummaryPage />} />
                       <Route path="/history" element={<HistoryPage />} />
                       <Route path="/admin/users" element={<AdminPage />} />
+                      <Route path="/shift-status" element={<ShiftStatusPage />} />
                       <Route path="/admin/settings" element={<SettingsPage />} />
                       <Route path="/admin/audit" element={<AuditPage />} />
                       <Route path="/admin/feedback" element={<FeedbackPage />} />

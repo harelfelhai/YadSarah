@@ -101,11 +101,21 @@ export interface Visit {
   receptionActivity?: string;
   totalToCollect?: number;
   exemptionReason?: string;
+  // Treating staff (single owner) — stamped when the visit moves to InTreatment.
+  treatingUserId?: string;
+  treatingUserName?: string;
+  treatingUserRole?: UserRole;
+  treatmentStartedAt?: string;
+  treatmentRoom?: string;
   createdAt: string;
   updatedAt: string;
 }
 
-export type VisitCreate = Omit<Visit, 'id' | 'queueNumber' | 'patient' | 'createdAt' | 'updatedAt'>;
+export type VisitCreate = Omit<
+  Visit,
+  | 'id' | 'queueNumber' | 'patient' | 'createdAt' | 'updatedAt'
+  | 'treatingUserId' | 'treatingUserName' | 'treatingUserRole' | 'treatmentStartedAt' | 'treatmentRoom'
+>;
 
 // ─── Medical Form sub-types ────────────────────────────────────────────────
 
@@ -263,6 +273,49 @@ export interface AuthToken {
   token: string;
   user: User;
   expiresAt: string;
+  // The room this computer is mapped to; null when the device is new (prompt to set it).
+  workstationRoom: string | null;
+}
+
+// ─── Workstation / Shift status ──────────────────────────────────────────────
+
+export interface Workstation {
+  id: string;
+  deviceId: string;
+  roomName: string;
+  currentUserId?: string;
+  currentUserName?: string;
+  currentUserRole?: UserRole;
+  lastLoginAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RoomStatus {
+  workstationId: string;
+  room: string;
+  userId?: string | null;
+  userName?: string | null;
+  userRole?: string | null;
+  occupied: boolean;
+  busy: boolean;
+  patientQueueNumber?: number | null;
+  patientName?: string | null;
+}
+
+export interface ShiftWorker {
+  userId: string;
+  userName: string;
+  role?: string | null;
+  busy: boolean;
+  busyCount: number;
+  room?: string | null;
+}
+
+export interface ShiftStatusResult {
+  shiftStartUtc: string;
+  rooms: RoomStatus[];
+  onShift: ShiftWorker[];
 }
 
 // ─── Real-time (SignalR) ───────────────────────────────────────────────────
@@ -271,6 +324,8 @@ export interface QueueUpdate {
   visitId: string;
   status: VisitStatus;
   queueNumber: number;
+  treatingUserName?: string | null;
+  room?: string | null;
 }
 
 export interface FormLockInfo {
