@@ -57,10 +57,22 @@ public class UserService(AppDbContext db, AuthService auth)
     public async Task<User?> GetByIdAsync(Guid id) =>
         await db.Users.FindAsync(id);
 
+    // Reject angle-bracket / HTML characters in names. These names surface as the
+    // treating-staff name on the queue/board and as editor/signer names in history;
+    // keeping markup out of them is defense in depth (the React client already escapes).
+    private static void ValidateNames(string firstName, string lastName)
+    {
+        if (firstName.Contains('<') || firstName.Contains('>') ||
+            lastName.Contains('<') || lastName.Contains('>'))
+            throw new InvalidOperationException("שם פרטי/משפחה אינו יכול להכיל את התווים < או >.");
+    }
+
     public async Task<User> CreateAsync(CreateUserRequest req)
     {
         if (await db.Users.AnyAsync(u => u.Username == req.Username))
             throw new InvalidOperationException("שם משתמש כבר קיים במערכת");
+
+        ValidateNames(req.FirstName, req.LastName);
 
         var (ok, error) = PasswordPolicy.Validate(req.Password);
         if (!ok) throw new InvalidOperationException(error!);
@@ -105,6 +117,8 @@ public class UserService(AppDbContext db, AuthService auth)
         if (req.Username != user.Username &&
             await db.Users.AnyAsync(u => u.Username == req.Username && u.Id != id))
             throw new InvalidOperationException("שם משתמש כבר קיים במערכת");
+
+        ValidateNames(req.FirstName, req.LastName);
 
         user.FirstName = req.FirstName;
         user.LastName = req.LastName;

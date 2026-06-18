@@ -84,7 +84,8 @@ public class VisitService(AppDbContext db, SettingsService settings)
     /// per-field editor list (FieldEdits) is still shown for context on the returned page.
     /// </summary>
     public async Task<HistoryResult> GetHistoryAsync(
-        Guid viewerId, string? q, DateOnly? from, DateOnly? to, string? staff, string? department, int page)
+        Guid viewerId, string? q, DateOnly? from, DateOnly? to, string? staff, string? department,
+        VisitStatus? status, int page)
     {
         page = Math.Max(0, page);
         var anyFilter = !string.IsNullOrWhiteSpace(q) || from.HasValue || to.HasValue
@@ -115,8 +116,15 @@ public class VisitService(AppDbContext db, SettingsService settings)
             var staffIds = await db.Users.Where(u => u.FullName.Contains(s)).Select(u => u.Id).ToListAsync();
             query = query.Where(v => v.Forms.Any(f =>
                 (f.SignedByName != null && f.SignedByName.Contains(s)) ||
-                (f.UpdatedByUserId != null && staffIds.Contains(f.UpdatedByUserId.Value))));
+                (f.UpdatedByUserId != null && staffIds.Contains(f.UpdatedByUserId.Value)) ||
+                // also match any per-field editor (their name is stored in the edits JSON),
+                // so a name shown under "ערכו:" is findable, not just the form's last editor.
+                (f.FieldEditsJson != null && f.FieldEditsJson.Contains(s))));
         }
+        // Status filter is orthogonal to the "recent 24h" default — it doesn't count as a
+        // filter for the window, so the default view stays last-24h (+ the default status).
+        if (status.HasValue)
+            query = query.Where(v => v.Status == status.Value);
         if (!anyFilter)
         {
             var cutoffDate = DateOnly.FromDateTime(IsraelNow().AddDays(-1));

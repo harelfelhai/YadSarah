@@ -23,6 +23,7 @@ export interface HistoryParams {
   to?: string;
   staff?: string;
   department?: string;
+  status?: string;
   page?: number;
 }
 
@@ -48,6 +49,7 @@ export const visitsApi = {
     if (params.to) sp.set('to', params.to);
     if (params.staff) sp.set('staff', params.staff);
     if (params.department) sp.set('department', params.department);
+    if (params.status) sp.set('status', params.status);
     if (params.page) sp.set('page', String(params.page));
     const qs = sp.toString();
     return api.get<HistoryResult>(`/visits/history${qs ? `?${qs}` : ''}`);

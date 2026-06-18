@@ -30,11 +30,12 @@ public class VisitsController(
     [HttpGet("history")]
     public async Task<IActionResult> History(
         [FromQuery] string? q, [FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
-        [FromQuery] string? staff, [FromQuery] string? department, [FromQuery] int page = 0)
+        [FromQuery] string? staff, [FromQuery] string? department,
+        [FromQuery] VisitStatus? status, [FromQuery] int page = 0)
     {
         if (q is { Length: > 80 }) q = q[..80];
         if (staff is { Length: > 80 }) staff = staff[..80];
-        var result = await svc.GetHistoryAsync(UserId, q, from, to, staff, department, page);
+        var result = await svc.GetHistoryAsync(UserId, q, from, to, staff, department, status, page);
         await audit.LogAsync(AuditService.Searched, "Visit", fieldName: "history");
         return Ok(result);
     }

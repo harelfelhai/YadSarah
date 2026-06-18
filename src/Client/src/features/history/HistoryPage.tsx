@@ -37,6 +37,9 @@ export default function HistoryPage() {
   const [from, setFrom] = useState(searchParams.get('from') ?? '');
   const [to, setTo] = useState(searchParams.get('to') ?? '');
   const [department, setDepartment] = useState<string | null>(searchParams.get('department'));
+  // Status filter is separate from the "recent 24h" default: defaults to Discharged
+  // (completed visits), but can be switched to any status or cleared to show all.
+  const [status, setStatus] = useState<string | null>(searchParams.get('status') ?? 'Discharged');
   const [page, setPage] = useState(Number(searchParams.get('page') ?? 0));
 
   const [dq] = useDebouncedValue(q, 300);
@@ -52,16 +55,17 @@ export default function HistoryPage() {
     if (from) sp.set('from', from);
     if (to) sp.set('to', to);
     if (department) sp.set('department', department);
+    if (status) sp.set('status', status);
     if (page) sp.set('page', String(page));
     setSearchParams(sp, { replace: true });
-  }, [dq, dStaff, from, to, department, page, setSearchParams]);
+  }, [dq, dStaff, from, to, department, status, page, setSearchParams]);
 
   const { data, isFetching } = useQuery({
-    queryKey: ['history', dq, dStaff, from, to, department, page],
+    queryKey: ['history', dq, dStaff, from, to, department, status, page],
     queryFn: () => visitsApi.history({
       q: dq || undefined, staff: dStaff || undefined,
       from: from || undefined, to: to || undefined,
-      department: department || undefined, page,
+      department: department || undefined, status: status || undefined, page,
     }),
     placeholderData: keepPreviousData,
   });
@@ -75,7 +79,7 @@ export default function HistoryPage() {
 
   // Changing a filter resets to the first page (handlers, so a remount keeps the URL page).
   const onFilter = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); setPage(0); };
-  const clear = () => { setQ(''); setStaff(''); setFrom(''); setTo(''); setDepartment(null); setPage(0); };
+  const clear = () => { setQ(''); setStaff(''); setFrom(''); setTo(''); setDepartment(null); setStatus('Discharged'); setPage(0); };
 
   return (
     <Stack gap="md" p="md">
@@ -101,6 +105,15 @@ export default function HistoryPage() {
             w={170}
           />
           <Select label="מחלקה" data={[...DEPARTMENTS]} clearable value={department} onChange={onFilter(setDepartment)} w={150} />
+          <Select
+            label="סטטוס"
+            data={(Object.keys(STATUS_LABEL) as VisitStatus[]).map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+            placeholder="כל הסטטוסים"
+            clearable
+            value={status}
+            onChange={onFilter(setStatus)}
+            w={150}
+          />
           <DateField label="מתאריך" value={from} onChange={(e) => onFilter(setFrom)(e.currentTarget.value)} w={150} />
           <DateField label="עד תאריך" value={to} onChange={(e) => onFilter(setTo)(e.currentTarget.value)} w={150} />
         </Group>

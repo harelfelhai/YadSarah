@@ -20,7 +20,7 @@ import type { UserRole } from '../types';
 
 const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[] = [
   { href: '/queue', label: 'תור', icon: <IconList size={18} /> },
-  { href: '/reception/new', label: 'קבלת מטופל', icon: <IconUserPlus size={18} /> },
+  { href: '/reception/new', label: 'קבלת מטופל', icon: <IconUserPlus size={18} />, roles: ['Reception', 'ShiftManager', 'Admin'] },
   { href: '/history', label: 'היסטוריית מטופלים', icon: <IconHistory size={18} /> },
   { href: '/shift-status', label: 'סטטוס משמרת', icon: <IconLayoutDashboard size={18} />, roles: ['Admin', 'ShiftManager'] },
   { href: '/admin/users', label: 'ניהול משתמשים', icon: <IconUsers size={18} />, roles: ['Admin', 'ShiftManager'] },
