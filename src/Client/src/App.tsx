@@ -9,7 +9,8 @@ import { useAuthStore } from './store/auth';
 import AppShellLayout from './layout/AppShell';
 import LoginPage from './features/auth/LoginPage';
 import QueuePage from './features/queue/QueuePage';
-import ReceptionPage from './features/reception/ReceptionPage';
+import ReceptionDeskPage from './features/reception/ReceptionDeskPage';
+import DischargePage from './features/reception/DischargePage';
 import TreatmentFormPage from './features/treatment/TreatmentFormPage';
 import VisitSummaryPage from './features/treatment/VisitSummaryPage';
 import AdminPage from './features/admin/AdminPage';
@@ -29,9 +30,17 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return token ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
+// Role gate for the operational (reception/discharge) screens. A clinical user who
+// reaches the URL directly or via a stale link is redirected to the queue — matching
+// the hidden nav link, so the server-side 403 is never hit as a dead end.
+function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
+  const role = useAuthStore((s) => s.user?.role);
+  return role && roles.includes(role) ? <>{children}</> : <Navigate to="/queue" replace />;
+}
+
 function DefaultRedirect() {
   const role = useAuthStore((s) => s.user?.role);
-  return <Navigate to={role === 'Reception' ? '/reception/new' : '/queue'} replace />;
+  return <Navigate to={role === 'Reception' ? '/reception' : '/queue'} replace />;
 }
 
 export default function App() {
@@ -49,7 +58,9 @@ export default function App() {
                   <AppShellLayout>
                     <Routes>
                       <Route path="/queue" element={<QueuePage />} />
-                      <Route path="/reception/new" element={<ReceptionPage />} />
+                      <Route path="/reception" element={<RequireRole roles={['Reception', 'ShiftManager', 'Admin']}><ReceptionDeskPage /></RequireRole>} />
+                      <Route path="/reception/discharge/:visitId" element={<RequireRole roles={['Reception', 'ShiftManager', 'Admin']}><DischargePage /></RequireRole>} />
+                      <Route path="/reception/new" element={<Navigate to="/reception" replace />} />
                       <Route path="/visits/:visitId" element={<TreatmentFormPage />} />
                       <Route path="/visits/:visitId/summary" element={<VisitSummaryPage />} />
                       <Route path="/history" element={<HistoryPage />} />

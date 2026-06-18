@@ -1,32 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ActionIcon, Badge, Box, Button, Card, Group, Loader, Modal, Stack, Switch, Table, Text, Title, Tooltip,
+  Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconUserPlus, IconLogout, IconPencil } from '@tabler/icons-react';
+import { IconUserPlus } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
+import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
 import type { Visit, VisitStatus } from '../../types';
-
-const STATUS_LABEL: Record<VisitStatus, string> = {
-  Waiting: 'ממתין',
-  Called: 'נקרא',
-  InTreatment: 'בטיפול',
-  FinishedTreatment: 'סיים טיפול',
-  Discharged: 'שוחרר',
-};
-
-// Muted status ramp (matches the theme's custom colors)
-const STATUS_COLOR: Record<VisitStatus, string> = {
-  Waiting: 'steel',
-  Called: 'ochre',
-  InTreatment: 'moss',
-  FinishedTreatment: 'pine',
-  Discharged: 'slate',
-};
 
 // Resolved hex for the leading status rail (var refs would need theme lookup)
 const RAIL_HEX: Record<VisitStatus, string> = {
@@ -48,8 +32,6 @@ export default function QueuePage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const [showAll, setShowAll] = useState(false);
-  const [dischargeTarget, setDischargeTarget] = useState<Visit | null>(null);
-  const [discharging, setDischarging] = useState(false);
   // Re-render every 30s so wait-time chips stay live.
   const [, setTick] = useState(0);
 
@@ -70,21 +52,6 @@ export default function QueuePage() {
     const t = setInterval(() => setTick((n) => n + 1), 30_000);
     return () => clearInterval(t);
   }, []);
-
-  const confirmDischarge = async () => {
-    if (!dischargeTarget) return;
-    setDischarging(true);
-    try {
-      await visitsApi.updateStatus(dischargeTarget.id, 'Discharged');
-      notifications.show({ color: 'pine', message: 'המטופל שוחרר' });
-      setDischargeTarget(null);
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-    } catch {
-      notifications.show({ color: 'brick', message: 'שחרור המטופל נכשל' });
-    } finally {
-      setDischarging(false);
-    }
-  };
 
   const callPatient = async (visit: Visit) => {
     try {
@@ -143,9 +110,11 @@ export default function QueuePage() {
             checked={showAll}
             onChange={(e) => setShowAll(e.currentTarget.checked)}
           />
-          <Button leftSection={<IconUserPlus size={16} />} onClick={() => navigate('/reception/new')}>
-            קבלת מטופל
-          </Button>
+          {isReception && (
+            <Button leftSection={<IconUserPlus size={16} />} onClick={() => navigate('/reception')}>
+              קבלת מטופל
+            </Button>
+          )}
         </Group>
       </Group>
 
@@ -266,30 +235,6 @@ export default function QueuePage() {
                             המשך טיפול
                           </Button>
                         )}
-                        {isReception && visit.status !== 'Discharged' && (
-                          <Button
-                            size="xs"
-                            color="pine"
-                            variant={visit.status === 'FinishedTreatment' ? 'filled' : 'light'}
-                            leftSection={<IconLogout size={14} />}
-                            onClick={() => setDischargeTarget(visit)}
-                          >
-                            שחרר
-                          </Button>
-                        )}
-                        {visit.patient && (
-                          <Tooltip label="עריכת פרטי מטופל">
-                            <ActionIcon
-                              variant="subtle"
-                              color="slate"
-                              size="lg"
-                              aria-label="עריכת פרטי מטופל"
-                              onClick={() => navigate(`/patients/${visit.patient!.id}/edit`)}
-                            >
-                              <IconPencil size={16} />
-                            </ActionIcon>
-                          </Tooltip>
-                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -299,23 +244,6 @@ export default function QueuePage() {
           </Table>
         </Box>
       )}
-
-      <Modal opened={!!dischargeTarget} onClose={() => setDischargeTarget(null)} title="שחרור מטופל" centered>
-        <Stack gap="sm">
-          <Text size="sm">
-            לשחרר את {dischargeTarget?.patient
-              ? `${dischargeTarget.patient.firstName} ${dischargeTarget.patient.lastName}`
-              : 'המטופל'} (מס׳ תור {dischargeTarget?.queueNumber})?
-            המטופל יוסר מהתור הפעיל.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="subtle" color="slate" onClick={() => setDischargeTarget(null)}>ביטול</Button>
-            <Button color="pine" loading={discharging} leftSection={<IconLogout size={16} />} onClick={confirmDischarge}>
-              שחרר מטופל
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </Stack>
   );
 }

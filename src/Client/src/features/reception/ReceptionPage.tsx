@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Button, Card, Grid, Group, Select, Stack, Stepper, Text,
-  TextInput, Title, Checkbox, Textarea, NumberInput, Badge,
+  TextInput, Checkbox, Textarea, NumberInput, Badge,
   Alert, ActionIcon, Tooltip,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
@@ -245,12 +245,7 @@ export default function ReceptionPage() {
   const isOther = visitForm.values.admissionReason === 'אחר';
 
   return (
-    <Stack gap="md" p="md">
-      <Group justify="space-between">
-        <Title order={3}>קבלת מטופל</Title>
-        <Button variant="subtle" onClick={() => navigate('/queue')}>חזרה לתור</Button>
-      </Group>
-
+    <Stack gap="md">
       <Stepper active={idConfirmed ? step + 1 : 0} size="sm" styles={{ step: { cursor: 'default' } }}>
         <Stepper.Step label="זיהוי" />
         <Stepper.Step label="פרטי מטופל" />
