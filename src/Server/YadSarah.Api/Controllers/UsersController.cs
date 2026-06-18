@@ -34,6 +34,11 @@ public class UsersController(UserService svc, AuditService audit) : ControllerBa
             await audit.LogAsync(AuditService.Created, "User", user.Id, "Role", newValue: user.Role.ToString());
             return CreatedAtAction(nameof(GetById), new { id = user.Id }, user);
         }
+        catch (ArgumentException ex)
+        {
+            // Invalid input (bad name characters, weak password) → 400, not 409.
+            return BadRequest(new { message = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             return Conflict(new { message = ex.Message });
@@ -62,6 +67,11 @@ public class UsersController(UserService svc, AuditService audit) : ControllerBa
         catch (KeyNotFoundException)
         {
             return NotFound();
+        }
+        catch (ArgumentException ex)
+        {
+            // Invalid input (bad name characters) → 400, not 409.
+            return BadRequest(new { message = ex.Message });
         }
         catch (InvalidOperationException ex)
         {

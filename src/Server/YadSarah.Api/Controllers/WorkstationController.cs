@@ -31,9 +31,14 @@ public class WorkstationController(WorkstationService svc, AuditService audit) :
     [HttpGet("rooms")]
     public async Task<IActionResult> Rooms() => Ok(await svc.GetRoomNamesAsync());
 
+    // Room names surface on the queue/board next to the treating user; keep markup
+    // (< >) out of them, consistent with the user-name policy (defense in depth).
+    private const string RoomPattern = @"^[^<>]*$";
+    private const string RoomPatternError = "שם החדר אינו יכול להכיל את התווים < או >.";
+
     public record SetRoomRequest(
         [param: Required, StringLength(120, MinimumLength = 1)] string DeviceId,
-        [param: Required, StringLength(60, MinimumLength = 1)] string Room);
+        [param: Required, StringLength(60, MinimumLength = 1), RegularExpression(RoomPattern, ErrorMessage = RoomPatternError)] string Room);
 
     // POST /api/workstation — first-connect (or re-)assignment of this computer's room.
     [HttpPost]
@@ -50,7 +55,7 @@ public class WorkstationController(WorkstationService svc, AuditService audit) :
     public async Task<IActionResult> GetAll() => Ok(await svc.GetAllAsync());
 
     public record UpdateRoomRequest(
-        [param: Required, StringLength(60, MinimumLength = 1)] string Room);
+        [param: Required, StringLength(60, MinimumLength = 1), RegularExpression(RoomPattern, ErrorMessage = RoomPatternError)] string Room);
 
     // PUT /api/workstation/{id} — admin reassigns a computer's room.
     [HttpPut("{id:guid}")]

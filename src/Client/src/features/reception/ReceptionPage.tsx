@@ -49,6 +49,13 @@ function validateIsraeliId(id: string): boolean {
   return sum % 10 === 0;
 }
 
+// ─── Optional-field format checks (mirror the server validation) ──────────────
+// Empty is allowed (these fields aren't required); a non-empty value must be well-formed.
+const EMAIL_RX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const PHONE_RX = /^[\d+\-() ]{6,20}$/;
+const emailError = (v: string) => (v && !EMAIL_RX.test(v.trim()) ? 'כתובת דוא"ל אינה תקינה' : null);
+const phoneError = (v: string) => (v && !PHONE_RX.test(v.trim()) ? 'מספר טלפון אינו תקין' : null);
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReceptionPage() {
@@ -134,8 +141,13 @@ export default function ReceptionPage() {
       isHonorBlocked: false, accountingCard: false,
     },
     validate: {
-      firstName: (v) => (v.trim() ? null : 'שדה חובה'),
-      lastName: (v) => (v.trim() ? null : 'שדה חובה'),
+      firstName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
+      lastName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
+      email: emailError,
+      clinicEmail: emailError,
+      phoneMobile: phoneError,
+      phoneHome: phoneError,
+      phoneWork: phoneError,
     },
   });
 

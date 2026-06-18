@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using YadSarah.Domain.Entities;
@@ -114,12 +115,18 @@ public class VisitService(AppDbContext db, SettingsService settings)
         {
             var s = staff.Trim();
             var staffIds = await db.Users.Where(u => u.FullName.Contains(s)).Select(u => u.Id).ToListAsync();
+            // FieldEditsJson is serialized with the default (web) encoder, which escapes
+            // non-ASCII to \uXXXX — so Hebrew editor names are stored escaped. A raw
+            // Contains(s) therefore never matches a Hebrew name. Match the escaped form too
+            // (Npgsql translates Contains to strpos, so the backslashes are literal, not a
+            // LIKE pattern). This finds per-field editors shown under "ערכו:" without a
+            // data migration. Keep the raw match for ASCII names / future raw-stored data.
+            var sEscaped = JavaScriptEncoder.Default.Encode(s);
             query = query.Where(v => v.Forms.Any(f =>
                 (f.SignedByName != null && f.SignedByName.Contains(s)) ||
                 (f.UpdatedByUserId != null && staffIds.Contains(f.UpdatedByUserId.Value)) ||
-                // also match any per-field editor (their name is stored in the edits JSON),
-                // so a name shown under "ערכו:" is findable, not just the form's last editor.
-                (f.FieldEditsJson != null && f.FieldEditsJson.Contains(s))));
+                (f.FieldEditsJson != null &&
+                    (f.FieldEditsJson.Contains(s) || f.FieldEditsJson.Contains(sEscaped)))));
         }
         // Status filter is orthogonal to the "recent 24h" default — it doesn't count as a
         // filter for the window, so the default view stays last-24h (+ the default status).

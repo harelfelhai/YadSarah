@@ -15,7 +15,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   });
 
-  if (res.status === 401) {
+  // A 401 from any *authenticated* call means the session expired → clear it and
+  // bounce to login. The login call itself returns 401 on bad credentials; that
+  // must NOT trigger the global redirect (a full-page reload wipes the form and
+  // its error before LoginPage can show "שם משתמש או סיסמה שגויים"). Let it fall
+  // through to the normal error path so the caller surfaces the message.
+  if (res.status === 401 && !path.startsWith('/auth/login')) {
     localStorage.removeItem('auth_token');
     window.location.href = '/login';
     throw new Error('Unauthorized');

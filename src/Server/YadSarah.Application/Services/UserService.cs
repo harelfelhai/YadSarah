@@ -60,11 +60,13 @@ public class UserService(AppDbContext db, AuthService auth)
     // Reject angle-bracket / HTML characters in names. These names surface as the
     // treating-staff name on the queue/board and as editor/signer names in history;
     // keeping markup out of them is defense in depth (the React client already escapes).
+    // Throws ArgumentException (→ 400) for bad *input*, distinct from the
+    // InvalidOperationException used for genuine conflicts (→ 409, e.g. duplicate username).
     private static void ValidateNames(string firstName, string lastName)
     {
         if (firstName.Contains('<') || firstName.Contains('>') ||
             lastName.Contains('<') || lastName.Contains('>'))
-            throw new InvalidOperationException("שם פרטי/משפחה אינו יכול להכיל את התווים < או >.");
+            throw new ArgumentException("שם פרטי/משפחה אינו יכול להכיל את התווים < או >.");
     }
 
     public async Task<User> CreateAsync(CreateUserRequest req)
@@ -75,7 +77,7 @@ public class UserService(AppDbContext db, AuthService auth)
         ValidateNames(req.FirstName, req.LastName);
 
         var (ok, error) = PasswordPolicy.Validate(req.Password);
-        if (!ok) throw new InvalidOperationException(error!);
+        if (!ok) throw new ArgumentException(error!);
 
         var user = new User
         {

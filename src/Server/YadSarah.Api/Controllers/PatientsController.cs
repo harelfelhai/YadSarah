@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +60,8 @@ public class PatientsController(AppDbContext db, AuditService audit) : Controlle
     [Authorize(Roles = "Reception,ShiftManager,Admin")]
     public async Task<IActionResult> Create(Patient patient)
     {
+        if (ValidatePatient(patient) is { } error) return BadRequest(new { message = error });
+
         // Block duplicate identities — a patient with the same identity type +
         // number may not be created twice (the existing record must be reused).
         if (await IdentityExistsAsync(patient.IdentityType, patient.IdentityNumber, excludeId: null))
@@ -73,6 +76,34 @@ public class PatientsController(AppDbContext db, AuditService audit) : Controlle
         await audit.LogAsync(AuditService.Created, "Patient", patient.Id);
         return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
     }
+
+    private static readonly Regex EmailRx = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled);
+    // Phone: digits with optional +, -, spaces, parentheses; 6–20 chars.
+    private static readonly Regex PhoneRx = new(@"^[\d+\-() ]{6,20}$", RegexOptions.Compiled);
+
+    // Server-side validation of patient demographics (the request body is the entity itself,
+    // so the API is the trust boundary). Names may not contain markup — consistent with the
+    // user-name policy; emails/phones must be well-formed when provided. Returns an error
+    // message, or null when valid.
+    private static string? ValidatePatient(Patient p)
+    {
+        if (HasAngleBrackets(p.FirstName) || HasAngleBrackets(p.LastName) ||
+            HasAngleBrackets(p.FirstNameLatin) || HasAngleBrackets(p.LastNameLatin))
+            return "שם המטופל אינו יכול להכיל את התווים < או >.";
+
+        foreach (var email in new[] { p.Email, p.ClinicEmail })
+            if (!string.IsNullOrWhiteSpace(email) && !EmailRx.IsMatch(email.Trim()))
+                return "כתובת דוא\"ל אינה תקינה.";
+
+        foreach (var phone in new[] { p.PhoneMobile, p.PhoneHome, p.PhoneWork })
+            if (!string.IsNullOrWhiteSpace(phone) && !PhoneRx.IsMatch(phone.Trim()))
+                return "מספר טלפון אינו תקין.";
+
+        return null;
+    }
+
+    private static bool HasAngleBrackets(string? s) =>
+        s is not null && (s.Contains('<') || s.Contains('>'));
 
     // True if another patient already has this identity type + number.
     private async Task<bool> IdentityExistsAsync(string identityType, string? identityNumber, Guid? excludeId)
@@ -90,6 +121,8 @@ public class PatientsController(AppDbContext db, AuditService audit) : Controlle
     {
         var existing = await db.Patients.FindAsync(id);
         if (existing is null) return NotFound();
+
+        if (ValidatePatient(incoming) is { } error) return BadRequest(new { message = error });
 
         // Identity (type/number) may only be changed by a shift manager / admin.
         var identityChanged =
