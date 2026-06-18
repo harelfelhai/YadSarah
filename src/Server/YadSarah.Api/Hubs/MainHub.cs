@@ -8,6 +8,11 @@ namespace YadSarah.Api.Hubs;
 [Authorize]
 public class MainHub(FormPresenceService presence) : Hub
 {
+    // Form groups carry clinical PHI (FormSectionUpdated + presence). Reception may
+    // connect to the hub for queue updates (class-level [Authorize] + Clients.All
+    // broadcasts) but must NOT join a form group — mirror FormsController's clinical-only
+    // RBAC so an authenticated Reception user can't subscribe to live form PHI.
+    [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin")]
     public async Task JoinForm(string formId)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, $"form_{formId}");

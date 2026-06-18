@@ -165,7 +165,10 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         if (!await ReauthAsync(req))
         {
             await audit.LogAsync(AuditService.SignReauthFailed, "MedicalForm", id);
-            return Unauthorized(new { message = "אימות נכשל — שם המשתמש או הסיסמה שגויים, או אינם תואמים למשתמש המחובר." });
+            // 403, not 401: the user's SESSION is valid — only the re-entered step-up
+            // credentials are wrong. A 401 would trip the client's global "log out on 401"
+            // handler and eject the user to /login instead of showing a retryable error.
+            return StatusCode(403, new { message = "אימות נכשל — שם המשתמש או הסיסמה שגויים, או אינם תואמים למשתמש המחובר." });
         }
         try
         {
@@ -209,7 +212,10 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         if (!await ReauthAsync(req))
         {
             await audit.LogAsync(AuditService.SignReauthFailed, "MedicalForm", id, "addendum");
-            return Unauthorized(new { message = "אימות נכשל — שם המשתמש או הסיסמה שגויים, או אינם תואמים למשתמש המחובר." });
+            // 403, not 401: the user's SESSION is valid — only the re-entered step-up
+            // credentials are wrong. A 401 would trip the client's global "log out on 401"
+            // handler and eject the user to /login instead of showing a retryable error.
+            return StatusCode(403, new { message = "אימות נכשל — שם המשתמש או הסיסמה שגויים, או אינם תואמים למשתמש המחובר." });
         }
         try
         {
