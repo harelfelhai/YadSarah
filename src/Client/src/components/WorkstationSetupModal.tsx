@@ -59,6 +59,8 @@ export default function WorkstationSetupModal({ onDone }: { onDone: (room: strin
         <Autocomplete
           label="חדר"
           placeholder="לדוגמה: חדר 1"
+          description="עד 60 תווים"
+          maxLength={60}
           data={rooms}
           value={room}
           onChange={setRoom}

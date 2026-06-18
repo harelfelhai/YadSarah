@@ -76,8 +76,10 @@ public class ShiftStatusService(AppDbContext db, SettingsService settings)
             .Where(u => loginUserIds.Contains(u.Id))
             .ToListAsync();
 
+        // Use the SAME "occupied this shift" rule as the room cards (login since shift
+        // start), so a roster chip never shows a room the board considers empty.
         var roomByUser = workstations
-            .Where(w => w.CurrentUserId.HasValue)
+            .Where(w => w.CurrentUserId.HasValue && w.LastLoginAt.HasValue && w.LastLoginAt.Value >= shiftStartUtc)
             .GroupBy(w => w.CurrentUserId!.Value)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(w => w.LastLoginAt).First().RoomName);
 
