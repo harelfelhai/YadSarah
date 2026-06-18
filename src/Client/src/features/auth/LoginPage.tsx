@@ -31,7 +31,8 @@ export default function LoginPage() {
       const { token, user } = await authApi.login(values.username, values.password);
       setAuth(token, user);
       await startHub();
-      navigate('/queue');
+      // Reception staff land on their desk; clinical staff on the queue.
+      navigate(user.role === 'Reception' ? '/reception' : '/queue');
     } catch {
       setError('שם משתמש או סיסמה שגויים');
     } finally {
