@@ -11,7 +11,8 @@ namespace YadSarah.Application.Services;
 
 public enum LoginOutcome { Success, InvalidCredentials, LockedOut, Expired, Inactive }
 
-public record LoginResult(LoginOutcome Outcome, string? Token = null, User? User = null, DateTime? ExpiresAt = null);
+public record LoginResult(LoginOutcome Outcome, string? Token = null, User? User = null,
+    DateTime? ExpiresAt = null, bool AutoDeactivated = false);
 
 public class AuthService(AppDbContext db, IConfiguration config)
 {
@@ -48,8 +49,10 @@ public class AuthService(AppDbContext db, IConfiguration config)
         var lastActivity = user.LastLoginAt ?? user.CreatedAt;
         if (DateTime.UtcNow - lastActivity > TimeSpan.FromDays(InactivityDays))
         {
-            if (user.IsActive) { user.IsActive = false; await db.SaveChangesAsync(); }
-            return new LoginResult(LoginOutcome.Inactive);
+            var justDeactivated = user.IsActive;
+            if (justDeactivated) { user.IsActive = false; await db.SaveChangesAsync(); }
+            // Surface the auto-deactivation so the API can audit this security event.
+            return new LoginResult(LoginOutcome.Inactive, User: user, AutoDeactivated: justDeactivated);
         }
 
         if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))

@@ -24,6 +24,7 @@ public class AuditService(AppDbContext db, IHttpContextAccessor http)
     public const string Login = "Login";
     public const string LoginFailed = "LoginFailed";
     public const string LockedOut = "LockedOut";
+    public const string AccountAutoDeactivated = "AccountAutoDeactivated";
     public const string RoomAssigned = "RoomAssigned";
     // Demo/seed operations (non-production only) — wiping & generating test data
     public const string DemoSeeded = "DemoSeeded";

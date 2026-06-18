@@ -56,6 +56,12 @@ public class AuthController(AuthService auth, AuditService audit, WorkstationSer
                 });
 
             default: // InvalidCredentials / Inactive / Expired — generic response
+                // A login that just auto-deactivated a stale (120+ days unused) account is a
+                // security event worth its own audit entry, attributable to the account.
+                if (result.AutoDeactivated && result.User is not null)
+                    await audit.LogAsync(result.User.Id, result.User.DisplayName ?? result.User.FullName,
+                        AuditService.AccountAutoDeactivated, "User", result.User.Id,
+                        newValue: "120+ days inactivity");
                 await audit.LogAsync(Guid.Empty, req.Username, AuditService.LoginFailed, "Auth");
                 return Unauthorized(new { message = "שם משתמש או סיסמה שגויים" });
         }
