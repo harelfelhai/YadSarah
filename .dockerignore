@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+.git/
+.vs/
+.vscode/
+.idea/
+*.user
+**/appsettings.Development.json
+videos old/
+frames/
+audio/
+*.png
+.playwright-mcp/
+.claude/

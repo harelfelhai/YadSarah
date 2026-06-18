@@ -1,6 +1,7 @@
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -12,8 +13,11 @@ using YadSarah.Api.Middleware;
 var builder = WebApplication.CreateBuilder(args);
 
 // ── Database ───────────────────────────────────────────────────────────────
+// Accept either an Npgsql key-value string or a postgres:// URL — managed hosts
+// (Render/Neon) hand out the URL form, which Npgsql does not parse natively.
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+    opt.UseNpgsql(NormalizePostgresConnectionString(
+        builder.Configuration.GetConnectionString("Default"))));
 
 // ── Services ───────────────────────────────────────────────────────────────
 builder.Services.AddScoped<AuthService>();
@@ -139,6 +143,17 @@ using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<SettingsService>().EnsureDefaultsAsync();
 }
 
+// Behind a TLS-terminating proxy (Render) the app receives plain HTTP with the real
+// scheme in X-Forwarded-Proto. Honor it FIRST so HSTS/HttpsRedirection see https and
+// don't loop. KnownProxies/Networks are cleared because the proxy isn't on localhost.
+var forwardedOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+};
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedOptions);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -153,11 +168,38 @@ else
 }
 
 app.UseSecurityHeaders();
+
+// Serve the bundled React SPA (copied into wwwroot by the Docker build). Static assets
+// are public and served before the rate limiter so a page's asset burst isn't throttled.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<MainHub>("/hubs/main");
+// Client-side routes (e.g. /queue) on full page load fall through to the SPA shell.
+app.MapFallbackToFile("index.html");
 
 app.Run();
+
+// Converts a postgres://user:pass@host:port/db URL (managed-host style) into an Npgsql
+// key-value connection string with SSL required. Pass-through if already key-value.
+static string? NormalizePostgresConnectionString(string? raw)
+{
+    if (string.IsNullOrWhiteSpace(raw)) return raw;
+    if (!raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+        !raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        return raw;
+
+    var uri = new Uri(raw);
+    var parts = uri.UserInfo.Split(':', 2);
+    var user = Uri.UnescapeDataString(parts[0]);
+    var pass = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : "";
+    var db = uri.AbsolutePath.Trim('/');
+    var port = uri.Port > 0 ? uri.Port : 5432;
+    return $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};" +
+           "SSL Mode=Require;Trust Server Certificate=true";
+}

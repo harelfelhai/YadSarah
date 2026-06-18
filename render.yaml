@@ -1,0 +1,35 @@
+# Render Blueprint — deploys the YadSarah demo as a single Docker web service
+# backed by a free PostgreSQL instance. Apply via: Render dashboard → New → Blueprint
+# → connect this repo → pick the deploy/render branch.
+services:
+  - type: web
+    name: yadsarah-demo
+    runtime: docker
+    plan: free
+    region: frankfurt              # closest Render region to Israel
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production           # sanitized errors, HSTS, Swagger off
+      - key: Demo__Enabled
+        value: "true"               # enables synthetic seed — NEVER real PHI
+      - key: Jwt__Secret
+        generateValue: true         # Render generates a strong random secret
+      - key: ConnectionStrings__Default
+        fromDatabase:
+          name: yadsarah-db
+          property: connectionString  # postgres:// URL; the app normalizes it for Npgsql
+      # Same-origin SPA → CORS is effectively moot. Optionally set this to your live URL
+      # after the first deploy (e.g. https://yadsarah-demo.onrender.com).
+      - key: AllowedOrigins__0
+        sync: false
+
+databases:
+  - name: yadsarah-db
+    plan: free
+    region: frankfurt
+    databaseName: yadsarah
+    user: yadsarah
