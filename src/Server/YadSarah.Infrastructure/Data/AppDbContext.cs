@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using YadSarah.Domain.Entities;
 
 namespace YadSarah.Infrastructure.Data;
@@ -61,7 +63,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(u => u.Id);
             e.HasIndex(u => u.Username).IsUnique();
-            e.Property(u => u.Role).HasConversion<string>();
+            // Roles (multi-valued) stored as a CSV of role names — consistent with the
+            // string-name convention used for the (former) single Role column. A user with
+            // one role round-trips to the same value the old Role column held, so the
+            // migration backfill is a plain copy.
+            var rolesConverter = new ValueConverter<List<UserRole>, string>(
+                v => string.Join(",", v.Select(r => r.ToString())),
+                v => string.IsNullOrWhiteSpace(v)
+                    ? new List<UserRole>()
+                    : v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                       .Select(Enum.Parse<UserRole>).ToList());
+            var rolesComparer = new ValueComparer<List<UserRole>>(
+                (a, b) => a!.SequenceEqual(b!),
+                v => v.Aggregate(0, (h, x) => HashCode.Combine(h, (int)x)),
+                v => v.ToList());
+            e.Property(u => u.Roles).HasConversion(rolesConverter, rolesComparer).HasColumnName("Roles");
         });
 
         // AuditLog — append-only, no updates

@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { IconLock, IconRefresh } from '@tabler/icons-react';
 import { auditApi } from '../../api/audit';
 import { useAuthStore } from '../../store/auth';
+import { hasAnyRole } from '../../constants/roles';
 
 const ENTITY_OPTIONS = [
   { value: '', label: 'הכול' },
@@ -30,8 +31,8 @@ function fmt(iso: string): string {
 }
 
 export default function AuditPage() {
-  const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === 'Admin';
+  const roles = useAuthStore((s) => s.user?.roles);
+  const isAdmin = hasAnyRole(roles, 'Admin');
   const [entityType, setEntityType] = useState('');
 
   const { data: entries = [], isLoading, refetch, isFetching } = useQuery({

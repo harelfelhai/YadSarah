@@ -88,7 +88,7 @@ public class ShiftStatusService(AppDbContext db, SettingsService settings)
             {
                 var busyCount = inTreatment.Count(v => v.TreatingUserId == u.Id);
                 return new ShiftWorker(
-                    u.Id, u.FullName, u.Role.ToString(),
+                    u.Id, u.DisplayName ?? u.FullName, u.PrimaryRole.ToString(),
                     Busy: busyCount > 0, busyCount,
                     roomByUser.GetValueOrDefault(u.Id));
             })

@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
+import { isReceptionStaff, isClinicalStaff, hasAnyRole } from '../../constants/roles';
 import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
 import type { Visit, VisitStatus } from '../../types';
 
@@ -24,8 +25,6 @@ const RAIL_HEX: Record<VisitStatus, string> = {
 // A waiting patient past this many minutes is "overdue" → rail pulses in alert red.
 const OVERDUE_MIN = 30;
 
-const DEPT_AWARE_ROLES = new Set(['Doctor', 'Nurse']);
-const RECEPTION_ROLES = new Set(['Reception', 'ShiftManager', 'Admin']);
 
 export default function QueuePage() {
   const navigate = useNavigate();
@@ -72,8 +71,8 @@ export default function QueuePage() {
     }
   };
 
-  const isReception = RECEPTION_ROLES.has(user?.role ?? '');
-  const isClinical = ['Doctor', 'Nurse', 'ShiftManager', 'Admin'].includes(user?.role ?? '');
+  const isReception = isReceptionStaff(user?.roles);
+  const isClinical = isClinicalStaff(user?.roles);
 
   const active = showAll ? visits : visits.filter((v) => {
     if (v.status === 'Discharged') return false;
@@ -82,7 +81,7 @@ export default function QueuePage() {
   });
 
   const userDept = user?.department ?? null;
-  const showDeptHighlight = !!userDept && DEPT_AWARE_ROLES.has(user?.role ?? '');
+  const showDeptHighlight = !!userDept && hasAnyRole(user?.roles, 'Doctor', 'Nurse', 'MedStudent', 'NursingStudent');
 
   const sorted = showDeptHighlight
     ? [

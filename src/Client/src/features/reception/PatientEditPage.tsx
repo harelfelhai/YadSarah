@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { patientsApi } from '../../api/patients';
 import { useAuthStore } from '../../store/auth';
+import { canEditIdentity } from '../../constants/roles';
 import type { IdentityType, Patient } from '../../types';
 import DateField from '../../components/DateField';
 
@@ -28,7 +29,7 @@ export default function PatientEditPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
 
-  const canEditId = user?.role === 'Admin' || user?.role === 'ShiftManager';
+  const canEditId = canEditIdentity(user?.roles);
 
   const { data: patient, isLoading, isError } = useQuery({
     queryKey: ['patient', id],

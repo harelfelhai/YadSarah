@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { shiftStatusApi } from '../../api/shiftStatus';
 import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
+import { hasAnyRole } from '../../constants/roles';
 import type { RoomStatus, ShiftWorker } from '../../types';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -38,8 +39,8 @@ function roleLabel(role?: string | null): string {
 }
 
 export default function ShiftStatusPage() {
-  const role = useAuthStore((s) => s.user?.role);
-  const canAccess = role === 'Admin' || role === 'ShiftManager';
+  const roles = useAuthStore((s) => s.user?.roles);
+  const canAccess = hasAnyRole(roles, 'Admin', 'ShiftManager');
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({

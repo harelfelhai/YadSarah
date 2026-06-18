@@ -12,6 +12,7 @@ import {
 } from '../../api/feedback';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { useAuthStore } from '../../store/auth';
+import { hasAnyRole } from '../../constants/roles';
 
 const TYPE_COLOR: Record<FeedbackType, string> = {
   Bug: 'red', FixNeeded: 'orange', Improvement: 'blue', Other: 'gray',
@@ -34,8 +35,8 @@ function fmt(iso?: string | null): string {
 
 export default function FeedbackPage() {
   const qc = useQueryClient();
-  const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === 'Admin';
+  const roles = useAuthStore((s) => s.user?.roles);
+  const isAdmin = hasAnyRole(roles, 'Admin');
   const [editing, setEditing] = useState<FeedbackReport | null>(null);
 
   const { data: reports = [], isLoading, refetch, isFetching } = useQuery({

@@ -119,9 +119,9 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         db.Users.AddRange(users);
         await db.SaveChangesAsync();
 
-        var doctorsByDept = users.Where(u => u.Role == UserRole.Doctor)
+        var doctorsByDept = users.Where(u => u.Roles.Contains(UserRole.Doctor))
             .GroupBy(u => u.Department!).ToDictionary(g => g.Key, g => g.ToList());
-        var nursesByDept = users.Where(u => u.Role == UserRole.Nurse)
+        var nursesByDept = users.Where(u => u.Roles.Contains(UserRole.Nurse))
             .GroupBy(u => u.Department!).ToDictionary(g => g.Key, g => g.ToList());
 
         var today = await CurrentQueueDateAsync();
@@ -192,9 +192,9 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             await ClearTodayAsync();
 
         var staff = await db.Users.Where(u => u.IsActive).ToListAsync();
-        var doctorsByDept = staff.Where(u => u.Role == UserRole.Doctor && u.Department != null)
+        var doctorsByDept = staff.Where(u => u.Roles.Contains(UserRole.Doctor) && u.Department != null)
             .GroupBy(u => u.Department!).ToDictionary(g => g.Key, g => g.ToList());
-        var nursesByDept = staff.Where(u => u.Role == UserRole.Nurse && u.Department != null)
+        var nursesByDept = staff.Where(u => u.Roles.Contains(UserRole.Nurse) && u.Department != null)
             .GroupBy(u => u.Department!).ToDictionary(g => g.Key, g => g.ToList());
 
         // Prefer the dedicated pool (patients with no visits); fall back to anyone not in today's queue.
@@ -287,7 +287,7 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
                 FirstName = first,
                 LastName = last,
                 FullName = full,
-                Role = role,
+                Roles = new List<UserRole> { role },
                 Department = dept,
                 IsActive = true,
                 Country = "ישראל",

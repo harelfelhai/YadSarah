@@ -6,21 +6,17 @@ export interface CreateUserPayload {
   lastName: string;
   username: string;
   password: string;
-  role: UserRole;
+  roles: UserRole[];
+  displayName?: string;
   identityNumber?: string;
   gender?: string;
-  dateOfBirth?: string;
-  phone?: string;
+  title?: string;
+  licenseNumber?: string;
+  specialistLicenseNumber?: string;
+  employeeNumber?: string;
   mobile?: string;
-  primaryJobTitle?: string;
-  secondaryJobTitle?: string;
+  email?: string;
   department?: string;
-  address?: string;
-  city?: string;
-  zipCode?: string;
-  country?: string;
-  notes?: string;
-  accountExpiresAt?: string;
 }
 
 export interface UpdateUserPayload extends Omit<CreateUserPayload, 'password'> {

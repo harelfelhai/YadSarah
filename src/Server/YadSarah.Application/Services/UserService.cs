@@ -9,44 +9,36 @@ public record CreateUserRequest(
     string LastName,
     string Username,
     string Password,
-    UserRole Role,
+    List<UserRole> Roles,
+    string? DisplayName,
     string? IdentityNumber,
     string? Gender,
-    DateOnly? DateOfBirth,
-    string? Phone,
+    string? Title,
+    string? LicenseNumber,
+    string? SpecialistLicenseNumber,
+    string? EmployeeNumber,
     string? Mobile,
-    string? PrimaryJobTitle,
-    string? SecondaryJobTitle,
-    string? Department,
-    string? Address,
-    string? City,
-    string? ZipCode,
-    string? Country,
-    string? Notes,
-    DateTime? AccountExpiresAt
+    string? Email,
+    string? Department
 );
 
 public record UpdateUserRequest(
     string FirstName,
     string LastName,
     string Username,
-    UserRole Role,
+    List<UserRole> Roles,
     bool IsActive,
     string? NewPassword,
+    string? DisplayName,
     string? IdentityNumber,
     string? Gender,
-    DateOnly? DateOfBirth,
-    string? Phone,
+    string? Title,
+    string? LicenseNumber,
+    string? SpecialistLicenseNumber,
+    string? EmployeeNumber,
     string? Mobile,
-    string? PrimaryJobTitle,
-    string? SecondaryJobTitle,
-    string? Department,
-    string? Address,
-    string? City,
-    string? ZipCode,
-    string? Country,
-    string? Notes,
-    DateTime? AccountExpiresAt
+    string? Email,
+    string? Department
 );
 
 public class UserService(AppDbContext db, AuthService auth)
@@ -69,12 +61,23 @@ public class UserService(AppDbContext db, AuthService auth)
             throw new ArgumentException("שם פרטי/משפחה אינו יכול להכיל את התווים < או >.");
     }
 
+    private static void ValidateRoles(List<UserRole>? roles)
+    {
+        if (roles is null || roles.Count == 0)
+            throw new ArgumentException("יש לבחור לפחות סיווג מקצועי אחד.");
+    }
+
+    // Display name defaults to "First Last" but the admin may override it.
+    private static string ResolveDisplayName(string? displayName, string first, string last) =>
+        string.IsNullOrWhiteSpace(displayName) ? $"{first} {last}".Trim() : displayName.Trim();
+
     public async Task<User> CreateAsync(CreateUserRequest req)
     {
         if (await db.Users.AnyAsync(u => u.Username == req.Username))
             throw new InvalidOperationException("שם משתמש כבר קיים במערכת");
 
         ValidateNames(req.FirstName, req.LastName);
+        ValidateRoles(req.Roles);
 
         var (ok, error) = PasswordPolicy.Validate(req.Password);
         if (!ok) throw new ArgumentException(error!);
@@ -84,23 +87,19 @@ public class UserService(AppDbContext db, AuthService auth)
             FirstName = req.FirstName,
             LastName = req.LastName,
             FullName = $"{req.FirstName} {req.LastName}".Trim(),
+            DisplayName = ResolveDisplayName(req.DisplayName, req.FirstName, req.LastName),
             Username = req.Username,
             PasswordHash = auth.HashPassword(req.Password),
-            Role = req.Role,
+            Roles = req.Roles,
             IdentityNumber = req.IdentityNumber,
             Gender = req.Gender,
-            DateOfBirth = req.DateOfBirth,
-            Phone = req.Phone,
+            Title = req.Title,
+            LicenseNumber = req.LicenseNumber,
+            SpecialistLicenseNumber = req.SpecialistLicenseNumber,
+            EmployeeNumber = req.EmployeeNumber,
             Mobile = req.Mobile,
-            PrimaryJobTitle = req.PrimaryJobTitle,
-            SecondaryJobTitle = req.SecondaryJobTitle,
+            Email = req.Email,
             Department = req.Department,
-            Address = req.Address,
-            City = req.City,
-            ZipCode = req.ZipCode,
-            Country = req.Country ?? "ישראל",
-            Notes = req.Notes,
-            AccountExpiresAt = req.AccountExpiresAt,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -121,27 +120,24 @@ public class UserService(AppDbContext db, AuthService auth)
             throw new InvalidOperationException("שם משתמש כבר קיים במערכת");
 
         ValidateNames(req.FirstName, req.LastName);
+        ValidateRoles(req.Roles);
 
         user.FirstName = req.FirstName;
         user.LastName = req.LastName;
         user.FullName = $"{req.FirstName} {req.LastName}".Trim();
+        user.DisplayName = ResolveDisplayName(req.DisplayName, req.FirstName, req.LastName);
         user.Username = req.Username;
-        user.Role = req.Role;
+        user.Roles = req.Roles;
         user.IsActive = req.IsActive;
         user.IdentityNumber = req.IdentityNumber;
         user.Gender = req.Gender;
-        user.DateOfBirth = req.DateOfBirth;
-        user.Phone = req.Phone;
+        user.Title = req.Title;
+        user.LicenseNumber = req.LicenseNumber;
+        user.SpecialistLicenseNumber = req.SpecialistLicenseNumber;
+        user.EmployeeNumber = req.EmployeeNumber;
         user.Mobile = req.Mobile;
-        user.PrimaryJobTitle = req.PrimaryJobTitle;
-        user.SecondaryJobTitle = req.SecondaryJobTitle;
+        user.Email = req.Email;
         user.Department = req.Department;
-        user.Address = req.Address;
-        user.City = req.City;
-        user.ZipCode = req.ZipCode;
-        user.Country = req.Country ?? "ישראל";
-        user.Notes = req.Notes;
-        user.AccountExpiresAt = req.AccountExpiresAt;
         user.UpdatedAt = DateTime.UtcNow;
 
         if (!string.IsNullOrWhiteSpace(req.NewPassword))

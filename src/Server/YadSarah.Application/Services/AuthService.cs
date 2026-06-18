@@ -19,6 +19,9 @@ public class AuthService(AppDbContext db, IConfiguration config)
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
+    // Accounts unused for this many days are auto-deactivated and need an admin to re-enable.
+    private const int InactivityDays = 120;
+
     private TimeSpan TokenLifetime =>
         TimeSpan.FromHours(config.GetValue("Jwt:AccessTokenHours", 12));
 
@@ -38,6 +41,16 @@ public class AuthService(AppDbContext db, IConfiguration config)
 
         if (user.AccountExpiresAt.HasValue && user.AccountExpiresAt.Value < DateTime.UtcNow)
             return new LoginResult(LoginOutcome.Expired);
+
+        // Auto-deactivate accounts unused for 120+ days. Baseline is the last successful
+        // login, or the creation date for accounts that never logged in. Once deactivated,
+        // only an admin re-enabling the account restores access.
+        var lastActivity = user.LastLoginAt ?? user.CreatedAt;
+        if (DateTime.UtcNow - lastActivity > TimeSpan.FromDays(InactivityDays))
+        {
+            if (user.IsActive) { user.IsActive = false; await db.SaveChangesAsync(); }
+            return new LoginResult(LoginOutcome.Inactive);
+        }
 
         if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
         {
@@ -90,14 +103,19 @@ public class AuthService(AppDbContext db, IConfiguration config)
             Encoding.UTF8.GetBytes(config["Jwt:Secret"]
                 ?? throw new InvalidOperationException("Jwt:Secret not configured")));
 
-        var claims = new[]
+        // Emit ALL roles as Role claims so [Authorize(Roles=...)] / IsInRole match on ANY
+        // (permissions = union). The primary (most-privileged) role is emitted first so
+        // code that reads a single Role claim gets the effective primary.
+        var roles = user.Roles.Count > 0 ? user.Roles : new List<UserRole> { UserRole.Reception };
+        var ordered = roles.OrderByDescending(RolePriority.Of).ToList();
+        var claims = new List<Claim>
         {
-            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-            new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new Claim("fullName", user.FullName),
-            new Claim(ClaimTypes.Role, user.Role.ToString()),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new(JwtRegisteredClaimNames.UniqueName, user.Username),
+            new("fullName", user.DisplayName ?? user.FullName),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
         };
+        claims.AddRange(ordered.Select(r => new Claim(ClaimTypes.Role, r.ToString())));
 
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"] ?? "YadSarah",

@@ -8,7 +8,9 @@ export type IdentityType =
 
 export type VisitStatus = 'Waiting' | 'Called' | 'InTreatment' | 'FinishedTreatment' | 'Discharged';
 
-export type UserRole = 'Reception' | 'Nurse' | 'Doctor' | 'Admin' | 'ShiftManager';
+export type UserRole =
+  | 'Reception' | 'Nurse' | 'Doctor' | 'Admin' | 'ShiftManager'
+  | 'MedStudent' | 'NursingStudent' | 'LabStaff';
 
 export type StationType =
   | 'טריאז׳'
@@ -247,26 +249,23 @@ export interface User {
   firstName: string;
   lastName: string;
   fullName: string;
-  role: UserRole;
+  displayName?: string;
+  // Professional classification(s) = permission role(s); a user may hold several.
+  roles: UserRole[];
   isActive: boolean;
   identityNumber?: string;
   gender?: string;
-  dateOfBirth?: string;
-  phone?: string;
+  title?: string;                    // ד"ר / פרופ' / מר / גב'
+  licenseNumber?: string;
+  specialistLicenseNumber?: string;  // מספר רישיון מומחה (מרמ)
+  employeeNumber?: string;
   mobile?: string;
-  primaryJobTitle?: string;
-  secondaryJobTitle?: string;
+  email?: string;
   department?: string;
-  address?: string;
-  city?: string;
-  zipCode?: string;
-  country?: string;
-  notes?: string;
-  accountExpiresAt?: string;
   lastLoginAt?: string;
-  loginFailureCount: number;
-  createdAt: string;
-  updatedAt: string;
+  loginFailureCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AuthToken {

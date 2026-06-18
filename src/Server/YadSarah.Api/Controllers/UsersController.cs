@@ -31,7 +31,7 @@ public class UsersController(UserService svc, AuditService audit) : ControllerBa
         try
         {
             var user = await svc.CreateAsync(req);
-            await audit.LogAsync(AuditService.Created, "User", user.Id, "Role", newValue: user.Role.ToString());
+            await audit.LogAsync(AuditService.Created, "User", user.Id, "Roles", newValue: string.Join(",", user.Roles));
             return CreatedAtAction(nameof(GetById), new { id = user.Id }, user);
         }
         catch (ArgumentException ex)
@@ -54,14 +54,14 @@ public class UsersController(UserService svc, AuditService audit) : ControllerBa
         {
             var target = await svc.GetByIdAsync(id);
             if (target is null) return NotFound();
-            if (target.Role == UserRole.Admin || req.Role == UserRole.Admin)
+            if (target.Roles.Contains(UserRole.Admin) || req.Roles.Contains(UserRole.Admin))
                 return StatusCode(403, new { message = "אין הרשאה לערוך חשבון מנהל או להעניק הרשאת מנהל." });
         }
 
         try
         {
             var user = await svc.UpdateAsync(id, req);
-            await audit.LogAsync(AuditService.Updated, "User", user.Id, "Role", newValue: user.Role.ToString());
+            await audit.LogAsync(AuditService.Updated, "User", user.Id, "Roles", newValue: string.Join(",", user.Roles));
             return Ok(user);
         }
         catch (KeyNotFoundException)

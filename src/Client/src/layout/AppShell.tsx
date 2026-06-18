@@ -10,6 +10,7 @@ import {
 } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
+import { hasAnyRole, rolesLabel } from '../constants/roles';
 import { startHub, stopHub } from '../realtime/hub';
 import { workstationApi } from '../api/workstation';
 import { getOrCreateDeviceId } from '../utils/deviceId';
@@ -28,10 +29,6 @@ const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[
   { href: '/admin/feedback', label: 'דיווחי משתמשים', icon: <IconMessageReport size={18} />, roles: ['Admin'] },
   { href: '/admin/audit', label: 'יומן ביקורת', icon: <IconShieldLock size={18} />, roles: ['Admin'] },
 ];
-
-const ROLE_LABEL: Record<string, string> = {
-  Admin: 'מנהל מערכת', ShiftManager: 'מנהל משמרת', Doctor: 'רופא/ה', Nurse: 'אח/ות', Reception: 'קבלה',
-};
 
 function HeaderClock() {
   const [now, setNow] = useState(() => new Date());
@@ -117,9 +114,9 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
                   {user.fullName.charAt(0)}
                 </Avatar>
                 <Box visibleFrom="sm">
-                  <Text size="sm" fw={600} lh={1.1} c="#fff">{user.fullName}</Text>
+                  <Text size="sm" fw={600} lh={1.1} c="#fff">{user.displayName || user.fullName}</Text>
                   <Text size="xs" lh={1.1} c="var(--mantine-color-slate-3)">
-                    {ROLE_LABEL[user.role] ?? user.role}{user.department ? ` · ${user.department}` : ''}
+                    {rolesLabel(user.roles)}{user.department ? ` · ${user.department}` : ''}
                   </Text>
                 </Box>
               </Group>
@@ -138,7 +135,7 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
       </MantineAppShell.Header>
 
       <MantineAppShell.Navbar p="sm" style={{ background: 'var(--surface)' }}>
-        {NAV.filter((item) => !item.roles || (!!user && item.roles.includes(user.role))).map((item) => {
+        {NAV.filter((item) => !item.roles || hasAnyRole(user?.roles, ...item.roles)).map((item) => {
           const active = location.pathname === item.href;
           return (
             <NavLink

@@ -6,6 +6,8 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import { theme } from './theme';
 import { useAuthStore } from './store/auth';
+import { hasAnyRole, isClinicalStaff } from './constants/roles';
+import type { UserRole } from './types';
 import AppShellLayout from './layout/AppShell';
 import LoginPage from './features/auth/LoginPage';
 import QueuePage from './features/queue/QueuePage';
@@ -33,14 +35,16 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 // Role gate for the operational (reception/discharge) screens. A clinical user who
 // reaches the URL directly or via a stale link is redirected to the queue — matching
 // the hidden nav link, so the server-side 403 is never hit as a dead end.
-function RequireRole({ roles, children }: { roles: string[]; children: React.ReactNode }) {
-  const role = useAuthStore((s) => s.user?.role);
-  return role && roles.includes(role) ? <>{children}</> : <Navigate to="/queue" replace />;
+function RequireRole({ roles, children }: { roles: UserRole[]; children: React.ReactNode }) {
+  const userRoles = useAuthStore((s) => s.user?.roles);
+  return hasAnyRole(userRoles, ...roles) ? <>{children}</> : <Navigate to="/queue" replace />;
 }
 
 function DefaultRedirect() {
-  const role = useAuthStore((s) => s.user?.role);
-  return <Navigate to={role === 'Reception' ? '/reception' : '/queue'} replace />;
+  const userRoles = useAuthStore((s) => s.user?.roles);
+  // Reception-only staff land on their desk; anyone clinical lands on the queue.
+  const dest = hasAnyRole(userRoles, 'Reception') && !isClinicalStaff(userRoles) ? '/reception' : '/queue';
+  return <Navigate to={dest} replace />;
 }
 
 export default function App() {

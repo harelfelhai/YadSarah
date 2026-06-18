@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { formsApi } from '../../api/forms';
 import { useAuthStore } from '../../store/auth';
+import { hasAnyRole } from '../../constants/roles';
 import { buildFormDocument } from './formDocument';
 import type { MedicalForm } from '../../types';
 
@@ -20,8 +21,8 @@ export default function VisitSummaryPage() {
   const [params] = useSearchParams();
   const autoPrint = params.get('print') === '1';
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const role = useAuthStore((s) => s.user?.role);
-  const isDoctor = role === 'Doctor';
+  const roles = useAuthStore((s) => s.user?.roles);
+  const isDoctor = hasAnyRole(roles, 'Doctor');
 
   const { data: visit, isLoading: visitLoading } = useQuery({
     queryKey: ['visit', visitId],

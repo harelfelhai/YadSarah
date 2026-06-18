@@ -12,16 +12,15 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { useAuthStore } from '../../store/auth';
+import { isReceptionStaff } from '../../constants/roles';
 import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
 import DateField from '../../components/DateField';
-
-const RECEPTION_ROLES = new Set(['Reception', 'ShiftManager', 'Admin']);
 
 export default function DischargePage() {
   const { visitId } = useParams<{ visitId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const role = useAuthStore((s) => s.user?.role);
+  const roles = useAuthStore((s) => s.user?.roles);
 
   const { data: visit, isLoading, isError } = useQuery({
     queryKey: ['visit', visitId],
@@ -51,7 +50,7 @@ export default function DischargePage() {
 
   // Clinical staff don't discharge — keep them out of the administrative surface
   // (the server enforces this too on the status PATCH / visit PUT).
-  if (role && !RECEPTION_ROLES.has(role)) return <Navigate to="/queue" replace />;
+  if (roles && !isReceptionStaff(roles)) return <Navigate to="/queue" replace />;
 
   if (isLoading) return <Box ta="center" py="xl"><Loader /></Box>;
   if (isError || !visit) {

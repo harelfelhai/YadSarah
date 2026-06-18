@@ -33,16 +33,25 @@ public class AuthController(AuthService auth, AuditService audit, WorkstationSer
 
             case LoginOutcome.Success:
                 var user = result.User!;
-                await audit.LogAsync(user.Id, user.FullName, AuditService.Login, "Auth", user.Id);
+                var displayName = user.DisplayName ?? user.FullName;
+                // Audit the login including the computer/room it came from (device id).
+                await audit.LogAsync(user.Id, displayName, AuditService.Login, "Auth", user.Id,
+                    newValue: string.IsNullOrWhiteSpace(req.DeviceId) ? null : $"device:{req.DeviceId}");
                 // Record this user as the current occupant of their computer (if the device
                 // is already mapped to a room) and tell the client the room — a null room
                 // means the device is new and the client should prompt to set it.
-                var room = await workstations.SetOccupantAsync(req.DeviceId, user.Id, user.FullName, user.Role);
+                var room = await workstations.SetOccupantAsync(req.DeviceId, user.Id, displayName, user.PrimaryRole);
                 return Ok(new
                 {
                     token = result.Token,
                     expiresAt = result.ExpiresAt,
-                    user = new { user.Id, user.Username, user.FullName, Role = user.Role.ToString() },
+                    user = new
+                    {
+                        user.Id,
+                        user.Username,
+                        FullName = displayName,
+                        Roles = user.Roles.Select(r => r.ToString()).ToArray(),
+                    },
                     workstationRoom = room,
                 });
 
@@ -59,7 +68,7 @@ public class AuthController(AuthService auth, AuditService audit, WorkstationSer
         var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var username = User.Identity?.Name;
         var fullName = User.FindFirst("fullName")?.Value;
-        var role = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
-        return Ok(new { Id = userId, Username = username, FullName = fullName, Role = role });
+        var roles = User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value).ToArray();
+        return Ok(new { Id = userId, Username = username, FullName = fullName, Roles = roles });
     }
 }

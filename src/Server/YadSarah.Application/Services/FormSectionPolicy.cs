@@ -30,14 +30,21 @@ public static class FormSectionPolicy
         "administrationOrders", "routing",
     };
 
-    public static bool CanEdit(UserRole role, string section) => role switch
+    // Edit permission for a single role.
+    private static bool CanEditSingle(UserRole role, string section) => role switch
     {
-        UserRole.Doctor or UserRole.ShiftManager or UserRole.Admin => true,
-        UserRole.Nurse => NurseEditable.Contains(section),
-        _ => false, // Reception and others cannot edit clinical sections
+        // Doctors, managers and medical students may edit any section.
+        UserRole.Doctor or UserRole.ShiftManager or UserRole.Admin or UserRole.MedStudent => true,
+        // Nurses and nursing students are limited to the nurse-editable sections.
+        UserRole.Nurse or UserRole.NursingStudent => NurseEditable.Contains(section),
+        _ => false, // Reception, LabStaff (view-only) and others cannot edit clinical sections
     };
 
-    // Sections the role may edit — used by the API to inform the client.
-    public static IEnumerable<string> EditableSections(UserRole role) =>
-        AllSections.Where(s => CanEdit(role, s));
+    // A user may edit a section if ANY of their roles permits it (permissions = union).
+    public static bool CanEdit(IReadOnlyCollection<UserRole> roles, string section) =>
+        roles.Any(r => CanEditSingle(r, section));
+
+    // Sections the user's roles may edit — used by the API to inform the client.
+    public static IEnumerable<string> EditableSections(IReadOnlyCollection<UserRole> roles) =>
+        AllSections.Where(s => CanEdit(roles, s));
 }

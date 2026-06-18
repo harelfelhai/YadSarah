@@ -20,6 +20,7 @@ import DateField from '../../components/DateField';
 import { useAuthStore } from '../../store/auth';
 import { newId } from '../../utils/id';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
+import { hasAnyRole } from '../../constants/roles';
 import {
   joinForm, leaveForm, onLockAcquired, onLockReleased,
   onFormSectionUpdated, onPresenceUpdate, onFormSigned, onFormAddendaChanged,
@@ -198,13 +199,13 @@ export default function TreatmentFormPage() {
   // ── Derived edit-permission state ──────────────────────────────────────────
   const formSigned = !!activeForm?.isSigned;
   const canEditSigned = canEditSignedForm(
-    user?.role, formSigned, activeForm?.signedAt, activeForm?.postSignEditWindowMinutes ?? 10);
+    user?.roles, formSigned, activeForm?.signedAt, activeForm?.postSignEditWindowMinutes ?? 10);
   void nowTick; // re-evaluate canEditSigned on each tick
 
   const sectionReadOnly = (section: string): boolean => {
     if (!activeForm) return true;
     if (formSigned && !canEditSigned) return true;             // signed → locked
-    if (!canEditSection(user?.role, section)) return true;     // role can't edit this field
+    if (!canEditSection(user?.roles, section)) return true;    // role can't edit this field
     if (locks[section] && locks[section].lockedByUserId !== user?.id) return true; // held by another
     return false;
   };
@@ -307,7 +308,7 @@ export default function TreatmentFormPage() {
     }
   };
 
-  const isDoctor = user?.role === 'Doctor';
+  const isDoctor = hasAnyRole(user?.roles, 'Doctor');
 
   if (visitLoading || formsLoading) return <Box ta="center" py="xl"><Loader /></Box>;
 
@@ -374,7 +375,7 @@ export default function TreatmentFormPage() {
             const isText = TEXT_SECTION_KEYS.includes(key);
             const edit = activeForm.fieldEdits?.[key];
             const st = saveState[key];
-            const noPerm = !canEditSection(user?.role, key);
+            const noPerm = !canEditSection(user?.roles, key);
 
             return (
               <Card key={key} withBorder p="sm" radius="md">

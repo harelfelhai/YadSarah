@@ -15,7 +15,7 @@ namespace YadSarah.Api.Controllers;
 [ApiController]
 // Medical forms hold clinical PHI — restricted to clinical staff (need-to-know).
 // Reception is intentionally excluded. Sign/addenda are further limited to Doctor in the service.
-[Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin")]
+[Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent,LabStaff")]
 public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditService audit, AuthService auth) : ControllerBase
 {
     private Guid UserId =>
@@ -24,6 +24,11 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         User.FindFirstValue("fullName") ?? User.Identity?.Name ?? "Unknown";
     private UserRole UserRole =>
         Enum.TryParse<UserRole>(User.FindFirstValue(ClaimTypes.Role), out var r) ? r : UserRole.Reception;
+    // All of the caller's roles — permissions on a form are the union (CanEdit / sign).
+    private IReadOnlyCollection<UserRole> UserRoles =>
+        User.FindAll(ClaimTypes.Role)
+            .Select(c => Enum.TryParse<UserRole>(c.Value, out var r) ? (UserRole?)r : null)
+            .Where(r => r.HasValue).Select(r => r!.Value).ToList();
 
     // Re-authentication gate for signing: the user must re-enter their own username+password.
     // Returns true only when the credentials are valid AND belong to the logged-in user
@@ -122,7 +127,7 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
                 : req.Data?.ToString() ?? string.Empty;
 
             var updated = await svc.UpdateSectionAsync(
-                id, section, rawValue, req.Version, UserId, UserName, UserRole);
+                id, section, rawValue, req.Version, UserId, UserName, UserRoles);
 
             await audit.LogAsync(AuditService.Updated, "MedicalForm", id, section);
 
@@ -172,7 +177,7 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         }
         try
         {
-            var form = await svc.SignAsync(id, UserId, UserName, UserRole);
+            var form = await svc.SignAsync(id, UserId, UserName, UserRoles);
             await audit.LogAsync(AuditService.Signed, "MedicalForm", id);
             await hub.Clients.Group($"form_{id}").SendAsync("FormSigned", new
             {
@@ -219,7 +224,7 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         }
         try
         {
-            var form = await svc.SignAddendumAsync(id, addendumId, UserId, UserName, UserRole);
+            var form = await svc.SignAddendumAsync(id, addendumId, UserId, UserName, UserRoles);
             await audit.LogAsync(AuditService.Signed, "MedicalFormAddendum", id, "addendum", newValue: addendumId.ToString());
             await hub.Clients.Group($"form_{id}").SendAsync("FormAddendaChanged", new { formId = id });
             return Ok(MapForm(form));

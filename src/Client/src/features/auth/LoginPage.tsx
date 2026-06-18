@@ -7,6 +7,7 @@ import { useForm } from '@mantine/form';
 import { IconAlertCircle, IconActivityHeartbeat } from '@tabler/icons-react';
 import { authApi } from '../../api/auth';
 import { useAuthStore } from '../../store/auth';
+import { hasAnyRole, isClinicalStaff } from '../../constants/roles';
 import { startHub } from '../../realtime/hub';
 import Logo from '../../components/Logo';
 
@@ -31,8 +32,9 @@ export default function LoginPage() {
       const { token, user } = await authApi.login(values.username, values.password);
       setAuth(token, user);
       await startHub();
-      // Reception staff land on their desk; clinical staff on the queue.
-      navigate(user.role === 'Reception' ? '/reception' : '/queue');
+      // Reception-only staff land on their desk; clinical staff on the queue.
+      const dest = hasAnyRole(user.roles, 'Reception') && !isClinicalStaff(user.roles) ? '/reception' : '/queue';
+      navigate(dest);
     } catch {
       setError('שם משתמש או סיסמה שגויים');
     } finally {

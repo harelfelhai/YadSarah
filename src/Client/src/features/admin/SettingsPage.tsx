@@ -14,6 +14,7 @@ import { medicationsApi } from '../../api/medications';
 import { demoApi, type SeedResult } from '../../api/demo';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { useAuthStore } from '../../store/auth';
+import { hasAnyRole } from '../../constants/roles';
 
 const QUEUE_RESET_HOUR_KEY = 'queue.resetHour';
 
@@ -24,8 +25,8 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({
 
 export default function SettingsPage() {
   const qc = useQueryClient();
-  const role = useAuthStore((s) => s.user?.role);
-  const isAdmin = role === 'Admin';
+  const roles = useAuthStore((s) => s.user?.roles);
+  const isAdmin = hasAnyRole(roles, 'Admin');
 
   const { data: settings = [], isLoading } = useQuery({
     queryKey: ['settings'],

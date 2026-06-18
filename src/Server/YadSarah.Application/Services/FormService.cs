@@ -30,20 +30,20 @@ public class FormService(AppDbContext db)
 
     public async Task<MedicalForm> UpdateSectionAsync(
         Guid formId, string section, string jsonOrText, int expectedVersion,
-        Guid userId, string userName, UserRole role)
+        Guid userId, string userName, IReadOnlyCollection<UserRole> roles)
     {
         var form = await db.MedicalForms.FindAsync(formId)
             ?? throw new KeyNotFoundException($"Form {formId} not found");
 
-        // Role-based field permission
-        if (!FormSectionPolicy.CanEdit(role, section))
+        // Role-based field permission (union across the user's roles)
+        if (!FormSectionPolicy.CanEdit(roles, section))
             throw new ForbiddenException("אין לך הרשאה לערוך שדה זה.");
 
         // Signed forms are locked — except a shift manager / admin within the grace window
         if (form.IsSigned)
         {
             var canOverride =
-                (role == UserRole.ShiftManager || role == UserRole.Admin) &&
+                (roles.Contains(UserRole.ShiftManager) || roles.Contains(UserRole.Admin)) &&
                 form.SignedAt.HasValue &&
                 DateTime.UtcNow <= form.SignedAt.Value.Add(PostSignEditWindow);
             if (!canOverride)
@@ -65,9 +65,9 @@ public class FormService(AppDbContext db)
 
     // ── Signing ───────────────────────────────────────────────────────────
 
-    public async Task<MedicalForm> SignAsync(Guid formId, Guid userId, string userName, UserRole role)
+    public async Task<MedicalForm> SignAsync(Guid formId, Guid userId, string userName, IReadOnlyCollection<UserRole> roles)
     {
-        if (role != UserRole.Doctor)
+        if (!roles.Contains(UserRole.Doctor))
             throw new ForbiddenException("רק רופא יכול לחתום על הטופס ולסיים את הטיפול.");
 
         var form = await db.MedicalForms.FindAsync(formId)
@@ -118,9 +118,9 @@ public class FormService(AppDbContext db)
     }
 
     public async Task<MedicalForm> SignAddendumAsync(
-        Guid formId, Guid addendumId, Guid userId, string userName, UserRole role)
+        Guid formId, Guid addendumId, Guid userId, string userName, IReadOnlyCollection<UserRole> roles)
     {
-        if (role != UserRole.Doctor)
+        if (!roles.Contains(UserRole.Doctor))
             throw new ForbiddenException("רק רופא יכול לחתום על תוספת.");
 
         var form = await db.MedicalForms.FindAsync(formId)
