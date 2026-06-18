@@ -296,7 +296,7 @@ export default function TreatmentFormPage() {
     formRef.current = updated;
     setActiveForm(updated);
     setSignConfirm(false);
-    notifications.show({ color: 'green', message: 'הטופס נחתם והטיפול הסתיים' });
+    notifications.show({ color: 'green', message: 'הטופס נחתם, המטופל שוחרר וההדפסה נפתחת' });
     queryClient.invalidateQueries({ queryKey: ['queue'] });
     // Open the printable PDF summary automatically after signing — but only once
     // per signed form. The ref guard ensures that returning to this page (which
@@ -459,9 +459,9 @@ export default function TreatmentFormPage() {
         opened={signConfirm}
         onClose={() => setSignConfirm(false)}
         onConfirm={handleSign}
-        title="חתימה וסיום טיפול"
-        description={`לאחר החתימה הטופס יינעל לעריכה והטיפול יסומן כ"סיים טיפול" (שינויים לאחר מכן רק למנהל משמרת בחלון של ${activeForm?.postSignEditWindowMinutes ?? 10} דקות, או כ"תוספת לאחר חתימה"). לאישור — הזן מחדש את שם המשתמש והסיסמה שלך.`}
-        confirmLabel="חתום וסיים טיפול"
+        title="חתימה ושחרור המטופל"
+        description={`לאחר החתימה הטופס יינעל לעריכה, המטופל ישוחרר, ויודפסו הסיכום והמרשם (שינויים לאחר מכן רק למנהל משמרת בחלון של ${activeForm?.postSignEditWindowMinutes ?? 10} דקות, או כ"תוספת לאחר חתימה"). לאישור — הזן מחדש את שם המשתמש והסיסמה שלך.`}
+        confirmLabel="חתום ושחרר"
       />
     </Stack>
   );

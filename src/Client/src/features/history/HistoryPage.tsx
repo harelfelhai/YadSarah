@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Badge, Box, Button, Card, Group, Loader, Pagination, Select, Stack, Table, Text,
-  TextInput, Title, Tooltip,
+  TextInput, Title,
 } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
-import { IconSearch, IconEye, IconX, IconClock } from '@tabler/icons-react';
+import { IconSearch, IconX, IconClock } from '@tabler/icons-react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { visitsApi, type VisitHistoryItem } from '../../api/visits';
 import { DEPARTMENTS } from '../../constants/departments';
@@ -154,7 +154,6 @@ export default function HistoryPage() {
                     <Table.Th>מחלקה</Table.Th>
                     <Table.Th>צוות מטפל</Table.Th>
                     <Table.Th>סטטוס</Table.Th>
-                    <Table.Th />
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -162,6 +161,8 @@ export default function HistoryPage() {
                     <Table.Tr
                       key={v.visitId}
                       bg={v.relatedTier === 0 ? 'var(--mantine-color-steel-0)' : undefined}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => navigate(`/visits/${v.visitId}/summary`)}
                     >
                       <Table.Td style={{ whiteSpace: 'nowrap' }}>{fmtDate(v.admissionDate)}</Table.Td>
                       <Table.Td>{v.admissionTime?.slice(0, 5) ?? '—'}</Table.Td>
@@ -179,14 +180,6 @@ export default function HistoryPage() {
                       </Table.Td>
                       <Table.Td>
                         <Badge color={STATUS_COLOR[v.status]} variant="light">{STATUS_LABEL[v.status]}</Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Tooltip label="צפייה בטופס (PDF)">
-                          <Button size="compact-xs" variant="subtle" leftSection={<IconEye size={14} />}
-                            onClick={() => navigate(`/visits/${v.visitId}/summary`)}>
-                            צפה
-                          </Button>
-                        </Tooltip>
                       </Table.Td>
                     </Table.Tr>
                   ))}

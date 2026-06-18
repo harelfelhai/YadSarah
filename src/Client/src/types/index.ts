@@ -216,6 +216,8 @@ export interface MedicalForm {
   isSigned: boolean;
   signedByUserId?: string;
   signedByName?: string;
+  signedByLicense?: string;
+  signedBySpecialistLicense?: string;
   signedAt?: string;
   postSignEditWindowMinutes: number;
   fieldEdits: Record<string, FieldEdit>;

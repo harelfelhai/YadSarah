@@ -16,7 +16,7 @@ export const SECTIONS: { key: string; label: string }[] = [
   { key: 'diagnoses', label: 'אבחנות' },
   { key: 'discussionAndPlan', label: 'דיון ותכנית' },
   { key: 'dischargeRecommendations', label: 'המלצות בשחרור' },
-  { key: 'dischargeMedications', label: 'תרופות שחרור' },
+  { key: 'dischargeMedications', label: 'מרשם — תרופות בשחרור' },
   { key: 'orderedUnits', label: 'יחידות להזמנה' },
   { key: 'routing', label: 'ניתוב / הפניות' },
 ];
@@ -96,7 +96,11 @@ export function buildFormDocument(form: MedicalForm, visit: Visit): string {
   }
 
   if (form.isSigned) {
-    parts.push(`<div class="sign">נחתם ע"י ${esc(form.signedByName)} — ${esc(formatDateTime(form.signedAt))}</div>`);
+    // Prescriber sign-off: name + license (+ specialist license) — the legally meaningful
+    // part of a prescription / discharge letter.
+    const lic = form.signedByLicense ? ` · מס׳ רישיון ${esc(form.signedByLicense)}` : '';
+    const spec = form.signedBySpecialistLicense ? ` · מומחה ${esc(form.signedBySpecialistLicense)}` : '';
+    parts.push(`<div class="sign">נחתם ע"י ${esc(form.signedByName)}${lic}${spec} — ${esc(formatDateTime(form.signedAt))}</div>`);
   }
 
   for (let i = 0; i < (form.addenda ?? []).length; i++) {

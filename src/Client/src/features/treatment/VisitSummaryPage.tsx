@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { formsApi } from '../../api/forms';
 import { useAuthStore } from '../../store/auth';
-import { hasAnyRole } from '../../constants/roles';
+import { hasAnyRole, isClinicalStaff } from '../../constants/roles';
 import { buildFormDocument } from './formDocument';
 import type { MedicalForm } from '../../types';
 
@@ -66,6 +66,17 @@ export default function VisitSummaryPage() {
           חזרה
         </Button>
         <Group gap="sm">
+          {/* Unsigned form → edit it directly, exactly like a patient in the queue. */}
+          {form && !form.isSigned && isClinicalStaff(roles) && (
+            <Button
+              variant="light"
+              leftSection={<IconWriting size={16} />}
+              onClick={() => navigate(`/visits/${visitId}`)}
+            >
+              עריכת הטופס
+            </Button>
+          )}
+          {/* Signed form → append a separately-signed addendum (doctors only). */}
           {isDoctor && form?.isSigned && (
             <Button
               variant="light"

@@ -70,6 +70,8 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         isSigned = f.IsSigned,
         signedByUserId = f.SignedByUserId,
         signedByName = f.SignedByName,
+        signedByLicense = f.SignedByLicense,
+        signedBySpecialistLicense = f.SignedBySpecialistLicense,
         signedAt = f.SignedAt,
         postSignEditWindowMinutes = (int)FormService.PostSignEditWindow.TotalMinutes,
         fieldEdits = ParseJson(f.FieldEditsJson, "{}"),

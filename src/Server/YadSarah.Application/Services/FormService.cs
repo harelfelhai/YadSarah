@@ -76,18 +76,25 @@ public class FormService(AppDbContext db)
         if (form.IsSigned)
             throw new FormSignedException("הטופס כבר חתום.");
 
+        // Snapshot the prescriber's license for the printed prescription / discharge letter.
+        var signer = await db.Users.FindAsync(userId);
+
         form.IsSigned = true;
         form.SignedByUserId = userId;
         form.SignedByName = userName;
+        form.SignedByLicense = signer?.LicenseNumber;
+        form.SignedBySpecialistLicense = signer?.SpecialistLicenseNumber;
         form.SignedAt = DateTime.UtcNow;
         form.Version++;
         form.UpdatedAt = DateTime.UtcNow;
         form.UpdatedByUserId = userId;
 
-        // End of treatment → patient leaves the treatment queue
+        // Signing both ends treatment AND discharges the patient: the doctor releases the
+        // patient at signing. The reception discharge board now serves only edge cases
+        // (a patient who left without a signed form, or a manual release).
         var visit = await db.Visits.FindAsync(form.VisitId);
         if (visit is not null && visit.Status != VisitStatus.Discharged)
-            visit.Status = VisitStatus.FinishedTreatment;
+            visit.Status = VisitStatus.Discharged;
 
         await db.SaveChangesAsync();
         return form;

@@ -44,6 +44,10 @@ public class MedicalForm
     public bool IsSigned { get; set; }
     public Guid? SignedByUserId { get; set; }
     public string? SignedByName { get; set; }
+    // Prescriber license, snapshotted at signing time (a prescription is a legal
+    // document — the license as it was when signed is what matters).
+    public string? SignedByLicense { get; set; }
+    public string? SignedBySpecialistLicense { get; set; }
     public DateTime? SignedAt { get; set; }
 
     // Per-field last-editor tracking: { sectionKey: { userId, userName, at } }
