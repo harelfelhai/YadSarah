@@ -74,14 +74,14 @@ export default function DischargeBoard() {
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" miw={820} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" miw={900} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
                 <Table.Th>שם</Table.Th>
                 <Table.Th style={{ width: 150 }}>ת.ז / מזהה</Table.Th>
-                <Table.Th style={{ width: 130 }}>מחלקה</Table.Th>
-                <Table.Th style={{ width: 130 }}>סטטוס</Table.Th>
+                <Table.Th style={{ width: 120 }}>מחלקה</Table.Th>
+                <Table.Th style={{ width: 200 }}>סטטוס</Table.Th>
                 <Table.Th style={{ width: 160 }}>פעולות</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -106,8 +106,8 @@ export default function DischargeBoard() {
                         ? <Badge variant="light" color="steel" size="sm">{visit.receptionDepartment}</Badge>
                         : '—'}
                     </Table.Td>
-                    <Table.Td>
-                      <Group gap={6} wrap="nowrap">
+                    <Table.Td style={{ whiteSpace: 'normal' }}>
+                      <Group gap={6} wrap="wrap">
                         <Badge color={STATUS_COLOR[visit.status]} variant="light">{STATUS_LABEL[visit.status]}</Badge>
                         {ready && <Badge color="pine" variant="dot" size="sm">ממתין לשחרור</Badge>}
                       </Group>
