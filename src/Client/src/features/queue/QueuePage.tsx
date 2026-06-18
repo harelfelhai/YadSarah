@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, Title,
+  Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconUserPlus } from '@tabler/icons-react';
+import { IconSearch, IconUserPlus } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
@@ -32,6 +32,7 @@ export default function QueuePage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const [showAll, setShowAll] = useState(false);
+  const [search, setSearch] = useState('');
   // Re-render every 30s so wait-time chips stay live.
   const [, setTick] = useState(0);
 
@@ -90,6 +91,16 @@ export default function QueuePage() {
       ]
     : active;
 
+  // Find a patient quickly by name / ID (e.g. to open their form).
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? sorted.filter((v) => {
+        const name = v.patient ? `${v.patient.firstName} ${v.patient.lastName}`.toLowerCase() : '';
+        const id = v.patient?.identityNumber ?? '';
+        return name.includes(q) || id.includes(q);
+      })
+    : sorted;
+
   // Live status counts for the summary strip (over the loaded set).
   const counts = active.reduce<Record<string, number>>((acc, v) => {
     acc[v.status] = (acc[v.status] ?? 0) + 1;
@@ -105,6 +116,14 @@ export default function QueuePage() {
           <Text size="sm" c="dimmed">לוח טיפול חי · {sorted.length} מטופלים פעילים</Text>
         </Box>
         <Group gap="md">
+          <TextInput
+            placeholder="חיפוש לפי שם או ת״ז"
+            leftSection={<IconSearch size={16} />}
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+            w={240}
+            maw="100%"
+          />
           <Switch
             label="הצג את כל מטופלי היום"
             checked={showAll}
@@ -143,9 +162,9 @@ export default function QueuePage() {
 
       {isLoading ? (
         <Box ta="center" py="xl"><Loader /></Box>
-      ) : sorted.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <Card withBorder p="xl" ta="center">
-          <Text c="dimmed">אין מטופלים בתור כרגע</Text>
+          <Text c="dimmed">{q ? 'לא נמצאו מטופלים תואמים' : 'אין מטופלים בתור כרגע'}</Text>
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
@@ -165,7 +184,7 @@ export default function QueuePage() {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {sorted.map((visit, i) => {
+              {filtered.map((visit, i) => {
                 const isOtherDept = showDeptHighlight && visit.receptionDepartment !== userDept;
                 const wait = waitMinutes(visit);
                 const overdue = visit.status === 'Waiting' && wait >= OVERDUE_MIN;

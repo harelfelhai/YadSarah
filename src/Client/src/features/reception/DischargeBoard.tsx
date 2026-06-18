@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge, Box, Button, Card, Group, Loader, Table, Text,
+  Badge, Box, Button, Card, Group, Loader, Table, Text, TextInput,
 } from '@mantine/core';
-import { IconLogout } from '@tabler/icons-react';
+import { IconLogout, IconSearch } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
@@ -19,6 +19,7 @@ function dischargeRank(v: Visit): number {
 export default function DischargeBoard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
 
   // Same live source as the clinical queue: current queue-day, non-discharged.
   const { data: visits = [], isLoading } = useQuery({
@@ -39,33 +40,53 @@ export default function DischargeBoard() {
   );
   const waitingCount = visits.filter((v) => v.status === 'FinishedTreatment').length;
 
+  // A patient coming to be released gives their name / ID at reception — filter by it.
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? sorted.filter((v) => {
+        const name = v.patient ? `${v.patient.firstName} ${v.patient.lastName}`.toLowerCase() : '';
+        const id = v.patient?.identityNumber ?? '';
+        return name.includes(q) || id.includes(q);
+      })
+    : sorted;
+
   return (
     <Box>
-      <Text size="sm" c="dimmed" mb="sm">
-        {waitingCount} ממתינים לשחרור · {sorted.length} מטופלים פעילים
-      </Text>
+      <Group justify="space-between" align="flex-end" mb="sm" wrap="wrap" gap="sm">
+        <Text size="sm" c="dimmed">
+          {waitingCount} ממתינים לשחרור · {sorted.length} מטופלים פעילים
+        </Text>
+        <TextInput
+          placeholder="חיפוש לפי שם או ת״ז"
+          leftSection={<IconSearch size={16} />}
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+          w={260}
+          maw="100%"
+        />
+      </Group>
 
       {isLoading ? (
         <Box ta="center" py="xl"><Loader /></Box>
-      ) : sorted.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <Card withBorder p="xl" ta="center">
-          <Text c="dimmed">אין מטופלים לשחרור כרגע</Text>
+          <Text c="dimmed">{q ? 'לא נמצאו מטופלים תואמים' : 'אין מטופלים לשחרור כרגע'}</Text>
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" miw={900} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" miw={820} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
                 <Table.Th>שם</Table.Th>
-                <Table.Th>ת.ז / מזהה</Table.Th>
-                <Table.Th style={{ minWidth: 150 }}>מחלקה</Table.Th>
+                <Table.Th style={{ width: 150 }}>ת.ז / מזהה</Table.Th>
+                <Table.Th style={{ width: 130 }}>מחלקה</Table.Th>
                 <Table.Th style={{ width: 130 }}>סטטוס</Table.Th>
                 <Table.Th style={{ width: 160 }}>פעולות</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {sorted.map((visit) => {
+              {filtered.map((visit) => {
                 const ready = visit.status === 'FinishedTreatment';
                 return (
                   <Table.Tr key={visit.id} bg={ready ? 'var(--mantine-color-pine-0)' : undefined}>

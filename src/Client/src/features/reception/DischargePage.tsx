@@ -9,7 +9,7 @@ import { notifications } from '@mantine/notifications';
 import {
   IconAlertCircle, IconArrowRight, IconLogout, IconPencil,
 } from '@tabler/icons-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { useAuthStore } from '../../store/auth';
 import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
@@ -20,6 +20,7 @@ const RECEPTION_ROLES = new Set(['Reception', 'ShiftManager', 'Admin']);
 export default function DischargePage() {
   const { visitId } = useParams<{ visitId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const role = useAuthStore((s) => s.user?.role);
 
   const { data: visit, isLoading, isError } = useQuery({
@@ -91,6 +92,9 @@ export default function DischargePage() {
     setDischarging(true);
     try {
       await visitsApi.updateStatus(visit.id, 'Discharged');
+      // Refresh the board's source query so the discharged patient is gone on
+      // arrival — don't rely on the 30s poll / a SignalR race to drop the row.
+      await queryClient.invalidateQueries({ queryKey: ['queue'] });
       notifications.show({ color: 'pine', message: 'המטופל שוחרר' });
       navigate('/reception?tab=discharge');
     } catch {
@@ -174,6 +178,9 @@ export default function DischargePage() {
               readOnly
               styles={{ input: { backgroundColor: '#f8f9fa', cursor: 'not-allowed' } }}
               description="מחושב לפי סיבת קבלה וקופ״ח"
+              // Keep the input aligned with the sibling fields: the help text goes
+              // below the input rather than between label and input.
+              inputWrapperOrder={['label', 'input', 'description', 'error']}
             />
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 4 }}>

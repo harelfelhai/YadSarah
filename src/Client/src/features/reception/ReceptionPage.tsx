@@ -517,6 +517,7 @@ export default function ReceptionPage() {
                     readOnly
                     styles={{ input: { backgroundColor: '#f8f9fa', cursor: 'not-allowed' } }}
                     description="מחושב לפי סיבת קבלה וקופ״ח"
+                    inputWrapperOrder={['label', 'input', 'description', 'error']}
                   />
                 </Grid.Col>
                 <Grid.Col span={8}>
