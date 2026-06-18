@@ -32,7 +32,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       // Not JSON — use the raw body text as-is.
     }
-    throw new Error(message || `HTTP ${res.status}`);
+    // Attach the HTTP status so callers can branch on it (e.g. 409 conflict handling).
+    const err = new Error(message || `HTTP ${res.status}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
 
   if (res.status === 204) return undefined as T;

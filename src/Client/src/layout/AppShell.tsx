@@ -6,18 +6,23 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconList, IconUserPlus, IconLogout, IconUsers, IconSettings, IconHistory,
-  IconShieldLock, IconMessageReport, IconClock,
+  IconShieldLock, IconMessageReport, IconClock, IconLayoutDashboard,
 } from '@tabler/icons-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
-import { stopHub } from '../realtime/hub';
+import { startHub, stopHub } from '../realtime/hub';
+import { workstationApi } from '../api/workstation';
+import { getOrCreateDeviceId } from '../utils/deviceId';
 import Logo from '../components/Logo';
 import FeedbackWidget from '../components/FeedbackWidget';
+import WorkstationSetupModal from '../components/WorkstationSetupModal';
 import type { UserRole } from '../types';
 
 const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[] = [
   { href: '/queue', label: 'תור', icon: <IconList size={18} /> },
   { href: '/reception/new', label: 'קבלת מטופל', icon: <IconUserPlus size={18} /> },
   { href: '/history', label: 'היסטוריית מטופלים', icon: <IconHistory size={18} /> },
+  { href: '/shift-status', label: 'סטטוס משמרת', icon: <IconLayoutDashboard size={18} />, roles: ['Admin', 'ShiftManager'] },
   { href: '/admin/users', label: 'ניהול משתמשים', icon: <IconUsers size={18} />, roles: ['Admin', 'ShiftManager'] },
   { href: '/admin/settings', label: 'הגדרות מערכת', icon: <IconSettings size={18} />, roles: ['Admin'] },
   { href: '/admin/feedback', label: 'דיווחי משתמשים', icon: <IconMessageReport size={18} />, roles: ['Admin'] },
@@ -50,7 +55,26 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
   const [opened, { toggle }] = useDisclosure();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const { user, clearAuth } = useAuthStore();
+
+  // Whether this computer has been pinned to a room yet. If not (new device), prompt
+  // the first user to set it — authoritative across both login and page-refresh.
+  const { data: ws } = useQuery({
+    queryKey: ['workstation-me'],
+    queryFn: () => workstationApi.getMyRoom(getOrCreateDeviceId()),
+    enabled: !!user,
+    staleTime: 5 * 60_000,
+  });
+  const needsRoom = !!user && ws !== undefined && !ws.room;
+
+  // Ensure the SignalR connection is live whenever an authenticated user is in the
+  // app — not only right after login. On a page refresh the auth token persists
+  // (so the user stays logged in) but the hub would otherwise never start, killing
+  // presence + live form sync. startHub() is idempotent (no-op if already connected).
+  useEffect(() => {
+    if (user) startHub().catch(() => {});
+  }, [user]);
 
   const handleLogout = async () => {
     await stopHub();
@@ -139,6 +163,11 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
       <MantineAppShell.Main>
         {children}
         <FeedbackWidget />
+        {needsRoom && (
+          <WorkstationSetupModal
+            onDone={() => queryClient.invalidateQueries({ queryKey: ['workstation-me'] })}
+          />
+        )}
       </MantineAppShell.Main>
     </MantineAppShell>
   );
