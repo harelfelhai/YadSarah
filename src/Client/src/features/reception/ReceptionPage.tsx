@@ -14,7 +14,7 @@ import { apiErrorMessage } from '../../constants/formPolicy';
 import { patientsApi } from '../../api/patients';
 import { visitsApi } from '../../api/visits';
 import { streetsApi } from '../../api/streets';
-import { formatPhone, phoneValidationError } from '../../utils/phone';
+import { formatPhone, phoneValidationError, digitsOnly } from '../../utils/phone';
 import type { IdentityType, Patient, Visit } from '../../types';
 import StickerPrint from './StickerPrint';
 import DateField from '../../components/DateField';
@@ -183,8 +183,16 @@ export default function ReceptionPage() {
       firstName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       lastName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       fatherName: (v) => (!v.trim() ? 'שדה חובה (אפשר "לא ידוע")' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
+      // Need 2 numbers total: טלפון 1 is always required; the second may be either
+      // טלפון 2 OR the digital-contact's mobile. Any number entered must be well-formed.
       phoneMobile: (v) => phoneValidationError(v ?? '', true),
-      phoneHome: (v) => phoneValidationError(v ?? '', true),
+      phoneHome: (v, vals) => {
+        const err = phoneValidationError(v ?? '', false);
+        if (err) return err;
+        const hasSecond =
+          digitsOnly(v ?? '').length >= 9 || digitsOnly(vals.digitalContactPhone ?? '').length >= 9;
+        return hasSecond ? null : 'נדרש מספר שני: טלפון 2 או נייד איש קשר';
+      },
       digitalContactPhone: (v) => phoneValidationError(v ?? '', false),
       email: emailError,
     },
@@ -469,7 +477,13 @@ export default function ReceptionPage() {
                     <TextInput label="טלפון 1" withAsterisk placeholder="050-1234567" {...phoneProps('phoneMobile')} />
                   </Grid.Col>
                   <Grid.Col span={3}>
-                    <TextInput label="טלפון 2" withAsterisk placeholder="02-1234567" {...phoneProps('phoneHome')} />
+                    <TextInput
+                      label="טלפון 2"
+                      placeholder="02-1234567"
+                      description="או נייד איש הקשר — חובה 2 מספרים"
+                      inputWrapperOrder={['label', 'input', 'description', 'error']}
+                      {...phoneProps('phoneHome')}
+                    />
                   </Grid.Col>
                   <Grid.Col span={3}>
                     <TextInput label='דוא"ל' {...patientForm.getInputProps('email')} />
