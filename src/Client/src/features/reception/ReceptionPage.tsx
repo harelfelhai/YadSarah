@@ -1,27 +1,34 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Button, Card, Grid, Group, Select, Stack, Stepper, Text,
   TextInput, Checkbox, Textarea, NumberInput, Badge,
-  Alert, ActionIcon, Tooltip,
+  Alert, ActionIcon, Tooltip, Autocomplete,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { IconSearch, IconX, IconAlertCircle } from '@tabler/icons-react';
 import { DEPARTMENTS } from '../../constants/departments';
+import { ISRAELI_CITIES, DEFAULT_CITY } from '../../constants/israeliCities';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { patientsApi } from '../../api/patients';
 import { visitsApi } from '../../api/visits';
+import { streetsApi } from '../../api/streets';
+import { formatPhone, phoneValidationError } from '../../utils/phone';
 import type { IdentityType, Patient, Visit } from '../../types';
 import StickerPrint from './StickerPrint';
 import DateField from '../../components/DateField';
+import BirthDateField from '../../components/BirthDateField';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const IDENTITY_TYPES: IdentityType[] = [
-  'תעודת זהות', 'דרכון', 'זמני', 'ת"ז פלסטינית', 'יילוד', 'לא ידוע',
+const IDENTITY_TYPES: { value: IdentityType; label: string }[] = [
+  { value: 'תעודת זהות', label: 'ת"ז' },
+  { value: 'דרכון', label: 'דרכון' },
+  { value: 'מספר ביטוח רפואי', label: 'מספר ביטוח רפואי' },
+  { value: 'זמני', label: 'זמני (אוטומטי)' },
 ];
-const HEALTH_FUNDS = ['מכבי', 'מאוחדת', 'כללית', 'לאומית'];
+const HEALTH_FUNDS = ['מכבי', 'מאוחדת', 'כללית', 'לאומית', 'הראל', 'AIM', 'ללא'];
 const ADMISSION_METHODS = ['רגיל', 'אמבולנס', 'הפניה', 'עצמאי'];
 const ARRIVAL_METHODS = ['הגיע בעצמו', 'אמבולנס', 'משטרה', 'צבא'];
 const ADMISSION_REASONS = [
@@ -50,11 +57,8 @@ function validateIsraeliId(id: string): boolean {
 }
 
 // ─── Optional-field format checks (mirror the server validation) ──────────────
-// Empty is allowed (these fields aren't required); a non-empty value must be well-formed.
 const EMAIL_RX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const PHONE_RX = /^[\d+\-() ]{6,20}$/;
 const emailError = (v: string) => (v && !EMAIL_RX.test(v.trim()) ? 'כתובת דוא"ל אינה תקינה' : null);
-const phoneError = (v: string) => (v && !PHONE_RX.test(v.trim()) ? 'מספר טלפון אינו תקין' : null);
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -73,17 +77,48 @@ export default function ReceptionPage() {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
 
+  // Street autocomplete (city-scoped, served offline from the internal catalog)
+  const [streetOptions, setStreetOptions] = useState<string[]>([]);
+  const streetTimer = useRef<number | undefined>(undefined);
+
   // After success
   const [createdVisit, setCreatedVisit] = useState<Visit | null>(null);
   const [savedPatient, setSavedPatient] = useState<Patient | null>(null);
 
+  // Enter-to-advance: Step 0 container, so Enter jumps field→field (and finally
+  // activates the "המשך" button) the way Tab would.
+  const step0Ref = useRef<HTMLDivElement>(null);
+
+  // ── Identity type change ────────────────────────────────────────────────────
+  const handleIdTypeChange = async (v: string | null) => {
+    const t = (v ?? 'תעודת זהות') as IdentityType;
+    setIdType(t);
+    setIdError('');
+    if (t === 'זמני') {
+      try {
+        const r = await patientsApi.tempId();
+        setIdNumber(r.value);
+      } catch {
+        notifications.show({ message: 'שגיאה בהקצאת מספר זמני', color: 'red' });
+      }
+    } else {
+      setIdNumber('');
+    }
+  };
+
   // ── ID confirmation ────────────────────────────────────────────────────────
   const handleConfirmId = async () => {
     const trimmed = idNumber.trim();
-    if (!trimmed) { setIdError('הזן מספר תעודה'); return; }
-    if (idType === 'תעודת זהות' && !validateIsraeliId(trimmed)) {
-      setIdError('מספר ת"ז אינו תקין (ספרת ביקורת)');
-      return;
+    if (idType !== 'זמני') {
+      if (!trimmed) { setIdError('הזן מספר תעודה'); return; }
+      if (idType === 'תעודת זהות' && !validateIsraeliId(trimmed)) {
+        setIdError('מספר ת"ז אינו תקין (ספרת ביקורת)');
+        return;
+      }
+      if (idType === 'מספר ביטוח רפואי' && !/^\d{1,20}$/.test(trimmed)) {
+        setIdError('מספר ביטוח רפואי חייב להכיל ספרות בלבד (עד 20)');
+        return;
+      }
     }
     setIdError('');
     setSearching(true);
@@ -116,14 +151,18 @@ export default function ReceptionPage() {
   const handleResetId = () => {
     setIdConfirmed(false);
     setFoundPatient(null);
+    setIdType('תעודת זהות');
     setIdNumber('');
     setIdError('');
+    setStreetOptions([]);
     patientForm.reset();
     visitForm.reset();
     setStep(0);
   };
 
   // ── Patient form ──────────────────────────────────────────────────────────
+  // initialValues keeps the FULL field set (even fields no longer shown) so loading
+  // an existing patient and saving back never wipes data the form doesn't render.
   const patientForm = useForm({
     initialValues: {
       identityType: 'תעודת זהות' as IdentityType,
@@ -131,10 +170,10 @@ export default function ReceptionPage() {
       firstName: '', lastName: '', firstNameLatin: '', lastNameLatin: '',
       gender: '', fatherName: '', birthDate: '', birthCountry: '',
       maritalStatus: '', numberOfChildren: 0,
-      city: '', street: '', houseNumber: '', zipCode: '', poBox: '',
+      city: DEFAULT_CITY, street: '', houseNumber: '', zipCode: '', poBox: '',
       phoneMobile: '', phoneHome: '', phoneWork: '', phoneExtra1: '', phoneExtra2: '',
       email: '', fax: '',
-      digitalContactPerson: '', digitalContactPhone: '', acceptsDigitalInfo: false,
+      digitalContactPerson: '', digitalContactRelation: '', digitalContactPhone: '', acceptsDigitalInfo: false,
       healthFund: '', healthFundBranch: '', familyDoctorName: '',
       clinicPhone: '', clinicFax: '', clinicEmail: '',
       notes: '', isConfidential: false, isBlocked: false,
@@ -143,13 +182,41 @@ export default function ReceptionPage() {
     validate: {
       firstName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       lastName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
+      fatherName: (v) => (!v.trim() ? 'שדה חובה (אפשר "לא ידוע")' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
+      phoneMobile: (v) => phoneValidationError(v ?? '', true),
+      phoneHome: (v) => phoneValidationError(v ?? '', true),
+      digitalContactPhone: (v) => phoneValidationError(v ?? '', false),
       email: emailError,
-      clinicEmail: emailError,
-      phoneMobile: phoneError,
-      phoneHome: phoneError,
-      phoneWork: phoneError,
     },
   });
+
+  // ── Street autocomplete (debounced, city-scoped) ────────────────────────────
+  const handleStreetChange = (val: string) => {
+    patientForm.setFieldValue('street', val);
+    const city = patientForm.values.city?.trim();
+    window.clearTimeout(streetTimer.current);
+    if (!city || val.trim().length < 1) { setStreetOptions([]); return; }
+    streetTimer.current = window.setTimeout(async () => {
+      try { setStreetOptions(await streetsApi.search(city, val.trim())); }
+      catch { /* offline / empty catalog → stay free-text */ }
+    }, 250);
+  };
+
+  // ── Enter-to-advance (Tab-like) ─────────────────────────────────────────────
+  const handleStep0KeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter') return;
+    const el = e.target as HTMLElement;
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON') return;
+    if (el.getAttribute('aria-expanded') === 'true') return; // open combobox → let it select
+    e.preventDefault();
+    const container = step0Ref.current;
+    if (!container) return;
+    const focusables = Array.from(
+      container.querySelectorAll<HTMLElement>('input:not([type=hidden]), select, textarea, button'),
+    ).filter((n) => !(n as HTMLButtonElement).disabled && n.tabIndex !== -1 && n.offsetParent !== null);
+    const idx = focusables.indexOf(el);
+    if (idx >= 0 && idx < focusables.length - 1) focusables[idx + 1].focus();
+  };
 
   // ── Visit form ────────────────────────────────────────────────────────────
   const visitForm = useForm({
@@ -214,8 +281,6 @@ export default function ReceptionPage() {
       const visit = await visitsApi.create({
         patientId: patient.id,
         status: 'Waiting',
-        // Local date (en-CA → YYYY-MM-DD) to stay consistent with the local admissionTime
-        // below; toISOString() would use UTC and shift the date near midnight.
         admissionDate: now.toLocaleDateString('en-CA'),
         admissionTime: now.toTimeString().slice(0, 5),
         ...visitForm.values,
@@ -241,6 +306,15 @@ export default function ReceptionPage() {
     setSavedPatient(null);
     handleResetId();
   };
+
+  // ── Phone field binding (formatted display "XXX-XXXXXXX") ───────────────────
+  const phoneProps = (field: 'phoneMobile' | 'phoneHome' | 'digitalContactPhone') => ({
+    value: formatPhone(patientForm.values[field] ?? ''),
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+      patientForm.setFieldValue(field, formatPhone(e.currentTarget.value)),
+    error: patientForm.errors[field],
+    inputMode: 'tel' as const,
+  });
 
   // ── Sticker screen ────────────────────────────────────────────────────────
   if (createdVisit && savedPatient) {
@@ -274,13 +348,15 @@ export default function ReceptionPage() {
                 label="סוג תעודה"
                 data={IDENTITY_TYPES}
                 value={idType}
-                onChange={(v) => { setIdType(v as IdentityType); setIdError(''); }}
-                w={180}
+                onChange={handleIdTypeChange}
+                allowDeselect={false}
+                w={200}
               />
               <TextInput
                 label="מספר תעודה"
-                placeholder="הזן מספר וסייס Enter"
+                placeholder={idType === 'זמני' ? 'מוקצה אוטומטית' : 'הזן מספר ולחץ Enter'}
                 value={idNumber}
+                readOnly={idType === 'זמני'}
                 onChange={(e) => { setIdNumber(e.currentTarget.value); setIdError(''); }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmId(); }}
                 error={idError || undefined}
@@ -295,8 +371,8 @@ export default function ReceptionPage() {
               </Button>
             </Group>
             <Text size="xs" c="dimmed">
-              לאחר אישור הת"ז, טופס הפרטים האישיים יהיה זמין למילוי.
-              אם המטופל קיים במערכת — פרטיו ימולאו אוטומטית.
+              לאחר אישור הזיהוי, טופס הפרטים האישיים יהיה זמין למילוי.
+              אם המטופל קיים במערכת — פרטיו ימולאו אוטומטית. "זמני" מקצה מספר מערכת ייחודי.
             </Text>
           </Stack>
         ) : (
@@ -310,7 +386,7 @@ export default function ReceptionPage() {
                 <Text c="dimmed">— {foundPatient.firstName} {foundPatient.lastName}</Text>
               )}
             </Group>
-            <Tooltip label="שנה תעודת זהות / התחל מחדש">
+            <Tooltip label="שנה זיהוי / התחל מחדש">
               <ActionIcon variant="subtle" color="gray" onClick={handleResetId}>
                 <IconX size={16} />
               </ActionIcon>
@@ -331,120 +407,126 @@ export default function ReceptionPage() {
       >
         {/* ── Step 0: Patient details ── */}
         {step === 0 && (
-          <Stack gap="md" mt="md">
-            <Card withBorder p="md">
-              <Text fw={600} mb="sm">פרטים אישיים</Text>
-              <Grid>
-                <Grid.Col span={3}>
-                  <TextInput label="שם פרטי" withAsterisk {...patientForm.getInputProps('firstName')} />
-                </Grid.Col>
-                <Grid.Col span={3}>
-                  <TextInput label="שם משפחה" withAsterisk {...patientForm.getInputProps('lastName')} />
-                </Grid.Col>
-                <Grid.Col span={3}>
-                  <TextInput label="שם פרטי לועזי" {...patientForm.getInputProps('firstNameLatin')} />
-                </Grid.Col>
-                <Grid.Col span={3}>
-                  <TextInput label="שם משפחה לועזי" {...patientForm.getInputProps('lastNameLatin')} />
-                </Grid.Col>
-                <Grid.Col span={2}>
-                  <Select label="מין" data={GENDERS} clearable {...patientForm.getInputProps('gender')} />
-                </Grid.Col>
-                <Grid.Col span={3}>
-                  <TextInput label="שם האב" {...patientForm.getInputProps('fatherName')} />
-                </Grid.Col>
-                <Grid.Col span={3}>
-                  <DateField label="תאריך לידה" {...patientForm.getInputProps('birthDate')} />
-                </Grid.Col>
-                <Grid.Col span={2}>
-                  <TextInput label="ארץ לידה" {...patientForm.getInputProps('birthCountry')} />
-                </Grid.Col>
-                <Grid.Col span={2}>
-                  <TextInput label="מצב משפחתי" {...patientForm.getInputProps('maritalStatus')} />
-                </Grid.Col>
-                <Grid.Col span={2}>
-                  <NumberInput label="מספר ילדים" min={0} {...patientForm.getInputProps('numberOfChildren')} />
-                </Grid.Col>
-              </Grid>
-            </Card>
+          <div ref={step0Ref} onKeyDown={handleStep0KeyDown}>
+            <Stack gap="md" mt="md">
+              <Card withBorder p="md">
+                <Text fw={600} mb="sm">פרטים אישיים</Text>
+                <Grid>
+                  <Grid.Col span={3}>
+                    <TextInput label="שם פרטי" withAsterisk {...patientForm.getInputProps('firstName')} />
+                  </Grid.Col>
+                  <Grid.Col span={3}>
+                    <TextInput label="שם משפחה" withAsterisk {...patientForm.getInputProps('lastName')} />
+                  </Grid.Col>
+                  <Grid.Col span={3}>
+                    <TextInput label="שם האב" withAsterisk {...patientForm.getInputProps('fatherName')} />
+                  </Grid.Col>
+                  <Grid.Col span={3}>
+                    <Select label="מין" data={GENDERS} clearable {...patientForm.getInputProps('gender')} />
+                  </Grid.Col>
+                  <Grid.Col span={4}>
+                    <BirthDateField
+                      label="תאריך לידה"
+                      value={patientForm.values.birthDate}
+                      onChange={(iso) => patientForm.setFieldValue('birthDate', iso)}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Card>
 
-            <Card withBorder p="md">
-              <Text fw={600} mb="sm">כתובת</Text>
-              <Grid>
-                <Grid.Col span={4}><TextInput label="עיר" {...patientForm.getInputProps('city')} /></Grid.Col>
-                <Grid.Col span={4}><TextInput label="רחוב" {...patientForm.getInputProps('street')} /></Grid.Col>
-                <Grid.Col span={2}><TextInput label="מספר" {...patientForm.getInputProps('houseNumber')} /></Grid.Col>
-                <Grid.Col span={2}><TextInput label="מיקוד" {...patientForm.getInputProps('zipCode')} /></Grid.Col>
-                <Grid.Col span={2}><TextInput label="ת.ד" {...patientForm.getInputProps('poBox')} /></Grid.Col>
-              </Grid>
-            </Card>
+              <Card withBorder p="md">
+                <Text fw={600} mb="sm">כתובת</Text>
+                <Grid>
+                  <Grid.Col span={4}>
+                    <Autocomplete
+                      label="עיר"
+                      data={ISRAELI_CITIES as unknown as string[]}
+                      limit={20}
+                      {...patientForm.getInputProps('city')}
+                      onChange={(v) => { patientForm.setFieldValue('city', v); setStreetOptions([]); }}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={4}>
+                    <Autocomplete
+                      label="רחוב"
+                      data={streetOptions}
+                      limit={20}
+                      value={patientForm.values.street}
+                      onChange={handleStreetChange}
+                      error={patientForm.errors.street}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={2}>
+                    <TextInput label="מספר בית" {...patientForm.getInputProps('houseNumber')} />
+                  </Grid.Col>
+                </Grid>
+              </Card>
 
-            <Card withBorder p="md">
-              <Text fw={600} mb="sm">טלפונים ותקשורת</Text>
-              <Grid>
-                <Grid.Col span={3}><TextInput label="טלפון נייד" {...patientForm.getInputProps('phoneMobile')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="טלפון בית" {...patientForm.getInputProps('phoneHome')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="טלפון עבודה" {...patientForm.getInputProps('phoneWork')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="טלפון נוסף 1" {...patientForm.getInputProps('phoneExtra1')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="טלפון נוסף 2" {...patientForm.getInputProps('phoneExtra2')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label='דוא"ל' {...patientForm.getInputProps('email')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="פקס" {...patientForm.getInputProps('fax')} /></Grid.Col>
-                <Grid.Col span={6}><TextInput label="איש קשר למידע דיגיטלי" {...patientForm.getInputProps('digitalContactPerson')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="טלפון נייד לדיגיטלי" {...patientForm.getInputProps('digitalContactPhone')} /></Grid.Col>
-                <Grid.Col span={12}>
-                  <Checkbox
-                    label="מאשר קבלת מידע דיגיטלי (מייל/SMS/זימון תור/תזכורות)"
-                    {...patientForm.getInputProps('acceptsDigitalInfo', { type: 'checkbox' })}
-                  />
-                </Grid.Col>
-              </Grid>
-            </Card>
+              <Card withBorder p="md">
+                <Text fw={600} mb="sm">טלפונים ותקשורת</Text>
+                <Grid>
+                  <Grid.Col span={3}>
+                    <TextInput label="טלפון 1" withAsterisk placeholder="050-1234567" {...phoneProps('phoneMobile')} />
+                  </Grid.Col>
+                  <Grid.Col span={3}>
+                    <TextInput label="טלפון 2" withAsterisk placeholder="02-1234567" {...phoneProps('phoneHome')} />
+                  </Grid.Col>
+                  <Grid.Col span={3}>
+                    <TextInput label='דוא"ל' {...patientForm.getInputProps('email')} />
+                  </Grid.Col>
+                  <Grid.Col span={3} />
+                  <Grid.Col span={3}>
+                    <TextInput label="איש קשר למידע" {...patientForm.getInputProps('digitalContactPerson')} />
+                  </Grid.Col>
+                  <Grid.Col span={3}>
+                    <TextInput label="קרבה לאיש הקשר" placeholder="בן/בת זוג, הורה…" {...patientForm.getInputProps('digitalContactRelation')} />
+                  </Grid.Col>
+                  <Grid.Col span={3}>
+                    <TextInput label="נייד איש הקשר" placeholder="050-1234567" {...phoneProps('digitalContactPhone')} />
+                  </Grid.Col>
+                  <Grid.Col span={12}>
+                    <Checkbox
+                      label="מאשר קבלת מידע דיגיטלי (מייל/SMS/זימון תור/תזכורות)"
+                      {...patientForm.getInputProps('acceptsDigitalInfo', { type: 'checkbox' })}
+                    />
+                  </Grid.Col>
+                </Grid>
+              </Card>
 
-            <Card withBorder p="md">
-              <Group gap="xs" mb="sm">
-                <Text fw={600}>קופ"ח ומרפאה</Text>
-                {foundPatient && (
-                  <Alert icon={<IconAlertCircle size={14} />} color="orange" p="xs" radius="sm">
-                    קופת חולים לא נשלפת — יש למלא מחדש
-                  </Alert>
-                )}
+              <Card withBorder p="md">
+                <Group gap="xs" mb="sm">
+                  <Text fw={600}>קופ"ח ודגלים</Text>
+                  {foundPatient && (
+                    <Alert icon={<IconAlertCircle size={14} />} color="orange" p="xs" radius="sm">
+                      קופת חולים לא נשלפת — יש למלא מחדש
+                    </Alert>
+                  )}
+                </Group>
+                <Grid>
+                  <Grid.Col span={3}>
+                    <Select label="קופת חולים" data={HEALTH_FUNDS} clearable {...patientForm.getInputProps('healthFund')} />
+                  </Grid.Col>
+                  <Grid.Col span={9}>
+                    <Checkbox
+                      mt={28}
+                      label="חסוי"
+                      {...patientForm.getInputProps('isConfidential', { type: 'checkbox' })}
+                    />
+                  </Grid.Col>
+                  <Grid.Col span={12}>
+                    <Textarea label="הערות" rows={3} {...patientForm.getInputProps('notes')} />
+                  </Grid.Col>
+                </Grid>
+              </Card>
+
+              <Group justify="flex-end">
+                <Button variant="subtle" tabIndex={-1} onClick={() => navigate('/queue')}>ביטול</Button>
+                <Button onClick={handleContinue} disabled={!idConfirmed}>
+                  המשך לפרטי קבלה ←
+                </Button>
               </Group>
-              <Grid>
-                <Grid.Col span={3}>
-                  <Select label="קופת חולים" data={HEALTH_FUNDS} clearable {...patientForm.getInputProps('healthFund')} />
-                </Grid.Col>
-                <Grid.Col span={3}><TextInput label="סניף" {...patientForm.getInputProps('healthFundBranch')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="שם רופא משפחה" {...patientForm.getInputProps('familyDoctorName')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="טלפון מרפאה" {...patientForm.getInputProps('clinicPhone')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label="פקס מרפאה" {...patientForm.getInputProps('clinicFax')} /></Grid.Col>
-                <Grid.Col span={3}><TextInput label='דוא"ל מרפאה' {...patientForm.getInputProps('clinicEmail')} /></Grid.Col>
-              </Grid>
-            </Card>
-
-            <Card withBorder p="md">
-              <Text fw={600} mb="sm">דגלים והערות</Text>
-              <Grid>
-                <Grid.Col span={12}>
-                  <Group gap="lg">
-                    <Checkbox label="חסוי" {...patientForm.getInputProps('isConfidential', { type: 'checkbox' })} />
-                    <Checkbox label="לא לכבד" {...patientForm.getInputProps('isHonorBlocked', { type: 'checkbox' })} />
-                    <Checkbox label="חסום" {...patientForm.getInputProps('isBlocked', { type: 'checkbox' })} />
-                    <Checkbox label="כרטסת בהנהלת חשבונות" {...patientForm.getInputProps('accountingCard', { type: 'checkbox' })} />
-                  </Group>
-                </Grid.Col>
-                <Grid.Col span={12}>
-                  <Textarea label="הערות" rows={3} {...patientForm.getInputProps('notes')} />
-                </Grid.Col>
-              </Grid>
-            </Card>
-
-            <Group justify="flex-end">
-              <Button variant="subtle" onClick={() => navigate('/queue')}>ביטול</Button>
-              <Button onClick={handleContinue} disabled={!idConfirmed}>
-                המשך לפרטי קבלה ←
-              </Button>
-            </Group>
-          </Stack>
+            </Stack>
+          </div>
         )}
 
         {/* ── Step 1: Visit details ── */}
@@ -557,7 +639,7 @@ function toFormValues(p: Patient, idType: IdentityType, idNumber: string) {
     birthCountry: p.birthCountry ?? '',
     maritalStatus: p.maritalStatus ?? '',
     numberOfChildren: p.numberOfChildren ?? 0,
-    city: p.city ?? '',
+    city: p.city ?? DEFAULT_CITY,
     street: p.street ?? '',
     houseNumber: p.houseNumber ?? '',
     zipCode: p.zipCode ?? '',
@@ -570,6 +652,7 @@ function toFormValues(p: Patient, idType: IdentityType, idNumber: string) {
     email: p.email ?? '',
     fax: p.fax ?? '',
     digitalContactPerson: p.digitalContactPerson ?? '',
+    digitalContactRelation: p.digitalContactRelation ?? '',
     digitalContactPhone: p.digitalContactPhone ?? '',
     acceptsDigitalInfo: p.acceptsDigitalInfo,
     healthFund: '',           // always empty — re-enter each visit

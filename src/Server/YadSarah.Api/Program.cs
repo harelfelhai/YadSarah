@@ -30,6 +30,10 @@ builder.Services.AddScoped<ShiftStatusService>();
 // Typed HttpClient for the MoH drug-registry sync (timeout guards against a hung WAF).
 builder.Services.AddHttpClient<MedicationSyncService>(c => c.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddHostedService<YadSarah.Api.Services.MedicationSyncBackgroundService>();
+builder.Services.AddScoped<StreetCatalogService>();
+// Typed HttpClient for the data.gov.il streets sync (large dataset → generous timeout).
+builder.Services.AddHttpClient<StreetSyncService>(c => c.Timeout = TimeSpan.FromSeconds(120));
+builder.Services.AddHostedService<YadSarah.Api.Services.StreetSyncBackgroundService>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<YadSarah.Api.Services.FormPresenceService>();
 

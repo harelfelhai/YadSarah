@@ -37,6 +37,7 @@ public class Patient
     public string? Fax { get; set; }
     public string? DigitalContactPerson { get; set; }
     public string? DigitalContactPhone { get; set; }
+    public string? DigitalContactRelation { get; set; } // קרבת איש הקשר למטופל (רשות)
     public bool AcceptsDigitalInfo { get; set; }
 
     // Health fund

@@ -14,10 +14,21 @@ public class SettingsService(AppDbContext db)
     public const string MedLastSyncAtKey = "medications.lastSyncAt";
     public const string MedCountKey = "medications.count";
     public const string MedLastSyncStatusKey = "medications.lastSyncStatus";
+    public const string StreetsSyncIntervalDaysKey = "streets.syncIntervalDays";
+    public const string StreetsApiUrlKey = "streets.apiUrl";
+    public const string StreetsResourceIdKey = "streets.resourceId";
+    public const string StreetsLastSyncAtKey = "streets.lastSyncAt";
+    public const string StreetsCountKey = "streets.count";
+    public const string StreetsLastSyncStatusKey = "streets.lastSyncStatus";
 
     // Default MoH drug-registry endpoint (paged JSON). Configurable because it sits
     // behind a WAF and may change; the file-import path is the offline fallback.
     public const string MedApiUrlDefault = "https://israeldrugs.health.gov.il/GetSpecificProductsByName";
+
+    // Default streets source: the data.gov.il CKAN datastore ("רחובות בישראל").
+    // The file-import path is the offline fallback.
+    public const string StreetsApiUrlDefault = "https://data.gov.il/api/3/action/datastore_search";
+    public const string StreetsResourceIdDefault = "a7296d1a-f8c9-4b70-96c2-6ebb4352f8e3";
 
     // Defaults seeded on startup so the admin screen always shows them
     private static readonly (string Key, string Value, string Description)[] Defaults =
@@ -29,6 +40,12 @@ public class SettingsService(AppDbContext db)
         (MedLastSyncAtKey, "", "מועד הסנכרון האחרון של מסד התרופות (UTC)"),
         (MedCountKey, "0", "מספר התרופות במאגר הפנימי"),
         (MedLastSyncStatusKey, "", "סטטוס הסנכרון האחרון"),
+        (StreetsSyncIntervalDaysKey, "30", "תדירות סנכרון מאגר הרחובות (בימים)"),
+        (StreetsApiUrlKey, StreetsApiUrlDefault, "כתובת ה-API למשיכת מאגר הרחובות (data.gov.il)"),
+        (StreetsResourceIdKey, StreetsResourceIdDefault, "מזהה המשאב של מאגר הרחובות ב-data.gov.il"),
+        (StreetsLastSyncAtKey, "", "מועד הסנכרון האחרון של מאגר הרחובות (UTC)"),
+        (StreetsCountKey, "0", "מספר הרחובות במאגר הפנימי"),
+        (StreetsLastSyncStatusKey, "", "סטטוס הסנכרון האחרון של הרחובות"),
     ];
 
     public async Task EnsureDefaultsAsync()

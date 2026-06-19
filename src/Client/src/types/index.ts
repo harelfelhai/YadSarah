@@ -1,6 +1,7 @@
 export type IdentityType =
   | 'תעודת זהות'
   | 'דרכון'
+  | 'מספר ביטוח רפואי'
   | 'זמני'
   | 'ת"ז פלסטינית'
   | 'יילוד'
@@ -59,6 +60,7 @@ export interface Patient {
   email?: string;
   fax?: string;
   digitalContactPerson?: string;
+  digitalContactRelation?: string;
   digitalContactPhone?: string;
   acceptsDigitalInfo: boolean;
   healthFund?: string;

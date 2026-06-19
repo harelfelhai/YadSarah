@@ -47,6 +47,31 @@ public class PatientsController(AppDbContext db, AuditService audit) : Controlle
         return Ok(results);
     }
 
+    // GET /api/patients/temp-id  → a fresh 5-digit "temporary" identity number, unique across
+    // all patients (so it can't clash with another temp record). Real IDs/passports are longer,
+    // so a 5-digit value never collides with a genuine identity. Used when reception picks the
+    // "זמני" identity type for an unidentified patient.
+    [HttpGet("temp-id")]
+    [Authorize(Roles = "Reception,ShiftManager,Admin")]
+    public async Task<IActionResult> TempId()
+    {
+        // A handful of random tries first (cheap; the 90k space is virtually empty); if those
+        // happen to collide, fall back to a linear scan for the first free value.
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var candidate = Random.Shared.Next(10000, 100000).ToString();
+            if (!await db.Patients.AnyAsync(p => p.IdentityNumber == candidate))
+                return Ok(new { value = candidate });
+        }
+        for (var n = 10000; n < 100000; n++)
+        {
+            var candidate = n.ToString();
+            if (!await db.Patients.AnyAsync(p => p.IdentityNumber == candidate))
+                return Ok(new { value = candidate });
+        }
+        return Conflict(new { message = "לא נמצא מספר זמני פנוי." });
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id)
     {

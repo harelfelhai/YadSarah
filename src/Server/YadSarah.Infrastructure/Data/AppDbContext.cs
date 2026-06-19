@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<QueueCounter> QueueCounters => Set<QueueCounter>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<Medication> Medications => Set<Medication>();
+    public DbSet<Street> Streets => Set<Street>();
     public DbSet<FeedbackReport> FeedbackReports => Set<FeedbackReport>();
     public DbSet<Workstation> Workstations => Set<Workstation>();
 
@@ -120,6 +121,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // Search indexes for autocomplete (prefix/ILIKE on names)
             e.HasIndex(m => m.HebrewName);
             e.HasIndex(m => m.EnglishName);
+        });
+
+        // Street — national streets reference data (internal copy of data.gov.il "רחובות בישראל")
+        b.Entity<Street>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.Property(s => s.CityName).HasMaxLength(150).IsRequired();
+            e.Property(s => s.StreetName).HasMaxLength(200).IsRequired();
+            // City-scoped autocomplete: filter by city, ILIKE on street name.
+            e.HasIndex(s => new { s.CityName, s.StreetName });
         });
 
         // FeedbackReport — user-submitted bug/fix/improvement reports (Admin-managed)

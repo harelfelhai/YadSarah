@@ -7,6 +7,9 @@ export const patientsApi = {
 
   getById: (id: string) => api.get<Patient>(`/patients/${id}`),
 
+  // A fresh unique 5-digit "temporary" identity number (for an unidentified patient).
+  tempId: () => api.get<{ value: string }>('/patients/temp-id'),
+
   create: (data: PatientCreate) => api.post<Patient>('/patients', data),
 
   update: (id: string, data: Partial<PatientCreate>) =>
