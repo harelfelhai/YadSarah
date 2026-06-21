@@ -19,6 +19,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Street> Streets => Set<Street>();
     public DbSet<FeedbackReport> FeedbackReports => Set<FeedbackReport>();
     public DbSet<Workstation> Workstations => Set<Workstation>();
+    public DbSet<PatientIntakeSubmission> PatientIntakeSubmissions => Set<PatientIntakeSubmission>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -162,6 +163,39 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(w => w.RoomName).HasMaxLength(60).IsRequired();
             // Store role as its string name, consistent with User.Role / Visit.TreatingUserRole
             e.Property(w => w.CurrentUserRole).HasConversion<string>();
+        });
+
+        // PatientIntakeSubmission — staging table for public self-service intake forms.
+        // Deliberately NO relationship to Patient: these rows are pre-verification and never
+        // enter the patient records until reception explicitly imports one.
+        b.Entity<PatientIntakeSubmission>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.Property(s => s.Status).HasConversion<string>();
+            e.Property(s => s.IdentityType).HasMaxLength(50).IsRequired();
+            e.Property(s => s.IdentityNumber).HasMaxLength(50);
+            e.Property(s => s.FirstName).HasMaxLength(100).IsRequired();
+            e.Property(s => s.LastName).HasMaxLength(100).IsRequired();
+            e.Property(s => s.FatherName).HasMaxLength(100);
+            e.Property(s => s.Gender).HasMaxLength(10);
+            e.Property(s => s.City).HasMaxLength(150);
+            e.Property(s => s.Street).HasMaxLength(200);
+            e.Property(s => s.HouseNumber).HasMaxLength(20);
+            e.Property(s => s.PhoneMobile).HasMaxLength(30);
+            e.Property(s => s.PhoneHome).HasMaxLength(30);
+            e.Property(s => s.Email).HasMaxLength(200);
+            e.Property(s => s.DigitalContactPerson).HasMaxLength(150);
+            e.Property(s => s.DigitalContactRelation).HasMaxLength(50);
+            e.Property(s => s.DigitalContactPhone).HasMaxLength(30);
+            e.Property(s => s.HealthFund).HasMaxLength(50);
+            e.Property(s => s.AdmissionReason).HasMaxLength(200);
+            e.Property(s => s.Notes).HasMaxLength(2000);
+            e.Property(s => s.DeviceId).HasMaxLength(64);
+            e.Property(s => s.SourceIp).HasMaxLength(64);
+            e.HasIndex(s => s.Status);
+            e.HasIndex(s => s.SubmittedAt);
+            e.HasIndex(s => s.DeviceId);          // device-scoped submit-rate count
+            e.HasIndex(s => s.IdentityNumber);    // existing-patient conflict lookup
         });
     }
 }

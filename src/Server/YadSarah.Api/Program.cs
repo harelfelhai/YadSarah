@@ -38,6 +38,8 @@ builder.Services.AddHostedService<YadSarah.Api.Services.StreetSyncBackgroundServ
 // (DepartmentRouting:Enabled + ApiKey) and falls back deterministically when off → safe by default.
 builder.Services.AddScoped<DepartmentRoutingService>();
 builder.Services.AddScoped<PricingService>();
+// Public self-service intake: staging-table writes + reception review/conflict detection.
+builder.Services.AddScoped<IntakeSubmissionService>();
 builder.Services.AddHttpClient<IDepartmentClassifier, YadSarah.Api.Services.LlmDepartmentClassifier>(
     c => c.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddHttpContextAccessor();
@@ -104,6 +106,18 @@ builder.Services.AddRateLimiter(opt =>
         factory: _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
+    // Public self-service intake — per-IP anti-flood backstop (the per-device cap of 3 is the
+    // primary limit, enforced in IntakeSubmissionService). Kept loose enough for a shared
+    // waiting-room Wi-Fi where many patients submit from one NAT'd IP.
+    opt.AddPolicy("publicIntake", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        factory: _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
