@@ -288,6 +288,12 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
   הבלם הוא ה-rate-limit לפי-IP, וה-endpoint ממילא אינו חושף/משנה נתוני-מטופל. נשמר רופף דיו ל-Wi-Fi
   משותף בחדר המתנה (NAT — IP אחד למטופלים רבים).
 - **route ציבורי בצד-לקוח במכוון:** `/intake` מחוץ ל-`RequireAuth`; השרת הוא גבול-האמון.
+- **נתוני-ייחוס אנונימיים (`PublicReferenceController`, `[AllowAnonymous]`, מוגבל-קצב `publicIntake`):**
+  העמוד הציבורי זקוק להשלמת כתובת ולרשימת ערים. `GET /api/public-ref/streets` מחזיר שמות-רחובות
+  מקטלוג `Streets` (נתוני-ייחוס לא-PHI), ו-`GET /api/public-ref/cities/frequent` מחזיר **שמות-ערים
+  בלבד** מסודרים לפי תדירות-רישום (נגזר מ-`GROUP BY Patients.City`; **המונה עצמו לעולם אינו נחשף**,
+  רק הסדר — אגרגציה לא-PHI). אין כאן פרטי-מטופל, חיפוש-מטופל, או כתיבה. שאילתות EF פרמטריות (אין SQLi).
+  ה-`/api/streets` המקורי נשאר מאחורי auth לצוות; זהו נתיב-קריאה אנונימי נפרד ומצומצם.
 
 קבצים: `Domain/Entities/PatientIntakeSubmission.cs`, `Application/Services/IntakeSubmissionService.cs`,
 `Api/Dtos/PublicIntakeRequest.cs`, `Api/Controllers/{PublicIntakeController,IntakeReviewController}.cs`,

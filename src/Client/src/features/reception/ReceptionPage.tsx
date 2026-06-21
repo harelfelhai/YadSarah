@@ -6,15 +6,17 @@ import {
   Alert, ActionIcon, Tooltip, Autocomplete,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
+import { useQuery } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { IconSearch, IconX, IconAlertCircle, IconSparkles, IconLock } from '@tabler/icons-react';
 import { DEPARTMENTS } from '../../constants/departments';
-import { ISRAELI_CITIES, DEFAULT_CITY } from '../../constants/israeliCities';
+import { DEFAULT_CITY, orderCitiesByFrequency } from '../../constants/israeliCities';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { patientsApi } from '../../api/patients';
 import { visitsApi } from '../../api/visits';
 import { streetsApi } from '../../api/streets';
 import { receptionApi, type RouteDepartmentResult } from '../../api/reception';
+import { referenceApi } from '../../api/reference';
 import { intakeApi, type IntakeSubmission } from '../../api/intake';
 import { formatPhone, phoneValidationError, digitsOnly } from '../../utils/phone';
 import { validateIsraeliId } from '../../utils/israeliId';
@@ -41,7 +43,6 @@ const ADMISSION_REASONS = [
 const GENDERS = [
   { value: 'ז', label: 'זכר' },
   { value: 'נ', label: 'נקבה' },
-  { value: 'א', label: 'אחר' },
 ];
 
 // ─── Optional-field format checks (mirror the server validation) ──────────────
@@ -72,6 +73,14 @@ export default function ReceptionPage() {
   // Street autocomplete (city-scoped, served offline from the internal catalog)
   const [streetOptions, setStreetOptions] = useState<string[]>([]);
   const streetTimer = useRef<number | undefined>(undefined);
+
+  // City picker ordered by registration frequency (most-used first), full catalog as the tail.
+  const { data: frequentCities = [] } = useQuery({
+    queryKey: ['frequent-cities'],
+    queryFn: referenceApi.frequentCities,
+    staleTime: 300_000,
+  });
+  const cityData = orderCitiesByFrequency(frequentCities);
 
   // After success
   const [createdVisit, setCreatedVisit] = useState<Visit | null>(null);
@@ -191,6 +200,8 @@ export default function ReceptionPage() {
       },
       digitalContactPhone: (v) => phoneValidationError(v ?? '', false),
       email: emailError,
+      city: (v) => (!v.trim() ? 'יש לבחור עיר' : null),
+      street: (v) => (!v.trim() ? 'יש להזין רחוב' : null),
     },
   });
 
@@ -251,13 +262,16 @@ export default function ReceptionPage() {
     const s = state?.intakePrefill;
     if (!s) return;
     intakeSubmissionId.current = state?.intakeSubmissionId ?? null;
-    setIdType(s.identityType);
+    // "ללא" (the patient had no document) → reception assigns a temporary number now.
+    const noDoc = s.identityType === 'ללא';
+    const effType: IdentityType = noDoc ? 'זמני' : s.identityType;
+    setIdType(effType);
     setIdNumber(s.identityNumber ?? '');
     setFoundPatient(null);
     setIdConfirmed(true);
     patientForm.setValues((prev) => ({
       ...prev,
-      identityType: s.identityType,
+      identityType: effType,
       identityNumber: s.identityNumber ?? '',
       firstName: s.firstName ?? '',
       lastName: s.lastName ?? '',
@@ -280,6 +294,12 @@ export default function ReceptionPage() {
     setStep(0);
     // Drop the nav state so a refresh / "admit another" doesn't re-prefill.
     window.history.replaceState({}, '');
+    // For a no-document patient, pull a fresh temporary number from the server.
+    if (noDoc) {
+      patientsApi.tempId()
+        .then((r) => { setIdNumber(r.value); patientForm.setFieldValue('identityNumber', r.value); })
+        .catch(() => notifications.show({ message: 'שגיאה בהקצאת מספר זמני', color: 'red' }));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -547,7 +567,8 @@ export default function ReceptionPage() {
                   <Grid.Col span={4}>
                     <Autocomplete
                       label="עיר"
-                      data={ISRAELI_CITIES as unknown as string[]}
+                      withAsterisk
+                      data={cityData}
                       limit={20}
                       {...patientForm.getInputProps('city')}
                       onChange={(v) => { patientForm.setFieldValue('city', v); setStreetOptions([]); }}
@@ -556,6 +577,7 @@ export default function ReceptionPage() {
                   <Grid.Col span={4}>
                     <Autocomplete
                       label="רחוב"
+                      withAsterisk
                       data={streetOptions}
                       limit={20}
                       value={patientForm.values.street}
