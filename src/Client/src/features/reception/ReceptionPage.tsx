@@ -19,6 +19,7 @@ import { intakeApi, type IntakeSubmission } from '../../api/intake';
 import { formatPhone, phoneValidationError, digitsOnly } from '../../utils/phone';
 import { validateIsraeliId } from '../../utils/israeliId';
 import { EXEMPTION_REASONS } from '../../constants/exemptionReasons';
+import { computeCharge } from '../../constants/pricing';
 import type { IdentityType, Patient, Visit } from '../../types';
 import StickerPrint from './StickerPrint';
 import ReauthModal from '../../components/ReauthModal';
@@ -696,14 +697,14 @@ export default function ReceptionPage() {
                   <Textarea label="הערות" rows={3} {...visitForm.getInputProps('notes')} />
                 </Grid.Col>
 
-                {/* סה"כ לגבייה — server-derived (pricing table pending) */}
+                {/* סה"כ לגבייה — live display (client mirror); the SERVER value on create is authoritative */}
                 <Grid.Col span={4}>
                   <NumberInput
                     label="סה״כ לגבייה מהמטופל (₪)"
-                    value={0}
+                    value={computeCharge(patientForm.values.healthFund, visitForm.values.exemptionReason, discountUnlocked)}
                     readOnly
                     styles={{ input: { backgroundColor: '#f8f9fa', cursor: 'not-allowed' } }}
-                    description="מחושב מטבלת התמחור (בקרוב)"
+                    description="מחושב לפי קופ״ח, אופן-הגעה וסיבת פטור"
                     inputWrapperOrder={['label', 'input', 'description', 'error']}
                   />
                 </Grid.Col>
