@@ -90,9 +90,11 @@ public class VisitsController(
             entity.DiscountReason = null; // no client-sent approver stamp without a discount value
         }
 
-        // TotalToCollect is server-derived from the pricing table (never trust the client).
+        // TotalToCollect is server-derived from the pricing table (never trust the client):
+        // keyed on the patient's health fund + arrival mode (referral vs self) + exemptions.
+        var healthFund = await svc.GetPatientHealthFundAsync(req.PatientId);
         entity.TotalToCollect = await pricing.CalculateAsync(
-            entity.AdmissionReason, healthFund: null, entity.ExemptionReason, discountAuthorized);
+            healthFund, entity.ExemptionReason, discountAuthorized);
 
         var created = await svc.CreateAsync(entity);
         await audit.LogAsync(AuditService.Created, "Visit", created.Id);

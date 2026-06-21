@@ -3,6 +3,9 @@
 // and treatment costs) per the national-health-insurance ED-charge rules.
 // Shown as a closed <Select>; the server stores the chosen label.
 export const EXEMPTION_REASONS: string[] = [
+  // Doctor-referral: not a full exemption — selects the "בהפניית רופא" price column
+  // (see constants/pricing.ts). Kept first as the common case.
+  'בהפניית רופא',
   'מכתב רפואי / טופס 17 — ולא אושפז',
   'אושפז (גם ללא מכתב רפואי / טופס 17)',
   'נפגע עבודה — אישור מעסיק (טופס 250)',
