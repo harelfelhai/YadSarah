@@ -14,7 +14,8 @@ namespace YadSarah.Api.Controllers;
 [Route("api/visits")]
 [Authorize]
 public class VisitsController(
-    VisitService svc, IHubContext<MainHub> hub, AuditService audit, WorkstationService workstations) : ControllerBase
+    VisitService svc, IHubContext<MainHub> hub, AuditService audit, WorkstationService workstations,
+    AuthService auth, PricingService pricing) : ControllerBase
 {
     private Guid UserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
@@ -64,7 +65,36 @@ public class VisitsController(
         if (!await svc.PatientExistsAsync(req.PatientId))
             return BadRequest(new { message = "מטופל לא קיים." });
 
-        var created = await svc.CreateAsync(req.ToEntity());
+        var entity = req.ToEntity();
+
+        // Discount/exemption is manager-gated: it persists ONLY with valid shift-manager step-up
+        // credentials (a manager may authorize while reception is logged in). Re-verified here even
+        // though the client also calls /reception/authorize-discount, so the gate isn't client-trusted.
+        var discountAuthorized = false;
+        if (!string.IsNullOrWhiteSpace(req.DiscountReason))
+        {
+            var manager = await auth.VerifyCredentialsAsync(
+                req.DiscountApprovalUsername ?? "", req.DiscountApprovalPassword ?? "");
+            var isManager = manager is not null &&
+                (manager.Roles.Contains(UserRole.ShiftManager) || manager.Roles.Contains(UserRole.Admin));
+            if (!isManager)
+                return StatusCode(403, new { message = "החלת הנחה/פטור מחייבת אישור מנהל משמרת." });
+
+            entity.DiscountApprovedByUserId = manager!.Id;
+            entity.DiscountApprovedByName = manager.DisplayName ?? manager.FullName;
+            discountAuthorized = true;
+            await audit.LogAsync("DiscountApplied", "Visit", default, "discount", newValue: manager.Username);
+        }
+        else
+        {
+            entity.DiscountReason = null; // no client-sent approver stamp without a discount value
+        }
+
+        // TotalToCollect is server-derived from the pricing table (never trust the client).
+        entity.TotalToCollect = await pricing.CalculateAsync(
+            entity.AdmissionReason, healthFund: null, entity.ExemptionReason, discountAuthorized);
+
+        var created = await svc.CreateAsync(entity);
         await audit.LogAsync(AuditService.Created, "Visit", created.Id);
         await hub.Clients.All.SendAsync("QueueUpdate", new
         {

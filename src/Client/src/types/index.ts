@@ -88,23 +88,20 @@ export interface Visit {
   patient?: Pick<Patient, 'id' | 'firstName' | 'lastName' | 'identityNumber' | 'identityType' | 'birthDate'>;
   queueNumber: number;
   status: VisitStatus;
-  receptionDepartment?: string;
   admissionDate: string;
   admissionTime: string;
-  admissionMethod?: string;
+  // Event screen (reworked 2026-06-19)
   admissionReason?: string;
-  admissionReasonFree?: string;
-  arrivalMethod?: string;
-  ambulanceCompany?: string;
-  referringSource?: string;
-  referringDoctor?: string;
-  incidentNumber?: string;
-  visitNumberAtStation?: string;
-  commitmentNumber?: string;
-  commitmentExpiryDate?: string;
-  receptionActivity?: string;
-  totalToCollect?: number;
+  receptionDepartment?: string;
+  departmentAssignedByAi?: boolean;
+  departmentConfidence?: number;
+  departmentCandidatesJson?: string;
+  notes?: string;
+  totalToCollect?: number;        // server-derived (read-only)
   exemptionReason?: string;
+  // Discount/exemption — manager-gated
+  discountReason?: string;
+  discountApprovedByName?: string;
   // Treating staff (single owner) — stamped when the visit moves to InTreatment.
   treatingUserId?: string;
   treatingUserName?: string;
@@ -119,7 +116,13 @@ export type VisitCreate = Omit<
   Visit,
   | 'id' | 'queueNumber' | 'patient' | 'createdAt' | 'updatedAt'
   | 'treatingUserId' | 'treatingUserName' | 'treatingUserRole' | 'treatmentStartedAt' | 'treatmentRoom'
->;
+  // server-derived / server-stamped — never sent by the client
+  | 'totalToCollect' | 'discountApprovedByName'
+> & {
+  // Manager step-up credentials — required only when discountReason is set; verified server-side.
+  discountApprovalUsername?: string;
+  discountApprovalPassword?: string;
+};
 
 // ─── Medical Form sub-types ────────────────────────────────────────────────
 

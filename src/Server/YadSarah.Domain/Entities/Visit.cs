@@ -14,24 +14,41 @@ public class Visit
     public int QueueNumber { get; set; }
     public VisitStatus Status { get; set; } = VisitStatus.Waiting;
 
-    // Reception details
-    public string? ReceptionDepartment { get; set; }
+    // ── Reception / event details ─────────────────────────────────────────────
+    // Reworked 2026-06-19 to a slim "current-event" screen. Dropped legacy fields
+    // (AdmissionMethod, AdmissionReasonFree, ArrivalMethod, AmbulanceCompany,
+    // ReferringSource, ReferringDoctor, IncidentNumber, VisitNumberAtStation,
+    // CommitmentNumber, CommitmentExpiryDate, ReceptionActivity).
     public DateOnly AdmissionDate { get; set; }
     public TimeOnly AdmissionTime { get; set; }
-    public string? AdmissionMethod { get; set; }
+
+    /// <summary>Primary reason, entered first; drives AI department routing.</summary>
     public string? AdmissionReason { get; set; }
-    public string? AdmissionReasonFree { get; set; }
-    public string? ArrivalMethod { get; set; }
-    public string? AmbulanceCompany { get; set; }
-    public string? ReferringSource { get; set; }
-    public string? ReferringDoctor { get; set; }
-    public string? IncidentNumber { get; set; }
-    public string? VisitNumberAtStation { get; set; }
-    public string? CommitmentNumber { get; set; }
-    public DateOnly? CommitmentExpiryDate { get; set; }
-    public string? ReceptionActivity { get; set; }
+
+    /// <summary>Department the patient is routed to. Decided by AI routing — or chosen by
+    /// reception among the AI-narrowed candidates when confidence is low.</summary>
+    public string? ReceptionDepartment { get; set; }
+    public bool DepartmentAssignedByAi { get; set; }
+    public double? DepartmentConfidence { get; set; }
+    /// <summary>JSON array of candidate departments offered when AI confidence was low
+    /// (reception then picked one into ReceptionDepartment). Null on a confident assignment.</summary>
+    public string? DepartmentCandidatesJson { get; set; }
+
+    /// <summary>Free-text reception notes for this visit/event.</summary>
+    public string? Notes { get; set; }
+
+    /// <summary>Total charge — server-derived from the pricing table (read-only to the client).</summary>
     public decimal? TotalToCollect { get; set; }
+
+    /// <summary>Exemption reason — closed list (TODO pending: list supplied by client).</summary>
     public string? ExemptionReason { get; set; }
+
+    // ── Discount / exemption (manager-gated) ──────────────────────────────────
+    /// <summary>Discount or exemption value. Settable ONLY with shift-manager step-up
+    /// authorization; the approving manager is stamped below.</summary>
+    public string? DiscountReason { get; set; }
+    public Guid? DiscountApprovedByUserId { get; set; }
+    public string? DiscountApprovedByName { get; set; }
 
     // ── Treating staff (single owner) ─────────────────────────────────────────
     // Stamped when a clinician moves the visit to InTreatment (the user who took the

@@ -269,20 +269,16 @@ public class VisitService(AppDbContext db, SettingsService settings)
             .FirstOrDefaultAsync(v => v.Id == id)
             ?? throw new KeyNotFoundException($"Visit {id} not found");
 
+        // Slim event screen (2026-06-19). TotalToCollect is server-derived (set by the
+        // controller via PricingService, not copied from the client). Discount fields are
+        // manager-gated and updated only through the authorized create/discount path, so
+        // they are intentionally NOT copied here.
         existing.ReceptionDepartment = incoming.ReceptionDepartment;
-        existing.AdmissionMethod = incoming.AdmissionMethod;
+        existing.DepartmentAssignedByAi = incoming.DepartmentAssignedByAi;
+        existing.DepartmentConfidence = incoming.DepartmentConfidence;
+        existing.DepartmentCandidatesJson = incoming.DepartmentCandidatesJson;
         existing.AdmissionReason = incoming.AdmissionReason;
-        existing.AdmissionReasonFree = incoming.AdmissionReasonFree;
-        existing.ArrivalMethod = incoming.ArrivalMethod;
-        existing.AmbulanceCompany = incoming.AmbulanceCompany;
-        existing.ReferringSource = incoming.ReferringSource;
-        existing.ReferringDoctor = incoming.ReferringDoctor;
-        existing.IncidentNumber = incoming.IncidentNumber;
-        existing.VisitNumberAtStation = incoming.VisitNumberAtStation;
-        existing.CommitmentNumber = incoming.CommitmentNumber;
-        existing.CommitmentExpiryDate = incoming.CommitmentExpiryDate;
-        existing.ReceptionActivity = incoming.ReceptionActivity;
-        existing.TotalToCollect = incoming.TotalToCollect;
+        existing.Notes = incoming.Notes;
         existing.ExemptionReason = incoming.ExemptionReason;
         existing.UpdatedAt = DateTime.UtcNow;
 

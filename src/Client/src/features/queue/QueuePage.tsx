@@ -223,7 +223,7 @@ export default function QueuePage() {
                         </Badge>
                       ) : '—'}
                     </Table.Td>
-                    <Table.Td>{visit.admissionReason ?? visit.admissionReasonFree ?? '—'}</Table.Td>
+                    <Table.Td>{visit.admissionReason ?? '—'}</Table.Td>
                     <Table.Td>
                       <Badge color={STATUS_COLOR[visit.status]} variant="light">
                         {STATUS_LABEL[visit.status]}

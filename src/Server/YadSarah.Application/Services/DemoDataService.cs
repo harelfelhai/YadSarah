@@ -61,8 +61,6 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         "אלנבי", "רוטשילד", "סוקולוב", "ירושלים", "החלוצים", "האלון", "הזית", "הדקל",
     ];
     private static readonly string[] HealthFunds = ["מכבי", "מאוחדת", "כללית", "לאומית"];
-    private static readonly string[] AdmissionMethods = ["רגיל", "אמבולנס", "הפניה", "עצמאי"];
-    private static readonly string[] ArrivalMethods = ["הגיע בעצמו", "אמבולנס", "משטרה", "צבא"];
     private static readonly string[] AdmissionReasons =
     [
         "כאב", "פציעה / חבלה", "חום", "קוצר נשימה", "בחילה / הקאות",
@@ -233,8 +231,6 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
                 ReceptionDepartment = dept,
                 AdmissionDate = today,
                 AdmissionTime = TimeOnly.FromDateTime(arrival),
-                AdmissionMethod = AdmissionMethods[rng.Next(AdmissionMethods.Length)],
-                ArrivalMethod = ArrivalMethods[rng.Next(ArrivalMethods.Length)],
                 AdmissionReason = AdmissionReasons[rng.Next(AdmissionReasons.Length)],
                 CreatedAt = arrival.ToUniversalTime(),
                 UpdatedAt = arrival.ToUniversalTime(),
@@ -365,8 +361,6 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             ReceptionDepartment = dept,
             AdmissionDate = date,
             AdmissionTime = time,
-            AdmissionMethod = AdmissionMethods[rng.Next(AdmissionMethods.Length)],
-            ArrivalMethod = ArrivalMethods[rng.Next(ArrivalMethods.Length)],
             AdmissionReason = AdmissionReasons[rng.Next(AdmissionReasons.Length)],
             CreatedAt = dt.ToUniversalTime(),
             UpdatedAt = dt.ToUniversalTime(),

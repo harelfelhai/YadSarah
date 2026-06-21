@@ -34,6 +34,12 @@ builder.Services.AddScoped<StreetCatalogService>();
 // Typed HttpClient for the data.gov.il streets sync (large dataset → generous timeout).
 builder.Services.AddHttpClient<StreetSyncService>(c => c.Timeout = TimeSpan.FromSeconds(120));
 builder.Services.AddHostedService<YadSarah.Api.Services.StreetSyncBackgroundService>();
+// Reception: server-derived pricing + AI department routing. The classifier is config-gated
+// (DepartmentRouting:Enabled + ApiKey) and falls back deterministically when off → safe by default.
+builder.Services.AddScoped<DepartmentRoutingService>();
+builder.Services.AddScoped<PricingService>();
+builder.Services.AddHttpClient<IDepartmentClassifier, YadSarah.Api.Services.LlmDepartmentClassifier>(
+    c => c.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<YadSarah.Api.Services.FormPresenceService>();
 

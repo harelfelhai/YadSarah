@@ -44,6 +44,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasOne(v => v.Patient).WithMany(p => p.Visits).HasForeignKey(v => v.PatientId);
             e.Property(v => v.Status).HasConversion<string>();
             e.Property(v => v.TreatingUserRole).HasConversion<string>();
+            e.Property(v => v.AdmissionReason).HasMaxLength(200);
+            e.Property(v => v.ReceptionDepartment).HasMaxLength(100);
+            e.Property(v => v.DepartmentCandidatesJson).HasMaxLength(500);
+            e.Property(v => v.Notes).HasMaxLength(2000);
+            e.Property(v => v.ExemptionReason).HasMaxLength(200);
+            e.Property(v => v.DiscountReason).HasMaxLength(500);
+            e.Property(v => v.DiscountApprovedByName).HasMaxLength(200);
             e.HasIndex(v => v.Status);
             // Auto-increment queue number per day handled in service layer
         });

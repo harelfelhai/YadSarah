@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
   Alert, Badge, Box, Button, Card, Grid, Group, Loader, Modal,
-  NumberInput, Stack, Text, TextInput, Textarea, Title,
+  NumberInput, Stack, Text, Textarea, Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
@@ -14,7 +14,6 @@ import { visitsApi } from '../../api/visits';
 import { useAuthStore } from '../../store/auth';
 import { isReceptionStaff } from '../../constants/roles';
 import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
-import DateField from '../../components/DateField';
 
 export default function DischargePage() {
   const { visitId } = useParams<{ visitId: string }>();
@@ -31,16 +30,12 @@ export default function DischargePage() {
   // Payment fields settled at discharge. Everything else on the visit is sent back
   // unchanged (PUT /visits is a full replace — see handleSavePayment).
   const form = useForm({
-    initialValues: { commitmentNumber: '', commitmentExpiryDate: '', exemptionReason: '' },
+    initialValues: { exemptionReason: '' },
   });
 
   useEffect(() => {
     if (visit) {
-      form.setValues({
-        commitmentNumber: visit.commitmentNumber ?? '',
-        commitmentExpiryDate: visit.commitmentExpiryDate ?? '',
-        exemptionReason: visit.exemptionReason ?? '',
-      });
+      form.setValues({ exemptionReason: visit.exemptionReason ?? '' });
     }
   }, [visit]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -72,8 +67,6 @@ export default function DischargePage() {
       // (spread preserves every current value) and override only the payment fields.
       await visitsApi.update(visit.id, {
         ...visit,
-        commitmentNumber: form.values.commitmentNumber || undefined,
-        commitmentExpiryDate: form.values.commitmentExpiryDate || undefined,
         exemptionReason: form.values.exemptionReason || undefined,
       });
       notifications.show({ message: 'פרטי התשלום נשמרו', color: 'green' });
@@ -181,12 +174,6 @@ export default function DischargePage() {
               // below the input rather than between label and input.
               inputWrapperOrder={['label', 'input', 'description', 'error']}
             />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 4 }}>
-            <TextInput label="מספר התחייבות" {...form.getInputProps('commitmentNumber')} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, sm: 4 }}>
-            <DateField label="תוקף התחייבות" {...form.getInputProps('commitmentExpiryDate')} />
           </Grid.Col>
           <Grid.Col span={12}>
             <Textarea label="סיבת הפטור" rows={2} {...form.getInputProps('exemptionReason')} />

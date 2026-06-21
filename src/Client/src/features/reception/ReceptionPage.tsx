@@ -7,17 +7,19 @@ import {
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconX, IconAlertCircle } from '@tabler/icons-react';
+import { IconSearch, IconX, IconAlertCircle, IconSparkles, IconLock } from '@tabler/icons-react';
 import { DEPARTMENTS } from '../../constants/departments';
 import { ISRAELI_CITIES, DEFAULT_CITY } from '../../constants/israeliCities';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { patientsApi } from '../../api/patients';
 import { visitsApi } from '../../api/visits';
 import { streetsApi } from '../../api/streets';
+import { receptionApi, type RouteDepartmentResult } from '../../api/reception';
 import { formatPhone, phoneValidationError, digitsOnly } from '../../utils/phone';
+import { EXEMPTION_REASONS } from '../../constants/exemptionReasons';
 import type { IdentityType, Patient, Visit } from '../../types';
 import StickerPrint from './StickerPrint';
-import DateField from '../../components/DateField';
+import ReauthModal from '../../components/ReauthModal';
 import BirthDateField from '../../components/BirthDateField';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -29,8 +31,6 @@ const IDENTITY_TYPES: { value: IdentityType; label: string }[] = [
   { value: 'זמני', label: 'זמני (אוטומטי)' },
 ];
 const HEALTH_FUNDS = ['מכבי', 'מאוחדת', 'כללית', 'לאומית', 'הראל', 'AIM', 'ללא'];
-const ADMISSION_METHODS = ['רגיל', 'אמבולנס', 'הפניה', 'עצמאי'];
-const ARRIVAL_METHODS = ['הגיע בעצמו', 'אמבולנס', 'משטרה', 'צבא'];
 const ADMISSION_REASONS = [
   'כאב', 'פציעה / חבלה', 'חום', 'קוצר נשימה', 'בחילה / הקאות',
   'חולשה / עילפון', 'בדיקה רפואית', 'ייעוץ', 'המשך טיפול', 'תאונת דרכים', 'אחר',
@@ -155,6 +155,10 @@ export default function ReceptionPage() {
     setIdNumber('');
     setIdError('');
     setStreetOptions([]);
+    setRouteResult(null);
+    setDiscountUnlocked(false);
+    setDiscountApprovedBy('');
+    managerCreds.current = null;
     patientForm.reset();
     visitForm.reset();
     setStep(0);
@@ -226,29 +230,75 @@ export default function ReceptionPage() {
     if (idx >= 0 && idx < focusables.length - 1) focusables[idx + 1].focus();
   };
 
-  // ── Visit form ────────────────────────────────────────────────────────────
+  // ── Visit / event form (slim screen 2026-06-19) ─────────────────────────────
   const visitForm = useForm({
     initialValues: {
-      receptionDepartment: '',
-      admissionMethod: '',
       admissionReason: '',
-      admissionReasonFree: '',
-      arrivalMethod: '',
-      ambulanceCompany: '',
-      referringSource: '',
-      referringDoctor: '',
-      incidentNumber: '',
-      visitNumberAtStation: '',
-      commitmentNumber: '',
-      commitmentExpiryDate: '',
-      receptionActivity: '',
+      receptionDepartment: '',
+      departmentAssignedByAi: false,
+      departmentConfidence: 0,
+      departmentCandidatesJson: '',
+      notes: '',
       exemptionReason: '',
+      discountReason: '',
     },
     validate: {
-      admissionReasonFree: (v, vals) =>
-        vals.admissionReason === 'אחר' && !v.trim() ? 'יש לפרט סיבה' : null,
+      admissionReason: (v) => (!v.trim() ? 'יש לבחור סיבת קבלה' : null),
+      receptionDepartment: (v) => (!v.trim() ? 'יש לקבוע / לבחור מחלקה' : null),
     },
   });
+
+  // ── Department AI routing (decides; low confidence → multiple options to pick) ──
+  const [routing, setRouting] = useState(false);
+  const [routeResult, setRouteResult] = useState<RouteDepartmentResult | null>(null);
+
+  const ageFromBirth = (iso?: string): number | undefined => {
+    if (!iso) return undefined;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return undefined;
+    const now = new Date();
+    let a = now.getFullYear() - d.getFullYear();
+    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) a--;
+    return a >= 0 && a < 130 ? a : undefined;
+  };
+
+  const runRouting = async (reason: string) => {
+    visitForm.setFieldValue('admissionReason', reason);
+    if (!reason.trim()) { setRouteResult(null); return; }
+    setRouting(true);
+    try {
+      const res = await receptionApi.routeDepartment({
+        admissionReason: reason,
+        age: ageFromBirth(patientForm.values.birthDate),
+        gender: patientForm.values.gender || undefined,
+      });
+      setRouteResult(res);
+      visitForm.setFieldValue('receptionDepartment', res.departments.length === 1 ? (res.assigned ?? res.departments[0]) : '');
+      visitForm.setFieldValue('departmentAssignedByAi', res.assignedByAi);
+      visitForm.setFieldValue('departmentConfidence', res.confidence);
+      visitForm.setFieldValue('departmentCandidatesJson', res.departments.length > 1 ? JSON.stringify(res.departments) : '');
+    } catch {
+      setRouteResult(null);
+      notifications.show({ message: 'קביעת מחלקה נכשלה — בחר ידנית', color: 'orange' });
+    } finally {
+      setRouting(false);
+    }
+  };
+
+  // ── Discount / exemption manager gate ───────────────────────────────────────
+  const [reauthOpen, setReauthOpen] = useState(false);
+  const [discountUnlocked, setDiscountUnlocked] = useState(false);
+  const [discountApprovedBy, setDiscountApprovedBy] = useState('');
+  // Held transiently to re-send on create (the server re-verifies); cleared on reset.
+  const managerCreds = useRef<{ username: string; password: string } | null>(null);
+
+  const handleAuthorizeDiscount = async (username: string, password: string) => {
+    const res = await receptionApi.authorizeDiscount(username, password); // throws → modal shows error
+    managerCreds.current = { username, password };
+    setDiscountApprovedBy(res.approvedByName);
+    setDiscountUnlocked(true);
+    setReauthOpen(false);
+  };
 
   // ── Step navigation ───────────────────────────────────────────────────────
   const handleContinue = () => {
@@ -286,14 +336,23 @@ export default function ReceptionPage() {
       }
 
       const now = new Date();
+      const v = visitForm.values;
       const visit = await visitsApi.create({
         patientId: patient.id,
         status: 'Waiting',
         admissionDate: now.toLocaleDateString('en-CA'),
         admissionTime: now.toTimeString().slice(0, 5),
-        ...visitForm.values,
-        commitmentExpiryDate: visitForm.values.commitmentExpiryDate || undefined,
-        totalToCollect: 0,
+        admissionReason: v.admissionReason || undefined,
+        receptionDepartment: v.receptionDepartment || undefined,
+        departmentAssignedByAi: v.departmentAssignedByAi,
+        departmentConfidence: v.departmentConfidence || undefined,
+        departmentCandidatesJson: v.departmentCandidatesJson || undefined,
+        notes: v.notes || undefined,
+        exemptionReason: v.exemptionReason || undefined,
+        // Manager-gated discount: only sent when a manager authorized it (server re-verifies).
+        discountReason: discountUnlocked ? (v.discountReason || undefined) : undefined,
+        discountApprovalUsername: discountUnlocked ? managerCreds.current?.username : undefined,
+        discountApprovalPassword: discountUnlocked ? managerCreds.current?.password : undefined,
       });
 
       setSavedPatient({ ...patient, healthFund: patientForm.values.healthFund });
@@ -335,8 +394,6 @@ export default function ReceptionPage() {
       />
     );
   }
-
-  const isOther = visitForm.values.admissionReason === 'אחר';
 
   return (
     <Stack gap="md">
@@ -543,81 +600,105 @@ export default function ReceptionPage() {
           </div>
         )}
 
-        {/* ── Step 1: Visit details ── */}
+        {/* ── Step 1: Event details (slim screen, AI-routed department) ── */}
         {step === 1 && (
           <Stack gap="md" mt="md">
             <Card withBorder p="md">
               <Grid>
-                <Grid.Col span={4}>
-                  <Select
-                    label="מחלקה"
-                    data={[...DEPARTMENTS]}
-                    clearable
-                    {...visitForm.getInputProps('receptionDepartment')}
-                  />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <Select label="אופן קבלה" data={ADMISSION_METHODS} clearable {...visitForm.getInputProps('admissionMethod')} />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <Select label="דרך הגעה" data={ARRIVAL_METHODS} clearable {...visitForm.getInputProps('arrivalMethod')} />
-                </Grid.Col>
-
-                <Grid.Col span={isOther ? 4 : 8}>
+                {/* סיבת קבלה — entered first; drives the AI department routing */}
+                <Grid.Col span={6}>
                   <Select
                     label="סיבת קבלה"
+                    withAsterisk
                     data={ADMISSION_REASONS}
-                    clearable
-                    {...visitForm.getInputProps('admissionReason')}
+                    searchable
+                    value={visitForm.values.admissionReason || null}
+                    onChange={(val) => runRouting(val ?? '')}
+                    error={visitForm.errors.admissionReason}
                   />
                 </Grid.Col>
-                {isOther && (
-                  <Grid.Col span={8}>
-                    <TextInput
-                      label='פירוט ("אחר")'
-                      withAsterisk
-                      placeholder="פרט את סיבת הקבלה"
-                      {...visitForm.getInputProps('admissionReasonFree')}
-                    />
-                  </Grid.Col>
-                )}
 
-                <Grid.Col span={4}>
-                  <TextInput label="חברת אמבולנס" {...visitForm.getInputProps('ambulanceCompany')} />
+                {/* מחלקה — AI decides: readonly when confident, else pick among candidates */}
+                <Grid.Col span={6}>
+                  {routeResult?.assignedByAi && routeResult.departments.length === 1 ? (
+                    <TextInput
+                      label="מחלקה"
+                      readOnly
+                      value={visitForm.values.receptionDepartment}
+                      rightSectionWidth={70}
+                      rightSection={
+                        <Badge color="grape" size="sm" leftSection={<IconSparkles size={11} />}>AI</Badge>
+                      }
+                      description={`נקבע אוטומטית · ודאות ${Math.round((routeResult.confidence ?? 0) * 100)}%`}
+                      inputWrapperOrder={['label', 'input', 'description', 'error']}
+                    />
+                  ) : (
+                    <Select
+                      label="מחלקה"
+                      withAsterisk
+                      data={routeResult && routeResult.departments.length > 1
+                        ? routeResult.departments
+                        : [...DEPARTMENTS]}
+                      description={
+                        routing ? 'קובע מחלקה…'
+                          : routeResult && routeResult.departments.length > 1 ? 'ודאות נמוכה — בחר מבין האפשרויות'
+                            : routeResult ? 'בחר מחלקה'
+                              : 'תיקבע אוטומטית לפי סיבת הקבלה'
+                      }
+                      inputWrapperOrder={['label', 'input', 'description', 'error']}
+                      {...visitForm.getInputProps('receptionDepartment')}
+                    />
+                  )}
                 </Grid.Col>
-                <Grid.Col span={4}>
-                  <TextInput label="גורם מפנה" {...visitForm.getInputProps('referringSource')} />
+
+                <Grid.Col span={12}>
+                  <Textarea label="הערות" rows={3} {...visitForm.getInputProps('notes')} />
                 </Grid.Col>
-                <Grid.Col span={4}>
-                  <TextInput label="רופא מפנה" {...visitForm.getInputProps('referringDoctor')} />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <TextInput label="מספר אירוע" {...visitForm.getInputProps('incidentNumber')} />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <TextInput label="מספר ביקור במוקד" {...visitForm.getInputProps('visitNumberAtStation')} />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <TextInput label="מספר התחייבות" {...visitForm.getInputProps('commitmentNumber')} />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <DateField label="תוקף התחייבות" {...visitForm.getInputProps('commitmentExpiryDate')} />
-                </Grid.Col>
-                <Grid.Col span={4}>
-                  <TextInput label="פעילות בקבלה" {...visitForm.getInputProps('receptionActivity')} />
-                </Grid.Col>
+
+                {/* סה"כ לגבייה — server-derived (pricing table pending) */}
                 <Grid.Col span={4}>
                   <NumberInput
                     label="סה״כ לגבייה מהמטופל (₪)"
                     value={0}
                     readOnly
                     styles={{ input: { backgroundColor: '#f8f9fa', cursor: 'not-allowed' } }}
-                    description="מחושב לפי סיבת קבלה וקופ״ח"
+                    description="מחושב מטבלת התמחור (בקרוב)"
                     inputWrapperOrder={['label', 'input', 'description', 'error']}
                   />
                 </Grid.Col>
-                <Grid.Col span={8}>
-                  <TextInput label="סיבת הפטור" {...visitForm.getInputProps('exemptionReason')} />
+
+                {/* סיבת פטור — closed list */}
+                <Grid.Col span={4}>
+                  <Select
+                    label="סיבת פטור"
+                    data={EXEMPTION_REASONS}
+                    clearable
+                    searchable
+                    {...visitForm.getInputProps('exemptionReason')}
+                  />
+                </Grid.Col>
+
+                {/* הנחה / פטור — manager-gated (step-up re-auth) */}
+                <Grid.Col span={4}>
+                  {discountUnlocked ? (
+                    <TextInput
+                      label="הנחה / פטור"
+                      description={`אושר ע"י ${discountApprovedBy}`}
+                      inputWrapperOrder={['label', 'input', 'description', 'error']}
+                      {...visitForm.getInputProps('discountReason')}
+                    />
+                  ) : (
+                    <Button
+                      variant="light"
+                      color="orange"
+                      mt={24}
+                      fullWidth
+                      leftSection={<IconLock size={16} />}
+                      onClick={() => setReauthOpen(true)}
+                    >
+                      הנחה / פטור (אישור מנהל)
+                    </Button>
+                  )}
                 </Grid.Col>
               </Grid>
             </Card>
@@ -630,6 +711,16 @@ export default function ReceptionPage() {
                 סיים והכנס לתור
               </Button>
             </Group>
+
+            <ReauthModal
+              opened={reauthOpen}
+              onClose={() => setReauthOpen(false)}
+              onConfirm={handleAuthorizeDiscount}
+              title="אישור הנחה / פטור — מנהל משמרת"
+              description="להחלת הנחה או פטור נדרש מנהל משמרת להזין שם משתמש וסיסמה."
+              confirmLabel="אשר"
+              confirmColor="orange"
+            />
           </Stack>
         )}
       </fieldset>
