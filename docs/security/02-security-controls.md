@@ -254,5 +254,42 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 | מעבר ל-RBAC רב-תפקידי (סיווג מקצועי רב-ערכי) | `User.Role` (יחיד) → `User.Roles` (קבוצה); ה-JWT פולט כל תפקיד כ-role-claim, ו-`[Authorize(Roles=…)]`/`IsInRole` מתאימים ל**לפחות-אחד** → **ההרשאות = איחוד**. גבולות הגישה הקיימים נשמרים: קבלה עדיין אינה ב-`FormsController` (PHI קליני), חתימה עדיין **רק רופא** (`Roles.Contains(Doctor)` ב-`FormService`), ושחרור/קבלה עדיין מוגבלים בשרת. **התפקידים החדשים** מתוחמים: סטודנט-רפואה/סיעוד = עריכת-טופס (ללא חתימה), מעבדה = **צפייה בלבד** (כל PATCH→403 דרך `FormSectionPolicy.CanEdit`). **הסלמת-הרשאות נחסמת:** יצירת משתמש = Admin בלבד; עדכון ע"י מנהל-משמרת חסום מהענקת/עריכת Admin (`req.Roles.Contains(Admin)`); כל שדות-המשתמש נכתבים מפורשות (אין over-posting); `ValidateRoles` דורש תפקיד אחד לפחות. שינויי משתמש נרשמים ל-audit (`Created`/`Updated` עם רשימת התפקידים). |
 | השבתת חשבון לא-פעיל (120 יום) + תיעוד | `AuthService` משבית בכניסה חשבון שלא שימש 120+ יום (בסיס: כניסה אחרונה, או תאריך-יצירה למי שלא נכנס) — מצמצם משטח-תקיפה של חשבונות רדומים; הפעלה מחדש ע"י אדמין בלבד. האירוע **נרשם ל-audit** (`AccountAutoDeactivated`, מיוחס לחשבון) בנוסף ל-`LoginFailed`. כניסה מתועדת עתה גם עם **המחשב שממנו בוצעה** (`deviceId`). |
 | חתימת רופא → שחרור אוטומטי + מרשם (#8) | חתימה מעבירה עתה את הביקור ישירות ל-`Discharged` (במקום `FinishedTreatment`) — **בשליטת הרשאת-החתימה הקיימת** (`FormService.SignAsync` דורש `Roles.Contains(Doctor)`); אין נתיב-הרשאה חדש, רק תוצאה נוספת של אותה פעולה מורשית, שממשיכה להירשם ל-audit כ-`Signed`. רישיון הרופא (+מרמ) **מצולם** על הטופס בעת החתימה (`SignedByLicense`) לצורך המרשם המודפס — זהו אישור-החותם עצמו (לא PHI של מטופל), ומופיע על המרשם הנמסר למטופל כנדרש. הדפסת הסיכום/מרשם רצה בצד-לקוח ב-iframe מבודד (אין PHI נשמר). שחרור-הקבלה נותר זמין למקרי-קצה (§15, שורת השחרור). |
-| מסך פרטי-האירוע: ניתוב-מחלקה ב-AI, הנחה/פטור בשליטת מנהל, סכום נגזר-שרת | **ניתוב-מחלקה** (`POST /api/reception/route-department`, `Reception/SM/Admin`) מחזיר שמות-מחלקה בלבד (לא-PHI). ה-classifier (`LlmDepartmentClassifier`) **כבוי כברירת-מחדל** (`DepartmentRouting:Enabled=false`) → אין קריאה חיצונית, fallback דטרמיניסטי. **כשמופעל** — סיבת-הקבלה + גיל/מין נשלחים ל-Claude API (אילוץ ה-On-Prem בוטל 2026-06-19, אז זה מותר); זהו **PHI היוצא לספק חיצוני** — לפני הפעלה בייצור יש לוודא הסכם-עיבוד-נתונים/BAA מתאים והסכמה. מפתח ה-API נקרא מ-config/env (לא ב-DB, לא בקוד). הכשל אינו זורק לזרימת הקבלה. **הנחה/פטור** מותנה ב-step-up של **מנהל-משמרת/Admin** (`authorize-discount` + אימות-חוזר ב-`VisitsController.Create`), מוגבל-קצב (`auth`), מתועד (`DiscountAuthorized`/`DiscountAuthFailed`/`DiscountApplied`), עם `403` גנרי. **`TotalToCollect` נגזר-שרת** (`PricingService`) ו**הוסר מה-DTO** → הלקוח אינו יכול לקבוע מחיר. **מניעת over-posting:** `DiscountReason` נשמר רק עם אישור-מנהל מאומת, חותמת-המאשר נקבעת בשרת, ו-`VisitService.UpdateAsync` **אינו** מעתיק שדות הנחה/total → אין מעקף דרך `PUT`. מחיקת 11 עמודות-קבלה ישנות (מיגרציה הרסנית) — מטא-דאטה תפעולית, לא PHI קליני; בוצע בהסכמה (אין DB ייצור). |
+| מסך פרטי-האירוע: ניתוב-מחלקה ב-AI, הנחה/פטור בשליטת מנהל, סכום נגזר-שרת | **ניתוב-מחלקה** (`POST /api/reception/route-department`, `Reception/SM/Admin`) מחזיר שמות-מחלקה בלבד (לא-PHI). ה-classifier (`LlmDepartmentClassifier`, מודל **Haiku**) מופעל ב-config (`DepartmentRouting:Enabled=true`) אך **אינרטי ללא מפתח** (בלי `DepartmentRouting:ApiKey` → מחזיר null → fallback דטרמיניסטי, אין קריאה חיצונית). **כשמסופק מפתח** — סיבת-הקבלה + גיל/מין נשלחים ל-Claude API (Haiku) עם **timeout 8ש'** לכל קריאה (כשל/השהיה → fallback, לא חוסם את הקבלה); אילוץ ה-On-Prem בוטל 2026-06-19 אז זה מותר; זהו **PHI היוצא לספק חיצוני** — לפני הפעלה בייצור יש לוודא הסכם-עיבוד-נתונים/BAA מתאים והסכמה. מפתח ה-API נקרא מ-config/env (לא ב-DB, לא בקוד). הכשל אינו זורק לזרימת הקבלה. **הנחה/פטור** מותנה ב-step-up של **מנהל-משמרת/Admin** (`authorize-discount` + אימות-חוזר ב-`VisitsController.Create`), מוגבל-קצב (`auth`), מתועד (`DiscountAuthorized`/`DiscountAuthFailed`/`DiscountApplied`), עם `403` גנרי. **`TotalToCollect` נגזר-שרת** (`PricingService`) ו**הוסר מה-DTO** → הלקוח אינו יכול לקבוע מחיר. **מניעת over-posting:** `DiscountReason` נשמר רק עם אישור-מנהל מאומת, חותמת-המאשר נקבעת בשרת, ו-`VisitService.UpdateAsync` **אינו** מעתיק שדות הנחה/total → אין מעקף דרך `PUT`. מחיקת 11 עמודות-קבלה ישנות (מיגרציה הרסנית) — מטא-דאטה תפעולית, לא PHI קליני; בוצע בהסכמה (אין DB ייצור). **לפני הפעלת ה-AI בייצור:** להוסיף תקרת-אורך ל-`admissionReason`, rate-limit ייעודי ל-`route-department`, ותיעוד-audit לקריאת-הניתוב החיצונית (מעבר ל-global rate-limit הקיים). |
 | שכתוב טופס הקבלה: מספר זמני, מאגרי עיר/רחוב, שדה קרבת-איש-קשר | **endpoint מספר זמני** (`GET /api/patients/temp-id`) מוגבל ל-`Reception/ShiftManager/Admin`, מחזיר רק מספר 5-ספרתי פנוי (לא-PHI) ואינו חושף קיום של מספר נתון (אין enumeration). **מאגרי עיר/רחוב** הם נתוני-ייחוס לא-PHI: רשימת הערים מקובעת בצד-לקוח; הרחובות בטבלה מקומית (`Streets`) המוגשת מ-`GET /api/streets` מאחורי auth, נזרעת אופליין מ-data.gov.il **מחוץ לנתיב הקריטי** (כשל אינו זורק; דגם מאגר-התרופות) — סנכרון מסודרל ע"י `SemaphoreSlim` למניעת ריצות מקבילות שיכפלו רשומות; ייבוא/סנכרון = Admin בלבד (audit `StreetSync`/`StreetImport`). **שדה `DigitalContactRelation`** (קרבת איש-קשר) נכלל בגבול-האמון הקיים של `PatientsController` (אין over-posting — שדות server-controlled עדיין נכפים; שדות-שם עדיין נבדקים ל-`<>`), טקסט-חופשי שנשמר ומורנדר עם escaping של React/`esc()` (אין XSS). המרת התאריך העברי→לועזי רצה **כולה בצד-לקוח** (`@hebcal/hdate`, ללא רשת). |
+
+## 16. קבלה עצמית ציבורית (Public Self-Service Intake)
+
+עמוד ציבורי `/intake` **ללא התחברות** שבו מטופל ממלא בעצמו את פרטיו מהנייד (מגיע אליו דרך QR
+שמוצג בדלפק). הטופס נכנס ל**טבלת staging נפרדת** (`PatientIntakeSubmission`) — **לא** לרשומות
+המטופלים — והקבלה סוקרת אותו (צפייה + הדגשת סתירות מול מטופל קיים → "פתח בקבלה" / "בטל").
+
+- **הרשאות (need-to-know):** `POST /api/public-intake` הוא `[AllowAnonymous]` ו**כתיבה-בלבד** —
+  מחזיר רק `id` (Guid חדש), **אינו** מבצע חיפוש מטופל ו**אינו** מחזיר נתון קיים כלשהו. כל הקריאה
+  והטריאז' (`GET /api/intake-submissions`, `GET /{id}` עם הסתירות, `POST /{id}/dismiss`,
+  `POST /{id}/imported`) מוגנים ב-`[Authorize(Roles="Reception,ShiftManager,Admin")]`. לכן
+  מזין אנונימי שמקליד ת"ז של מטופל קיים **אינו** מקבל בחזרה את נתוני המטופל — ה-diff מחושב ומוצג
+  **רק לקבלה המורשית** (אין IDOR / חשיפת-PHI לאנונימי).
+- **מניעת over-posting:** הקלט נקשר ל-DTO `PublicIntakeRequest` (קבוצת-שדות מפורשת) וממופה ב-
+  `ToEntity()`; `Status`/`Id`/`SubmittedAt` נקבעים בשרת (`Status=Pending` תמיד). לטבלה **אין FK
+  ל-`Patient`** — שום קלט אנונימי אינו נכנס לרשומות המטופלים. קידום לרשומת-מטופל/ביקור אמיתית
+  מתבצע רק דרך `PatientsController`/`VisitsController` המאומתים **לאחר** סקירת הקבלה ("פתח בקבלה"
+  ממלא-מראש את אשף הקבלה הרגיל; הצלחה → סימון `Imported`).
+- **בקרת קלט:** `[StringLength]` על כל השדות, שמות דוחים `< >`, וולידציית פורמט דוא"ל/טלפון בשרת
+  (במראה ל-`PatientsController.ValidatePatient`).
+- **אי-חשיפת PHI במחלקה:** הדף הציבורי **אינו** מציג מחלקה ו**אינו** קורא ל-`route-department` —
+  אין שליחת קלט-מטופל לספק AI חיצוני מהזרימה הציבורית (בשונה ממסך הקבלה המאויש, §15).
+- **SQLi:** כל הגישה EF (LINQ פרמטרי) — ספירת ההגשות-לפי-מכשיר וחיפוש המטופל-הקיים לפי ת"ז.
+- **XSS:** ערכי ההגשה מורנדרים רק דרך React (escaping אוטומטי; אין `dangerouslySetInnerHTML`).
+- **תיעוד audit:** הגשה אנונימית נרשמת (`IntakeSubmitted`, `PatientIntakeSubmission`); צפייה
+  וטריאז' של הקבלה נרשמים (`Viewed` / `Updated` עם `Imported`/`Dismissed`).
+- **הגבלת הצפה (הקשחה):** תקרת **3 הגשות לכל מכשיר** (טוקן-`deviceId` ב-`localStorage`, חלון נגזר
+  מהגדרה `intake.deviceLimit`/`intake.deviceWindowMinutes`) נספרת בשרת, **ובנוסף** מדיניות
+  rate-limit לפי-IP (`publicIntake`, 10/דק') כבלם נגד הצפה. הטוקן ניתן-לעקיפה (ניקוי storage) — לכן
+  הבלם הוא ה-rate-limit לפי-IP, וה-endpoint ממילא אינו חושף/משנה נתוני-מטופל. נשמר רופף דיו ל-Wi-Fi
+  משותף בחדר המתנה (NAT — IP אחד למטופלים רבים).
+- **route ציבורי בצד-לקוח במכוון:** `/intake` מחוץ ל-`RequireAuth`; השרת הוא גבול-האמון.
+
+קבצים: `Domain/Entities/PatientIntakeSubmission.cs`, `Application/Services/IntakeSubmissionService.cs`,
+`Api/Dtos/PublicIntakeRequest.cs`, `Api/Controllers/{PublicIntakeController,IntakeReviewController}.cs`,
+`Api/Program.cs` (מדיניות `publicIntake`), `Client/src/features/intake/PublicIntakePage.tsx`,
+`Client/src/features/reception/{IntakeReviewBoard,IntakeQrButton}.tsx`, `Client/src/api/intake.ts`.

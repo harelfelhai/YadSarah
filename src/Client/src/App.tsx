@@ -22,6 +22,7 @@ import AuditPage from './features/admin/AuditPage';
 import FeedbackPage from './features/admin/FeedbackPage';
 import HistoryPage from './features/history/HistoryPage';
 import PatientEditPage from './features/reception/PatientEditPage';
+import PublicIntakePage from './features/intake/PublicIntakePage';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 10_000 } },
@@ -55,6 +56,8 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            {/* Public, no-login patient self-service intake (reached via the QR at reception). */}
+            <Route path="/intake" element={<PublicIntakePage />} />
             <Route
               path="/*"
               element={

@@ -5,14 +5,14 @@ using YadSarah.Application.Services;
 namespace YadSarah.Api.Services;
 
 /// <summary>
-/// LLM-backed department classifier (Claude Messages API). Config-gated: returns null
-/// (⇒ deterministic fallback) unless <c>DepartmentRouting:Enabled</c> is true AND an API key
-/// is present. Internet in the critical path is permitted (on-prem constraint dropped 2026-06-19).
+/// LLM-backed department classifier (Claude Messages API, default model: Haiku). Config-gated:
+/// returns null (⇒ deterministic fallback) unless <c>DepartmentRouting:Enabled</c> is true AND an
+/// API key is present. Internet in the critical path is permitted (on-prem dropped 2026-06-19).
 ///
-/// TODO(pending): <see cref="BuildSystemPrompt"/> is a PLACEHOLDER. The client will supply the
-/// routing rules + few-shot examples and the algorithmic pre-narrowing — drop them in here and
-/// in <see cref="DepartmentRoutingService"/>. Config keys (appsettings / env, NOT the DB —
-/// the key is a secret): DepartmentRouting:{Enabled,ApiKey,Model}.
+/// Zero-shot by clinical logic (no few-shot examples) — the department descriptions in
+/// <see cref="BuildSystemPrompt"/> are what steer routing. A per-call 8s timeout keeps a slow/hung
+/// call from freezing the reception clerk (falls back to manual pick). Config keys (appsettings /
+/// env — the API key is a SECRET, never the DB): DepartmentRouting:{Enabled,ApiKey,Model}.
 /// </summary>
 public class LlmDepartmentClassifier(
     HttpClient http, IConfiguration config, ILogger<LlmDepartmentClassifier> log) : IDepartmentClassifier
@@ -26,7 +26,7 @@ public class LlmDepartmentClassifier(
         var apiKey = config["DepartmentRouting:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
-        var model = config["DepartmentRouting:Model"] ?? "claude-opus-4-8";
+        var model = config["DepartmentRouting:Model"] ?? "claude-haiku-4-5-20251001";
         try
         {
             var body = new
@@ -41,13 +41,17 @@ public class LlmDepartmentClassifier(
             msg.Headers.Add("anthropic-version", "2023-06-01");
             msg.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
-            using var res = await http.SendAsync(msg, ct);
+            // Bound the wait so a slow LLM never blocks the reception flow past ~8s.
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(8));
+
+            using var res = await http.SendAsync(msg, timeoutCts.Token);
             if (!res.IsSuccessStatusCode)
             {
                 log.LogWarning("Department-routing LLM call failed: {Status}", res.StatusCode);
                 return null;
             }
-            return ParseResponse(await res.Content.ReadAsStringAsync(ct), candidates);
+            return ParseResponse(await res.Content.ReadAsStringAsync(timeoutCts.Token), candidates);
         }
         catch (Exception ex)
         {
@@ -56,12 +60,32 @@ public class LlmDepartmentClassifier(
         }
     }
 
-    // TODO(pending): replace with the client's real rules + few-shot examples.
+    // Zero-shot routing by clinical logic. The department "mhut" (nature) descriptions are the
+    // steering signal; the allowed set is injected dynamically (age-gate may drop "ילדים").
     private static string BuildSystemPrompt(IReadOnlyList<string> candidates) =>
-        "You route an emergency-medicine patient to ONE department from the admission reason. " +
-        "Allowed departments: " + string.Join(", ", candidates) + ". " +
-        "Reply ONLY as compact JSON: {\"departments\":[\"...\"],\"confidence\":0.0-1.0}. " +
-        "If unsure, return the 2–3 most likely departments with a low confidence.";
+        $$"""
+        אתה מנתב מטופלים במלר"ד (מיון) למחלקה אחת בלבד, לפי סיבת הקבלה (וגיל/מין אם נתונים).
+
+        המחלקות ומהותן:
+        • רפואה דחופה — מיון כללי למבוגרים: מצבים אקוטיים שאינם משויכים לתת-התמחות אחרת — כאב כללי,
+          חום, חולשה/עילפון, קוצר נשימה, כאב חזה/בטן, בחילות/הקאות, זיהומים, מצבים פנימיים, הרעלות.
+          זוהי ברירת המחדל כשאין התאמה ברורה למחלקה ייעודית.
+        • ילדים — כל מטופל עד גיל 17 (כולל), בכל תלונה שהיא. הגיל גובר על סוג התלונה.
+        • אורטופדיה — פגיעות שלד-שריר: שברים, פריקות, נקעים, חבלות לגפיים/גב, חשד לשבר,
+          כאב מפרקים לאחר חבלה, פציעות ספורט.
+        • נשים — מצבים גינקולוגיים ומיילדותיים: היריון, צירי לידה, דימום וגינלי,
+          כאב בטן תחתונה בהקשר גינקולוגי, תלונות שד, מצבים שלאחר לידה.
+        • עירוי תרופות — הגעה יזומה לעירוי/טיפול תרופתי מתוכנן (אנטיביוטיקה IV, כימותרפיה,
+          תרופות ביולוגיות, נוזלים) — המשך טיפול מוכר, לא מצב חירום אקוטי.
+
+        כללים:
+        1. בחר מחלקה אחת בלבד, ורק מתוך הרשימה המותרת: {{string.Join(", ", candidates)}}.
+        2. אם גיל המטופל ≤ 17 ו-"ילדים" נמצאת ברשימה המותרת — בחר "ילדים".
+        3. השתמש בהיגיון קליני. מקרה חד-משמעי → ודאות גבוהה (0.8–1.0).
+           מקרה עמום בין כמה מחלקות → החזר 2–3 מועמדים סבירים עם ודאות נמוכה (מתחת ל-0.7).
+        4. השב אך ורק כ-JSON קומפקטי, ללא טקסט נוסף:
+           {"departments":["..."],"confidence":0.0-1.0}
+        """;
 
     private static string BuildUserPrompt(string admissionReason, RoutingContext ctx)
     {

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Button, Card, Grid, Group, Select, Stack, Stepper, Text,
   TextInput, Checkbox, Textarea, NumberInput, Badge,
@@ -15,7 +15,9 @@ import { patientsApi } from '../../api/patients';
 import { visitsApi } from '../../api/visits';
 import { streetsApi } from '../../api/streets';
 import { receptionApi, type RouteDepartmentResult } from '../../api/reception';
+import { intakeApi, type IntakeSubmission } from '../../api/intake';
 import { formatPhone, phoneValidationError, digitsOnly } from '../../utils/phone';
+import { validateIsraeliId } from '../../utils/israeliId';
 import { EXEMPTION_REASONS } from '../../constants/exemptionReasons';
 import type { IdentityType, Patient, Visit } from '../../types';
 import StickerPrint from './StickerPrint';
@@ -41,21 +43,6 @@ const GENDERS = [
   { value: 'א', label: 'אחר' },
 ];
 
-// ─── Israeli ID validation ────────────────────────────────────────────────────
-
-function validateIsraeliId(id: string): boolean {
-  const cleaned = id.replace(/\D/g, '');
-  if (!cleaned || cleaned.length > 9) return false;
-  const padded = cleaned.padStart(9, '0');
-  let sum = 0;
-  for (let i = 0; i < 9; i++) {
-    let digit = parseInt(padded[i], 10) * (i % 2 === 0 ? 1 : 2);
-    if (digit > 9) digit -= 9;
-    sum += digit;
-  }
-  return sum % 10 === 0;
-}
-
 // ─── Optional-field format checks (mirror the server validation) ──────────────
 const EMAIL_RX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const emailError = (v: string) => (v && !EMAIL_RX.test(v.trim()) ? 'כתובת דוא"ל אינה תקינה' : null);
@@ -64,6 +51,10 @@ const emailError = (v: string) => (v && !EMAIL_RX.test(v.trim()) ? 'כתובת �
 
 export default function ReceptionPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // When reception opens a patient-submitted intake form ("פתח בקבלה"), the submission id is held
+  // so the staging row can be marked Imported once the visit is created.
+  const intakeSubmissionId = useRef<string | null>(null);
 
   // ID gate state
   const [idType, setIdType] = useState<IdentityType>('תעודת זהות');
@@ -248,6 +239,50 @@ export default function ReceptionPage() {
     },
   });
 
+  // ── Prefill from a patient self-service submission ("פתח בקבלה") ─────────────
+  // Reception still drives the normal flow (verify, route department, create visit); this only
+  // seeds the fields from the staging row. ID is treated as confirmed but NOT auto-searched —
+  // reception verifies the identity itself.
+  /* eslint-disable react-hooks/set-state-in-effect -- one-time seed from navigation state;
+     initialValues stay blank so reset()/handleResetId clear the form for the next patient. */
+  useEffect(() => {
+    const state = location.state as { intakePrefill?: IntakeSubmission; intakeSubmissionId?: string } | null;
+    const s = state?.intakePrefill;
+    if (!s) return;
+    intakeSubmissionId.current = state?.intakeSubmissionId ?? null;
+    setIdType(s.identityType);
+    setIdNumber(s.identityNumber ?? '');
+    setFoundPatient(null);
+    setIdConfirmed(true);
+    patientForm.setValues((prev) => ({
+      ...prev,
+      identityType: s.identityType,
+      identityNumber: s.identityNumber ?? '',
+      firstName: s.firstName ?? '',
+      lastName: s.lastName ?? '',
+      fatherName: s.fatherName ?? '',
+      gender: s.gender ?? '',
+      birthDate: s.birthDate ?? '',
+      city: s.city || DEFAULT_CITY,
+      street: s.street ?? '',
+      houseNumber: s.houseNumber ?? '',
+      phoneMobile: s.phoneMobile ?? '',
+      phoneHome: s.phoneHome ?? '',
+      email: s.email ?? '',
+      digitalContactPerson: s.digitalContactPerson ?? '',
+      digitalContactRelation: s.digitalContactRelation ?? '',
+      digitalContactPhone: s.digitalContactPhone ?? '',
+      acceptsDigitalInfo: s.acceptsDigitalInfo ?? false,
+      healthFund: s.healthFund ?? '',
+    }));
+    visitForm.setFieldValue('admissionReason', s.admissionReason ?? '');
+    setStep(0);
+    // Drop the nav state so a refresh / "admit another" doesn't re-prefill.
+    window.history.replaceState({}, '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   // ── Department AI routing (decides; low confidence → multiple options to pick) ──
   const [routing, setRouting] = useState(false);
   const [routeResult, setRouteResult] = useState<RouteDepartmentResult | null>(null);
@@ -357,6 +392,12 @@ export default function ReceptionPage() {
 
       setSavedPatient({ ...patient, healthFund: patientForm.values.healthFund });
       setCreatedVisit(visit);
+
+      // If this admission came from a patient self-service form, retire the staging row.
+      if (intakeSubmissionId.current) {
+        try { await intakeApi.markImported(intakeSubmissionId.current); } catch { /* non-fatal */ }
+        intakeSubmissionId.current = null;
+      }
     } catch (e) {
       notifications.show({
         message: apiErrorMessage(e, 'שגיאה בשמירה'),

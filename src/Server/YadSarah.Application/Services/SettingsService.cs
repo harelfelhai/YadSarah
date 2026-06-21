@@ -20,6 +20,9 @@ public class SettingsService(AppDbContext db)
     public const string StreetsLastSyncAtKey = "streets.lastSyncAt";
     public const string StreetsCountKey = "streets.count";
     public const string StreetsLastSyncStatusKey = "streets.lastSyncStatus";
+    // Public self-service intake: per-device submission cap + its rolling window (anti-abuse).
+    public const string IntakeDeviceLimitKey = "intake.deviceLimit";
+    public const string IntakeDeviceWindowMinutesKey = "intake.deviceWindowMinutes";
 
     // Default MoH drug-registry endpoint (paged JSON). Configurable because it sits
     // behind a WAF and may change; the file-import path is the offline fallback.
@@ -46,6 +49,8 @@ public class SettingsService(AppDbContext db)
         (StreetsLastSyncAtKey, "", "מועד הסנכרון האחרון של מאגר הרחובות (UTC)"),
         (StreetsCountKey, "0", "מספר הרחובות במאגר הפנימי"),
         (StreetsLastSyncStatusKey, "", "סטטוס הסנכרון האחרון של הרחובות"),
+        (IntakeDeviceLimitKey, "3", "מספר מרבי של טפסי קבלה-עצמית מאותו מכשיר בתוך חלון הזמן"),
+        (IntakeDeviceWindowMinutesKey, "60", "חלון הזמן (בדקות) לספירת טפסי קבלה-עצמית מאותו מכשיר"),
     ];
 
     public async Task EnsureDefaultsAsync()

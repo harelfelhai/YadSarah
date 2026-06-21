@@ -62,6 +62,11 @@ public class VisitService(AppDbContext db, SettingsService settings)
     public Task<bool> PatientExistsAsync(Guid patientId) =>
         db.Patients.AnyAsync(p => p.Id == patientId);
 
+    // The patient's current health fund — used server-side to derive the ED charge
+    // (the fund is re-entered each visit, so it reflects this visit's coverage).
+    public Task<string?> GetPatientHealthFundAsync(Guid patientId) =>
+        db.Patients.Where(p => p.Id == patientId).Select(p => p.HealthFund).FirstOrDefaultAsync();
+
     // Full visit history for a patient (newest first), across all days.
     public async Task<List<Visit>> GetByPatientAsync(Guid patientId)
     {

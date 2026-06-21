@@ -1,11 +1,38 @@
 // Closed list of exemption reasons ("סיבת פטור") for the reception event screen.
-// TODO(pending): the client will supply the authoritative list — replace the placeholders
-// below. Kept as a single source so the <Select> stays a closed list.
+// Source: client-supplied list of full-exemption cases (פטור מלא — both the ER fee
+// and treatment costs) per the national-health-insurance ED-charge rules.
+// Shown as a closed <Select>; the server stores the chosen label.
 export const EXEMPTION_REASONS: string[] = [
-  // placeholders — to be replaced with the real closed list
-  'נפגע פעולת איבה',
-  'נפגע עבודה',
-  'אסיר / עצור',
-  'הסכם קופ"ח',
-  'אחר',
+  // Doctor-referral: not a full exemption — selects the "בהפניית רופא" price column
+  // (see constants/pricing.ts). Kept first as the common case.
+  'בהפניית רופא',
+  'מכתב רפואי / טופס 17 — ולא אושפז',
+  'אושפז (גם ללא מכתב רפואי / טופס 17)',
+  'נפגע עבודה — אישור מעסיק (טופס 250)',
+  'נפגע תאונת דרכים — אישור משטרה',
+  'תלמיד שנפגע בבית הספר / טיול — עם אישור',
+  'הופנה ע"י פסיכיאטר מחוזי / צו בית משפט (חוק טיפול בחולי נפש)',
+  'פנייה / הפניה למרכז בריאות הנפש או בי"ח פסיכיאטרי',
+  'פינוי באמבולנס מד"א מהרחוב / מקום ציבורי — אירוע פתאומי',
+  'תינוק עד גיל חודשיים — חום גבוה (מעל 38.5°)',
+  'חולה דיאליזה',
+  'נפגע אלימות במשפחה / תקיפה מינית (פנייה מוצדקת)',
+  'שבר חדש',
+  'פריקה חריפה של כתף / מרפק',
+  'פציעה הדורשת תפירה / איחוי',
+  'שאיפת גוף זר לדרכי הנשימה',
+  'חדירת גוף זר לעין',
+  'טיפול במחלת סרטן',
+  'טיפול בהמופיליה',
+  'טיפול בסיסטיק פיברוזיס (CF)',
+  'אישה עם צירי לידה',
+  'הכשת נחש',
+  'עקיצת עקרב',
+  'תגובה אלרגית מסכנת חיים',
+  'חבלת ראש — עד גיל שנתיים',
+  'חבלת ראש — מעל גיל 70',
+  'התקף אפילפטי בחולה אפילפטי ידוע',
+  'פריקת לסת',
+  'כוויה מדרגה 3',
+  'היריון — מבוטחי כללית / מכבי בלבד',
 ];
