@@ -17,6 +17,7 @@ import { formsApi } from '../../api/forms';
 import { medicationsApi } from '../../api/medications';
 import ReauthModal from '../../components/ReauthModal';
 import DateField from '../../components/DateField';
+import TreatmentActions from './TreatmentActions';
 import { useAuthStore } from '../../store/auth';
 import { newId } from '../../utils/id';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
@@ -384,13 +385,17 @@ export default function TreatmentFormPage() {
               </Box>
             )}
           </Group>
-          <Group gap="xs">
-            {presence.map((u) => (
-              <Tooltip key={u.userId} label={`${u.fullName} (${u.role})`}>
-                <Badge variant="dot" color="green">{u.fullName.split(' ')[0]}</Badge>
-              </Tooltip>
-            ))}
-          </Group>
+          <Stack gap="xs" align="flex-end">
+            {/* Whole-visit clinical actions (moved off the queue board): department / dual / refer / promote. */}
+            {visit && <TreatmentActions visit={visit} />}
+            <Group gap="xs">
+              {presence.map((u) => (
+                <Tooltip key={u.userId} label={`${u.fullName} (${u.role})`}>
+                  <Badge variant="dot" color="green">{u.fullName.split(' ')[0]}</Badge>
+                </Tooltip>
+              ))}
+            </Group>
+          </Stack>
         </Group>
       </Card>
 

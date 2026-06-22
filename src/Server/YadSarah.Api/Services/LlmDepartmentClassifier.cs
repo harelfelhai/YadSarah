@@ -5,14 +5,15 @@ using YadSarah.Application.Services;
 namespace YadSarah.Api.Services;
 
 /// <summary>
-/// LLM-backed department classifier (Claude Messages API, default model: Haiku). Config-gated:
+/// LLM-backed department classifier (Google Gemini, default model: gemini-2.5-flash). Config-gated:
 /// returns null (⇒ deterministic fallback) unless <c>DepartmentRouting:Enabled</c> is true AND an
 /// API key is present. Internet in the critical path is permitted (on-prem dropped 2026-06-19).
 ///
 /// Zero-shot by clinical logic (no few-shot examples) — the department descriptions in
-/// <see cref="BuildSystemPrompt"/> are what steer routing. A per-call 8s timeout keeps a slow/hung
-/// call from freezing the reception clerk (falls back to manual pick). Config keys (appsettings /
-/// env — the API key is a SECRET, never the DB): DepartmentRouting:{Enabled,ApiKey,Model}.
+/// <see cref="BuildSystemPrompt"/> are what steer routing, returned as a ranked list (best first).
+/// A per-call 8s timeout keeps a slow/hung call from freezing the reception clerk (falls back to the
+/// deterministic set). Config keys (appsettings / env — the API key is a SECRET, never the DB):
+/// DepartmentRouting:{Enabled,ApiKey,Model}. The key is sent as the x-goog-api-key header.
 /// </summary>
 public class LlmDepartmentClassifier(
     HttpClient http, IConfiguration config, ILogger<LlmDepartmentClassifier> log) : IDepartmentClassifier
@@ -26,19 +27,29 @@ public class LlmDepartmentClassifier(
         var apiKey = config["DepartmentRouting:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
-        var model = config["DepartmentRouting:Model"] ?? "claude-haiku-4-5-20251001";
+        var model = config["DepartmentRouting:Model"] ?? "gemini-2.5-flash";
         try
         {
             var body = new
             {
-                model,
-                max_tokens = 200,
-                system = BuildSystemPrompt(candidates),
-                messages = new[] { new { role = "user", content = BuildUserPrompt(admissionReason, ctx) } },
+                systemInstruction = new { parts = new[] { new { text = BuildSystemPrompt(candidates) } } },
+                contents = new[]
+                {
+                    new { role = "user", parts = new[] { new { text = BuildUserPrompt(admissionReason, ctx) } } },
+                },
+                generationConfig = new
+                {
+                    temperature = 0,
+                    maxOutputTokens = 256,
+                    responseMimeType = "application/json",
+                    // Disable "thinking" so the short classification stays fast and within the token cap
+                    // (supported by 2.5 models; harmless intent for the reception latency budget).
+                    thinkingConfig = new { thinkingBudget = 0 },
+                },
             };
-            using var msg = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages");
-            msg.Headers.Add("x-api-key", apiKey);
-            msg.Headers.Add("anthropic-version", "2023-06-01");
+            var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
+            using var msg = new HttpRequestMessage(HttpMethod.Post, url);
+            msg.Headers.Add("x-goog-api-key", apiKey);
             msg.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
             // Bound the wait so a slow LLM never blocks the reception flow past ~8s.
@@ -48,23 +59,25 @@ public class LlmDepartmentClassifier(
             using var res = await http.SendAsync(msg, timeoutCts.Token);
             if (!res.IsSuccessStatusCode)
             {
-                log.LogWarning("Department-routing LLM call failed: {Status}", res.StatusCode);
+                log.LogWarning("Department-routing Gemini call failed: {Status}", res.StatusCode);
                 return null;
             }
             return ParseResponse(await res.Content.ReadAsStringAsync(timeoutCts.Token), candidates);
         }
         catch (Exception ex)
         {
-            log.LogWarning(ex, "Department-routing LLM call errored");
+            log.LogWarning(ex, "Department-routing Gemini call errored");
             return null; // never throw into the reception flow
         }
     }
 
     // Zero-shot routing by clinical logic. The department "mhut" (nature) descriptions are the
-    // steering signal; the allowed set is injected dynamically (age-gate may drop "ילדים").
+    // steering signal; the allowed set is injected dynamically (age-gate may drop "ילדים"). The
+    // model returns the departments ranked best-first — reception assigns the first as the active
+    // department and surfaces the second as an alternative suggestion.
     private static string BuildSystemPrompt(IReadOnlyList<string> candidates) =>
         $$"""
-        אתה מנתב מטופלים במלר"ד (מיון) למחלקה אחת בלבד, לפי סיבת הקבלה (וגיל/מין אם נתונים).
+        אתה מנתב מטופלים במלר"ד (מיון) למחלקה, לפי סיבת הקבלה (וגיל/מין אם נתונים).
 
         המחלקות ומהותן:
         • רפואה דחופה — מיון כללי למבוגרים: מצבים אקוטיים שאינם משויכים לתת-התמחות אחרת — כאב כללי,
@@ -79,10 +92,10 @@ public class LlmDepartmentClassifier(
           תרופות ביולוגיות, נוזלים) — המשך טיפול מוכר, לא מצב חירום אקוטי.
 
         כללים:
-        1. בחר מחלקה אחת בלבד, ורק מתוך הרשימה המותרת: {{string.Join(", ", candidates)}}.
-        2. אם גיל המטופל ≤ 17 ו-"ילדים" נמצאת ברשימה המותרת — בחר "ילדים".
-        3. השתמש בהיגיון קליני. מקרה חד-משמעי → ודאות גבוהה (0.8–1.0).
-           מקרה עמום בין כמה מחלקות → החזר 2–3 מועמדים סבירים עם ודאות נמוכה (מתחת ל-0.7).
+        1. בחר אך ורק מתוך הרשימה המותרת: {{string.Join(", ", candidates)}}.
+        2. אם גיל המטופל ≤ 17 ו-"ילדים" נמצאת ברשימה המותרת — "ילדים" היא הראשונה.
+        3. החזר את המחלקות מדורגות לפי התאמה, הטובה ביותר ראשונה. מקרה חד-משמעי → מחלקה אחת
+           בודאות גבוהה (0.8–1.0). מקרה עמום בין כמה מחלקות → 2–3 מחלקות מדורגות בודאות נמוכה (מתחת ל-0.7).
         4. השב אך ורק כ-JSON קומפקטי, ללא טקסט נוסף:
            {"departments":["..."],"confidence":0.0-1.0}
         """;
@@ -100,7 +113,11 @@ public class LlmDepartmentClassifier(
         try
         {
             using var doc = JsonDocument.Parse(json);
-            var text = doc.RootElement.GetProperty("content")[0].GetProperty("text").GetString();
+            var text = doc.RootElement
+                .GetProperty("candidates")[0]
+                .GetProperty("content")
+                .GetProperty("parts")[0]
+                .GetProperty("text").GetString();
             if (string.IsNullOrWhiteSpace(text)) return null;
             // The model may wrap JSON in prose — extract the first {...} block.
             var start = text.IndexOf('{'); var end = text.LastIndexOf('}');

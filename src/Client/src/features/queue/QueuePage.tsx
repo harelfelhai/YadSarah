@@ -1,20 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ActionIcon, Badge, Box, Button, Card, Group, Loader, Modal, Select, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
+  Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconUserPlus, IconStar, IconSparkles, IconStethoscope, IconPencil } from '@tabler/icons-react';
+import { IconSearch, IconUserPlus, IconStar, IconSparkles, IconStethoscope } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
-import { isReceptionStaff, isClinicalStaff, canPrioritizeQueue, canReassignDepartment, hasAnyRole, ROLE_LABELS } from '../../constants/roles';
+import { isReceptionStaff, isClinicalStaff, hasAnyRole, ROLE_LABELS } from '../../constants/roles';
 import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
-import { queueLabel, SPECIAL_QUEUE_LETTER, DEPARTMENTS, WOMENS_DEPARTMENT } from '../../constants/departments';
+import { queueLabel, SPECIAL_QUEUE_LETTER } from '../../constants/departments';
 import CareStepList from '../../components/CareStepList';
-import { STATIONS } from '../../constants/careSteps';
-import type { CareStep, CareStepAction, Visit, VisitStatus } from '../../types';
+import type { CareStep, CareStepAction, CareStepStatus, Visit, VisitStatus } from '../../types';
 
 // Resolved hex for the leading status rail (var refs would need theme lookup)
 const RAIL_HEX: Record<VisitStatus, string> = {
@@ -37,21 +36,6 @@ export default function QueuePage() {
   const [search, setSearch] = useState('');
   // Re-render every 30s so wait-time chips stay live.
   const [, setTick] = useState(0);
-  // Shift-manager "advance to special queue" confirmation target.
-  const [promoteTarget, setPromoteTarget] = useState<Visit | null>(null);
-  const [promoting, setPromoting] = useState(false);
-  // Clinical "change department" target + chosen department.
-  const [reassignTarget, setReassignTarget] = useState<Visit | null>(null);
-  const [reassignDept, setReassignDept] = useState<string | null>(null);
-  const [reassigning, setReassigning] = useState(false);
-  // Clinical "refer to station" target + chosen station.
-  const [referTarget, setReferTarget] = useState<Visit | null>(null);
-  const [referStation, setReferStation] = useState<string | null>(null);
-  const [referring, setReferring] = useState(false);
-  // Clinical "dual department (women's)" target + chosen second department.
-  const [dualTarget, setDualTarget] = useState<Visit | null>(null);
-  const [dualSecond, setDualSecond] = useState<string | null>(null);
-  const [dualing, setDualing] = useState(false);
 
   const { data: visits = [], isLoading } = useQuery({
     queryKey: ['queue', showAll],
@@ -72,103 +56,27 @@ export default function QueuePage() {
   }, []);
 
   // Per-step action: call (page) / enter (admit) / complete. Entering a clinician step opens
-  // that track's form. Errors surface the server message when present.
+  // that track's form. The cache is updated optimistically so the status flips instantly (instead
+  // of waiting for the refetch / SignalR round-trip), then reconciled with the server.
   const handleStepAction = async (visit: Visit, step: CareStep, action: CareStepAction) => {
+    const optimistic: CareStepStatus = action === 'call' ? 'Called' : action === 'enter' ? 'InProgress' : 'Done';
+    queryClient.setQueriesData<Visit[]>({ queryKey: ['queue'] }, (old) =>
+      old?.map((v) => v.id !== visit.id ? v : {
+        ...v,
+        careSteps: v.careSteps?.map((s) => s.id === step.id ? { ...s, status: optimistic } : s),
+      }));
     try {
       await visitsApi.updateStep(visit.id, step.id, action);
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       if (action === 'enter' && step.category === 'Clinician') navigate(`/visits/${visit.id}`);
     } catch {
+      queryClient.invalidateQueries({ queryKey: ['queue'] }); // roll back to server truth
       notifications.show({ color: 'brick', message: 'הפעולה נכשלה' });
-    }
-  };
-
-  const confirmPromote = async () => {
-    if (!promoteTarget) return;
-    setPromoting(true);
-    try {
-      await visitsApi.moveToSpecialQueue(promoteTarget.id);
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      notifications.show({ color: 'pine', message: 'המטופל קודם לתור המיוחד' });
-      setPromoteTarget(null);
-    } catch {
-      notifications.show({ color: 'brick', message: 'קידום המטופל נכשל' });
-    } finally {
-      setPromoting(false);
-    }
-  };
-
-  const openReassign = (visit: Visit) => {
-    setReassignTarget(visit);
-    setReassignDept(visit.receptionDepartment ?? null);
-  };
-
-  const confirmReassign = async () => {
-    if (!reassignTarget || !reassignDept) return;
-    setReassigning(true);
-    try {
-      await visitsApi.reassignDepartment(reassignTarget.id, reassignDept);
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      notifications.show({ color: 'pine', message: 'המחלקה עודכנה (קביעת איש מקצוע)' });
-      setReassignTarget(null);
-    } catch {
-      notifications.show({ color: 'brick', message: 'עדכון המחלקה נכשל' });
-    } finally {
-      setReassigning(false);
-    }
-  };
-
-  const confirmRefer = async () => {
-    if (!referTarget || !referStation) return;
-    setReferring(true);
-    try {
-      // The referral remembers the referrer's department so completing the station returns
-      // the patient to that track's clinician.
-      await visitsApi.referToStation(referTarget.id, referStation, referTarget.receptionDepartment ?? null);
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      notifications.show({ color: 'pine', message: `המטופל הופנה ל${referStation}` });
-      setReferTarget(null);
-      setReferStation(null);
-    } catch {
-      notifications.show({ color: 'brick', message: 'ההפניה לתחנה נכשלה' });
-    } finally {
-      setReferring(false);
-    }
-  };
-
-  // Valid second departments for a dual classification: if the patient's primary department is
-  // women's, the second is any other; otherwise the second must be women's.
-  const dualOptions = (v: Visit): string[] =>
-    v.receptionDepartment === WOMENS_DEPARTMENT
-      ? DEPARTMENTS.filter((d) => d !== WOMENS_DEPARTMENT)
-      : [WOMENS_DEPARTMENT];
-
-  const openDual = (visit: Visit) => {
-    const opts = dualOptions(visit);
-    setDualTarget(visit);
-    setDualSecond(opts.length === 1 ? opts[0] : null);
-  };
-
-  const confirmDual = async () => {
-    if (!dualTarget || !dualSecond) return;
-    setDualing(true);
-    try {
-      await visitsApi.setDualDepartment(dualTarget.id, dualSecond);
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      notifications.show({ color: 'pine', message: 'נקבע שיוך כפול (מחלקת נשים + מחלקה נוספת)' });
-      setDualTarget(null);
-      setDualSecond(null);
-    } catch {
-      notifications.show({ color: 'brick', message: 'קביעת שיוך כפול נכשלה' });
-    } finally {
-      setDualing(false);
     }
   };
 
   const isReception = isReceptionStaff(user?.roles);
   const isClinical = isClinicalStaff(user?.roles);
-  const canPrioritize = canPrioritizeQueue(user?.roles);
-  const canReassign = canReassignDepartment(user?.roles);
 
   const active = showAll ? visits : visits.filter((v) => {
     if (v.status === 'Discharged') return false;
@@ -352,13 +260,6 @@ export default function QueuePage() {
                             AI
                           </Badge>
                         ) : null}
-                        {canReassign && visit.status !== 'Discharged' && visit.receptionDepartment && (
-                          <Tooltip label="שינוי מחלקה" withArrow>
-                            <ActionIcon size="sm" variant="subtle" color="gray" onClick={() => openReassign(visit)}>
-                              <IconPencil size={14} />
-                            </ActionIcon>
-                          </Tooltip>
-                        )}
                       </Group>
                     </Table.Td>
                     <Table.Td>{visit.admissionReason ?? '—'}</Table.Td>
@@ -381,32 +282,6 @@ export default function QueuePage() {
                             טופס
                           </Button>
                         )}
-                        {isClinical && visit.status !== 'Discharged' && (
-                          <Button
-                            size="xs"
-                            variant="subtle"
-                            color="steel"
-                            onClick={() => { setReferTarget(visit); setReferStation(null); }}
-                          >
-                            הפנה לתחנה
-                          </Button>
-                        )}
-                        {canReassign && visit.status !== 'Discharged' && !visit.secondaryDepartment && visit.receptionDepartment && (
-                          <Button size="xs" variant="subtle" color="grape" onClick={() => openDual(visit)}>
-                            שיוך כפול
-                          </Button>
-                        )}
-                        {canPrioritize && !isSpecial(visit) && visit.status !== 'Discharged' && (
-                          <Button
-                            size="xs"
-                            variant="subtle"
-                            color="yellow"
-                            leftSection={<IconStar size={14} />}
-                            onClick={() => setPromoteTarget(visit)}
-                          >
-                            קדם לתור מיוחד
-                          </Button>
-                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -417,132 +292,6 @@ export default function QueuePage() {
         </Box>
       )}
 
-      <Modal
-        opened={!!promoteTarget}
-        onClose={() => setPromoteTarget(null)}
-        title="קידום לתור מיוחד"
-        centered
-      >
-        <Stack gap="sm">
-          <Text size="sm">
-            להעביר את{' '}
-            {promoteTarget?.patient
-              ? `${promoteTarget.patient.firstName} ${promoteTarget.patient.lastName}`
-              : 'המטופל'}{' '}
-            (מס׳ תור {queueLabel(promoteTarget?.queueLetter, promoteTarget?.queueNumber)}) לתור המיוחד?
-            המטופל יקבל מספר חדש בתור המיוחד ויקודם לראש התור.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="subtle" color="slate" onClick={() => setPromoteTarget(null)}>ביטול</Button>
-            <Button color="yellow" loading={promoting} leftSection={<IconStar size={16} />} onClick={confirmPromote}>
-              קדם לתור מיוחד
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      <Modal
-        opened={!!reassignTarget}
-        onClose={() => setReassignTarget(null)}
-        title="שינוי מחלקה"
-        centered
-      >
-        <Stack gap="sm">
-          <Text size="sm">
-            {reassignTarget?.patient
-              ? `${reassignTarget.patient.firstName} ${reassignTarget.patient.lastName}`
-              : 'המטופל'}
-            {' '}— מחלקה נוכחית: {reassignTarget?.receptionDepartment ?? '—'}
-          </Text>
-          <Select
-            label="מחלקה חדשה"
-            data={[...DEPARTMENTS]}
-            value={reassignDept}
-            onChange={setReassignDept}
-            allowDeselect={false}
-            comboboxProps={{ withinPortal: true }}
-          />
-          <Text size="xs" c="dimmed">
-            השינוי יסומן כקביעת איש מקצוע (לא המלצת AI). מספר התור נשמר.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="subtle" color="slate" onClick={() => setReassignTarget(null)}>ביטול</Button>
-            <Button
-              loading={reassigning}
-              disabled={!reassignDept || reassignDept === reassignTarget?.receptionDepartment}
-              onClick={confirmReassign}
-            >
-              שמור מחלקה
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      <Modal
-        opened={!!referTarget}
-        onClose={() => setReferTarget(null)}
-        title="הפניה לתחנה"
-        centered
-      >
-        <Stack gap="sm">
-          <Text size="sm">
-            {referTarget?.patient
-              ? `${referTarget.patient.firstName} ${referTarget.patient.lastName}`
-              : 'המטופל'}
-            {' '}— בחר תחנה שאליה המטופל מופנה.
-          </Text>
-          <Select
-            label="תחנה"
-            data={[...STATIONS]}
-            value={referStation}
-            onChange={setReferStation}
-            comboboxProps={{ withinPortal: true }}
-          />
-          <Text size="xs" c="dimmed">
-            בסיום התחנה המטופל יחזור אוטומטית להמתין לאיש הצוות שהפנה אותו.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="subtle" color="slate" onClick={() => setReferTarget(null)}>ביטול</Button>
-            <Button loading={referring} disabled={!referStation} onClick={confirmRefer}>
-              הפנה
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      <Modal
-        opened={!!dualTarget}
-        onClose={() => setDualTarget(null)}
-        title="שיוך כפול למחלקה"
-        centered
-      >
-        <Stack gap="sm">
-          <Text size="sm">
-            {dualTarget?.patient
-              ? `${dualTarget.patient.firstName} ${dualTarget.patient.lastName}`
-              : 'המטופל'}
-            {' '}— מחלקה ראשית: {dualTarget?.receptionDepartment ?? '—'}
-          </Text>
-          <Select
-            label="מחלקה שנייה"
-            data={dualTarget ? dualOptions(dualTarget) : []}
-            value={dualSecond}
-            onChange={setDualSecond}
-            allowDeselect={false}
-            comboboxProps={{ withinPortal: true }}
-          />
-          <Text size="xs" c="dimmed">
-            שיוך כפול אפשרי רק כאשר אחת המחלקות היא נשים. ייפתחו שני תהליכים רפואיים (טופס נפרד לכל מחלקה);
-            תהליך מחלקת הנשים מטופל ראשון. מספר התור נשמר.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="subtle" color="slate" onClick={() => setDualTarget(null)}>ביטול</Button>
-            <Button color="grape" loading={dualing} disabled={!dualSecond} onClick={confirmDual}>
-              קבע שיוך כפול
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </Stack>
   );
 }
@@ -555,9 +304,11 @@ function calcAge(birthDate?: string): string {
 }
 
 function waitMinutes(v: Visit): number {
-  if (!v.admissionDate || !v.admissionTime) return 0;
-  const dt = new Date(`${v.admissionDate}T${v.admissionTime.length === 5 ? v.admissionTime + ':00' : v.admissionTime}`);
-  const m = Math.floor((Date.now() - dt.getTime()) / 60000);
+  // Use the real arrival instant (createdAt, UTC). NOT admissionDate+admissionTime: admissionDate is
+  // the "queue-day", which before the 18:00 reset is the PREVIOUS calendar date — combined with the
+  // real admissionTime that read ~24h for every just-arrived patient.
+  if (!v.createdAt) return 0;
+  const m = Math.floor((Date.now() - new Date(v.createdAt).getTime()) / 60000);
   return Number.isFinite(m) && m > 0 ? m : 0;
 }
 
