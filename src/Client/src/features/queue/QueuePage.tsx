@@ -130,15 +130,20 @@ export default function QueuePage() {
 
   const isSpecial = (v: Visit) => v.queueLetter === SPECIAL_QUEUE_LETTER;
 
-  // Department grouping (own dept first when highlighting), then the special/priority queue
-  // floats to the very top regardless — that's what "advancing" a patient means.
-  const grouped = showDeptHighlight
+  // Ordering: priority tiers are preserved — the special/priority queue floats to the very top,
+  // then (when highlighting) the viewer's own department, then everyone else. WITHIN each tier
+  // patients are ordered by WAIT TIME (longest-waiting first), not by queue number: now that
+  // numbers run per-department (A-1, B-1, …) they're no longer comparable across departments.
+  const byWaitDesc = (a: Visit, b: Visit) => waitMinutes(b) - waitMinutes(a);
+  const special = active.filter(isSpecial).sort(byWaitDesc);
+  const rest = active.filter((v) => !isSpecial(v));
+  const ordered = showDeptHighlight
     ? [
-        ...active.filter((v) => v.receptionDepartment === userDept),
-        ...active.filter((v) => v.receptionDepartment !== userDept),
+        ...rest.filter((v) => v.receptionDepartment === userDept).sort(byWaitDesc),
+        ...rest.filter((v) => v.receptionDepartment !== userDept).sort(byWaitDesc),
       ]
-    : active;
-  const sorted = [...grouped.filter(isSpecial), ...grouped.filter((v) => !isSpecial(v))];
+    : [...rest].sort(byWaitDesc);
+  const sorted = [...special, ...ordered];
 
   // Find a patient quickly by name / ID (e.g. to open their form).
   const q = search.trim().toLowerCase();
