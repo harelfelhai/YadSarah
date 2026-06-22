@@ -102,8 +102,10 @@ public class IntakeSubmissionService(AppDbContext db)
     private static List<IntakeFieldDiff> BuildDiffs(PatientIntakeSubmission s, Patient? p)
     {
         // (label, submitted, existing) for each compared field. A conflict = both sides have a
-        // value AND they differ (trim/case-insensitive). An empty existing value is "new info",
-        // not a conflict; an empty submitted value is skipped entirely.
+        // value AND they differ (trim/case-insensitive). "Empty on one side, content on the other"
+        // is NOT a conflict — it's shown as flowing info so reception can carry the content forward
+        // (an empty existing value = new info from the patient; an empty submitted value = data the
+        // system already holds). A field blank on BOTH sides is dropped.
         var fields = new (string Field, string Label, string? Submitted, string? Existing)[]
         {
             ("firstName", "שם פרטי", s.FirstName, p?.FirstName),
@@ -126,10 +128,11 @@ public class IntakeSubmissionService(AppDbContext db)
         var diffs = new List<IntakeFieldDiff>(fields.Length);
         foreach (var (field, label, submitted, existing) in fields)
         {
-            if (string.IsNullOrWhiteSpace(submitted)) continue; // patient left it blank
-            var conflict = p is not null &&
-                           !string.IsNullOrWhiteSpace(existing) &&
-                           !string.Equals(submitted.Trim(), existing!.Trim(), StringComparison.OrdinalIgnoreCase);
+            var hasSubmitted = !string.IsNullOrWhiteSpace(submitted);
+            var hasExisting = !string.IsNullOrWhiteSpace(existing);
+            if (!hasSubmitted && !hasExisting) continue; // nothing on either side — skip
+            var conflict = hasSubmitted && hasExisting &&
+                           !string.Equals(submitted!.Trim(), existing!.Trim(), StringComparison.OrdinalIgnoreCase);
             diffs.Add(new IntakeFieldDiff(field, label, submitted, existing, conflict));
         }
         return diffs;
