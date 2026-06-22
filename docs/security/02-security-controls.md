@@ -333,6 +333,12 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 למספר גורמים (רופא + אחות + בדיקות), עם פעולות "קרא" / "הכנס" / "סיים" לכל צעד, הפניה לתחנות
 (US/בדיקת דם/…), ושיוך כפול למחלקת נשים + מחלקה נוספת (שני טפסים, שורת-תור אחת).
 
+- **צעדים התחלתיים בקבלה (תלויי-מחלקה):** הצעדים הראשונים נוצרים **בשרת** ב-`VisitService.CreateAsync`
+  (במסגרת `POST /api/visits` המאומת — קבלה/מנהל-משמרת/אדמין — והמתועד כ-`Created`), ולא מקלט הלקוח:
+  ברירת-מחדל אחות+רופא; אורטופדיה → רופא בלבד; עירוי → אחות בלבד; נשים-בהיריון → +US/מעבדה
+  (+מוניטור משבוע 28). זיהוי ההיריון/שבוע נגזר **בשרת** מטקסט "סיבת הקבלה" (`PregnancyInfo`, אותו
+  signal של ניתוב-המחלקה) — אין שדה-קלט חדש שהלקוח שולט בו, ואין egress חדש (טקסט-הסיבה כבר חסום
+  ל-200 תווים לפני יציאתו ל-LLM). התחנות החדשות ("מעבדה"/"מוניטור") נשארות ברשימה הסגורה `CareStepCatalog.Stations`.
 - **הרשאות (need-to-know):** כל ה-endpoints החדשים ב-`VisitsController` מוגבלים לצוות הקליני
   ו**קבלה חסומה** (כמו שינוי-מחלקה): `POST /visits/{id}/steps` (הפניה לתחנה) ו-
   `PATCH /visits/{id}/dual-department` ל-`Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent`;
@@ -368,6 +374,6 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
   `CareStepService.DeriveStatus` (אין סתירת סטטוס). `seed` כולל את `CareSteps` ב-`TRUNCATE` (§13).
 
 קבצים: `Domain/Entities/CareStep.cs`, `Domain/Entities/{Visit,MedicalForm}.cs` (שדות track),
-`Application/Services/{CareStepService,VisitService,FormService}.cs`, `Api/Controllers/{VisitsController,FormsController}.cs`,
+`Application/Services/{CareStepService,VisitService,FormService,PregnancyInfo}.cs`, `Api/Controllers/{VisitsController,FormsController}.cs`,
 `Infrastructure/Data/AppDbContext.cs` (+ מיגרציה `MultiDimStatusAndDualDept`), `Client/src/components/CareStepList.tsx`,
 `Client/src/constants/careSteps.ts`, `Client/src/features/{queue/QueuePage,treatment/TreatmentFormPage}.tsx`.

@@ -18,8 +18,6 @@ namespace YadSarah.Api.Services;
 public class LlmDepartmentClassifier(
     HttpClient http, IConfiguration config, ILogger<LlmDepartmentClassifier> log) : IDepartmentClassifier
 {
-    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
-
     public async Task<DepartmentClassification?> ClassifyAsync(
         string admissionReason, IReadOnlyList<string> candidates, RoutingContext ctx, CancellationToken ct = default)
     {
@@ -137,20 +135,45 @@ public class LlmDepartmentClassifier(
         try
         {
             using var doc = JsonDocument.Parse(json);
-            var text = doc.RootElement
-                .GetProperty("candidates")[0]
-                .GetProperty("content")
-                .GetProperty("parts")[0]
-                .GetProperty("text").GetString();
+            var content = doc.RootElement.GetProperty("candidates")[0].GetProperty("content");
+            // An empty completion (e.g. MAX_TOKENS) yields content with no parts → fall back.
+            if (!content.TryGetProperty("parts", out var parts) || parts.GetArrayLength() == 0) return null;
+            var text = parts[0].GetProperty("text").GetString();
             if (string.IsNullOrWhiteSpace(text)) return null;
+
             // The model may wrap JSON in prose — extract the first {...} block.
             var start = text.IndexOf('{'); var end = text.LastIndexOf('}');
             if (start < 0 || end <= start) return null;
-            var verdict = JsonSerializer.Deserialize<LlmVerdict>(text.Substring(start, end - start + 1), JsonOpts);
-            if (verdict?.Departments is not { Count: > 0 }) return null;
-            var depts = verdict.Departments.Where(candidates.Contains).ToList();
-            if (depts.Count == 0) depts = verdict.Departments;
-            return new DepartmentClassification(depts, Math.Clamp(verdict.Confidence, 0, 1));
+
+            using var verdict = JsonDocument.Parse(text.Substring(start, end - start + 1));
+            var root = verdict.RootElement;
+            if (!root.TryGetProperty("departments", out var deptsEl) || deptsEl.ValueKind != JsonValueKind.Array)
+                return null;
+            var departments = deptsEl.EnumerateArray()
+                .Where(e => e.ValueKind == JsonValueKind.String)
+                .Select(e => e.GetString()!)
+                .ToList();
+            if (departments.Count == 0) return null;
+
+            // confidence may come back as a single number OR — when the model deviates — a per-department
+            // array; tolerate both (take the highest) rather than failing the whole verdict.
+            double confidence = 0;
+            if (root.TryGetProperty("confidence", out var confEl))
+                confidence = confEl.ValueKind switch
+                {
+                    JsonValueKind.Number => confEl.GetDouble(),
+                    JsonValueKind.Array => confEl.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.Number)
+                        .Select(x => x.GetDouble())
+                        .DefaultIfEmpty(0).Max(),
+                    _ => 0,
+                };
+
+            // Keep only real departments (the model sometimes emits a free-text description); if none
+            // survive, keep the raw list so the router can still decide.
+            var depts = departments.Where(candidates.Contains).ToList();
+            if (depts.Count == 0) depts = departments;
+            return new DepartmentClassification(depts, Math.Clamp(confidence, 0, 1));
         }
         catch
         {
@@ -160,6 +183,4 @@ public class LlmDepartmentClassifier(
 
     private static string Trunc(string? s) =>
         string.IsNullOrEmpty(s) ? "" : s.Length <= 600 ? s : s[..600];
-
-    private record LlmVerdict(List<string>? Departments, double Confidence);
 }

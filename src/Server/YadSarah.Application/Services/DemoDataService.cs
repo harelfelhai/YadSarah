@@ -104,8 +104,9 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
     public async Task<SeedResult> SeedAsync(int visitCount = 1000, int repeatPatients = 50, int poolSize = 300)
     {
         // 1) Wipe transactional/test data. Medications + SystemSettings are preserved.
+        // CareSteps is listed explicitly (it would also cascade from Visits) for clarity.
         await db.Database.ExecuteSqlRawAsync(
-            """TRUNCATE TABLE "MedicalForms", "FormLocks", "Visits", "Patients", "Users", "FeedbackReports", "AuditLogs", "QueueCounters" RESTART IDENTITY CASCADE;""");
+            """TRUNCATE TABLE "CareSteps", "MedicalForms", "FormLocks", "Visits", "Patients", "Users", "FeedbackReports", "AuditLogs", "QueueCounters" RESTART IDENTITY CASCADE;""");
 
         var rng = new Random(20260616);
         var usedIds = new HashSet<string>();
@@ -234,6 +235,14 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             var arrival = now.AddMinutes(-minutesAgo);
             var status = LiveStatus(rng);
 
+            // ~12% run a dual women's-track: a clinical professional classified the patient into a
+            // second department, one side of which must be women's (the women's track is handled first).
+            string? secondaryDept = null;
+            if (rng.Next(100) < 12)
+                secondaryDept = dept == Departments.Womens
+                    ? (rng.Next(2) == 0 ? "רפואה דחופה" : "ילדים")
+                    : Departments.Womens;
+
             var visit = new Visit
             {
                 PatientId = p.Id,
@@ -252,8 +261,19 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
                     ? arrival.AddMinutes(rng.Next(20, Math.Max(21, (int)(now - arrival).TotalMinutes))).ToUniversalTime()
                     : null,
             };
+            if (secondaryDept is not null)
+            {
+                // Dual classification is a clinician's call — stamp the deciding professional.
+                var decider = Pick(doctorsByDept, dept, rng);
+                visit.SecondaryDepartment = secondaryDept;
+                visit.DepartmentAssignedByAi = false;
+                visit.DepartmentChangedByUserId = decider?.Id;
+                visit.DepartmentChangedByName = decider?.DisplayName ?? decider?.FullName;
+                visit.DepartmentChangedByRole = UserRole.Doctor;
+                visit.DepartmentChangedAt = visit.UpdatedAt;
+            }
             visits.Add(visit);
-            careSteps.AddRange(BuildCareSteps(visit, dept, rng, doctorsByDept, nursesByDept));
+            careSteps.AddRange(BuildCareSteps(visit, dept, secondaryDept, rng, doctorsByDept, nursesByDept));
 
             // Waiting/Called patients haven't been seen yet → no clinical form.
             if (status is VisitStatus.InTreatment or VisitStatus.FinishedTreatment or VisitStatus.Discharged)
@@ -272,39 +292,63 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         return visits.Count;
     }
 
-    // Demo care steps for a today-queue visit, reflecting its coarse status so the board shows the
-    // multi-dimensional view (waiting for nurse + doctor, called, in-treatment with who/room, done).
+    // Demo care steps for a today-queue visit: the full multi-dimensional view — parallel nurse/doctor
+    // waits, a station referral handled in parallel, and (for some) a dual women's-dept track. Always
+    // kept consistent with the visit's coarse Status so CareStepService.DeriveStatus agrees.
     private static readonly string[] DemoRooms = { "חדר 1", "חדר 2", "חדר 3", "מלר\"ד א'", "מלר\"ד ב'" };
 
     private static IEnumerable<CareStep> BuildCareSteps(
-        Visit visit, string dept, Random rng,
+        Visit visit, string primaryDept, string? secondaryDept, Random rng,
         Dictionary<string, List<User>> doctorsByDept, Dictionary<string, List<User>> nursesByDept)
     {
-        User? Pick(Dictionary<string, List<User>> by) =>
-            by.TryGetValue(dept, out var l) && l.Count > 0 ? l[rng.Next(l.Count)] : null;
+        var steps = new List<CareStep>();
+
+        if (secondaryDept is not null)
+        {
+            // The women's track is handled first (TrackOrder 0); the other track trails it.
+            var womens = primaryDept == Departments.Womens ? primaryDept : secondaryDept;
+            var other = primaryDept == Departments.Womens ? secondaryDept : primaryDept;
+            steps.AddRange(TrackSteps(visit, womens, 0, visit.Status, rng, doctorsByDept));
+            var otherStatus = visit.Status is VisitStatus.FinishedTreatment or VisitStatus.Discharged
+                ? VisitStatus.FinishedTreatment   // both processes finished
+                : VisitStatus.Waiting;            // women's first → the other track hasn't started yet
+            steps.AddRange(TrackSteps(visit, other, 1, otherStatus, rng, doctorsByDept));
+        }
+        else
+        {
+            steps.AddRange(TrackSteps(visit, primaryDept, 0, visit.Status, rng, doctorsByDept));
+        }
+
+        AddStationIfAny(visit, primaryDept, steps, rng, doctorsByDept);
+        return steps;
+    }
+
+    // Nurse + doctor steps for one department track, reflecting a coarse status (the same mapping
+    // CareStepService.DeriveStatus reverses): Waiting → both wait; Called → doctor paged; InTreatment
+    // → nurse done + doctor in progress; Finished/Discharged → both done.
+    private static IEnumerable<CareStep> TrackSteps(
+        Visit visit, string dept, int trackOrder, VisitStatus coarse, Random rng,
+        Dictionary<string, List<User>> doctorsByDept)
+    {
         string Room() => DemoRooms[rng.Next(DemoRooms.Length)];
 
-        CareStep Step(UserRole role) => new()
+        CareStep Base(UserRole role)
         {
-            VisitId = visit.Id,
-            Category = CareStepCategory.Clinician,
-            ClinicianRole = role,
-            Label = role == UserRole.Nurse ? "אחות" : "רופא",
-            Department = dept,
-            TrackOrder = 0,
-            Status = CareStepStatus.Waiting,
-            CreatedAt = visit.CreatedAt,
-            UpdatedAt = visit.UpdatedAt,
-        };
+            var s = CareStepService.ClinicianStep(role, dept, trackOrder);
+            s.VisitId = visit.Id;
+            s.CreatedAt = visit.CreatedAt;
+            s.UpdatedAt = visit.UpdatedAt;
+            return s;
+        }
 
-        var nurse = Step(UserRole.Nurse);
-        var doctor = Step(UserRole.Doctor);
+        var nurse = Base(UserRole.Nurse);
+        var doctor = Base(UserRole.Doctor);
 
-        switch (visit.Status)
+        switch (coarse)
         {
             case VisitStatus.Called:
             {
-                var d = Pick(doctorsByDept);
+                var d = Pick(doctorsByDept, dept, rng);
                 doctor.Status = CareStepStatus.Called;
                 doctor.CalledByUserId = d?.Id;
                 doctor.CalledByName = d?.DisplayName ?? d?.FullName;
@@ -315,7 +359,7 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             }
             case VisitStatus.InTreatment:
             {
-                var d = Pick(doctorsByDept);
+                var d = Pick(doctorsByDept, dept, rng);
                 doctor.Status = CareStepStatus.InProgress;
                 doctor.StartedByUserId = d?.Id;
                 doctor.StartedByName = d?.DisplayName ?? d?.FullName;
@@ -338,6 +382,49 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
 
         yield return nurse;
         yield return doctor;
+    }
+
+    // Some patients were referred to a station (US / blood test / CT / …) in parallel, stamped with the
+    // referring doctor. Status stays consistent: a pending/in-progress station only on an in-treatment
+    // visit, a done station only on a finished/discharged one.
+    private static void AddStationIfAny(
+        Visit visit, string dept, List<CareStep> steps, Random rng,
+        Dictionary<string, List<User>> doctorsByDept)
+    {
+        CareStepStatus? stationStatus = visit.Status switch
+        {
+            VisitStatus.InTreatment when rng.Next(100) < 35 =>
+                rng.Next(2) == 0 ? CareStepStatus.Waiting : CareStepStatus.InProgress,
+            VisitStatus.Waiting when rng.Next(100) < 15 => CareStepStatus.Waiting,
+            VisitStatus.FinishedTreatment or VisitStatus.Discharged when rng.Next(100) < 25 => CareStepStatus.Done,
+            _ => null,
+        };
+        if (stationStatus is null) return;
+
+        var doctor = Pick(doctorsByDept, dept, rng);
+        var step = new CareStep
+        {
+            VisitId = visit.Id,
+            Category = CareStepCategory.Station,
+            Label = CareStepCatalog.Stations[rng.Next(CareStepCatalog.Stations.Count)],
+            Status = stationStatus.Value,
+            ReferredByUserId = doctor?.Id,
+            ReferredByName = doctor?.DisplayName ?? doctor?.FullName,
+            ReferredByRole = UserRole.Doctor,
+            ReferredByDepartment = dept,
+            CreatedAt = visit.CreatedAt,
+            UpdatedAt = visit.UpdatedAt,
+        };
+        if (stationStatus == CareStepStatus.InProgress)
+        {
+            step.StartedRoom = DemoRooms[rng.Next(DemoRooms.Length)];
+            step.StartedAt = visit.UpdatedAt;
+        }
+        else if (stationStatus == CareStepStatus.Done)
+        {
+            step.CompletedAt = visit.UpdatedAt;
+        }
+        steps.Add(step);
     }
 
     public async Task<int> ClearTodayAsync()

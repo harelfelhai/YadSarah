@@ -11,10 +11,17 @@ public static class CareStepCatalog
     public const string DoctorLabel = "רופא";
     public const string NurseLabel = "אחות";
 
-    /// <summary>Stations a clinician can send a patient to during treatment.</summary>
+    // Stations referenced by the obstetric (pregnant women's) intake track — named so the
+    // initial-steps logic and the catalog stay in one place.
+    public const string Ultrasound = "US";
+    public const string Lab = "מעבדה";
+    public const string Monitor = "מוניטור";
+
+    /// <summary>Stations a clinician can send a patient to during treatment (and that pregnant
+    /// women's intake pre-assigns). Mirrored on the client in constants/careSteps.ts — keep in sync.</summary>
     public static readonly IReadOnlyList<string> Stations = new[]
     {
-        "US", "בדיקת דם", "צילום", "CT", "אקג", "ייעוץ",
+        Ultrasound, "בדיקת דם", Lab, "צילום", "CT", "אקג", Monitor, "ייעוץ",
     };
 
     /// <summary>The role label for a clinician step. A patient waits for "a doctor" or "a nurse";
@@ -35,11 +42,36 @@ public class CareStepService(AppDbContext db)
 {
     // ── Step factories ────────────────────────────────────────────────────────
 
-    /// <summary>The two steps every new patient starts with: waiting for a nurse and a doctor.</summary>
-    public static IEnumerable<CareStep> InitialSteps(string? department)
+    /// <summary>The care steps a new patient starts with, by department:
+    ///   • אורטופדיה — doctor only (no nurse);
+    ///   • עירוי תרופות — nurse only;
+    ///   • נשים + pregnant — nurse + doctor + US + מעבדה (+ מוניטור from gestational week 28);
+    ///   • otherwise — waiting for a nurse and a doctor.
+    /// Pregnancy/week are read from the admission reason (same signal as routing — see PregnancyInfo).</summary>
+    public static IEnumerable<CareStep> InitialSteps(string? department, string? admissionReason = null)
     {
+        if (department == Departments.Orthopedics)
+        {
+            yield return ClinicianStep(UserRole.Doctor, department, trackOrder: 0);
+            yield break;
+        }
+        if (department == Departments.Infusion)
+        {
+            yield return ClinicianStep(UserRole.Nurse, department, trackOrder: 0);
+            yield break;
+        }
+
         yield return ClinicianStep(UserRole.Nurse, department, trackOrder: 0);
         yield return ClinicianStep(UserRole.Doctor, department, trackOrder: 0);
+
+        // Pregnant women's department gets obstetric stations pre-assigned from intake.
+        if (department == Departments.Womens && PregnancyInfo.IsPregnant(admissionReason))
+        {
+            yield return StationStep(CareStepCatalog.Ultrasound);
+            yield return StationStep(CareStepCatalog.Lab);
+            if (PregnancyInfo.GestationalWeek(admissionReason) is >= 28)
+                yield return StationStep(CareStepCatalog.Monitor);
+        }
     }
 
     /// <summary>A fresh "waiting for [role]" clinician step for a department track.</summary>
@@ -49,6 +81,16 @@ public class CareStepService(AppDbContext db)
         ClinicianRole = CareStepCatalog.NormalizeClinician(role),
         Label = CareStepCatalog.ClinicianLabel(role),
         Department = department,
+        TrackOrder = trackOrder,
+        Status = CareStepStatus.Waiting,
+    };
+
+    /// <summary>A "waiting for [station]" step pre-assigned at intake — no referrer, so completing
+    /// it does NOT auto-create a return step (unlike a clinician-initiated <see cref="ReferToStationAsync"/>).</summary>
+    public static CareStep StationStep(string label, int trackOrder = 0) => new()
+    {
+        Category = CareStepCategory.Station,
+        Label = label,
         TrackOrder = trackOrder,
         Status = CareStepStatus.Waiting,
     };

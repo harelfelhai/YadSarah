@@ -206,8 +206,9 @@ public class VisitService(AppDbContext db, SettingsService settings)
         visit.QueueLetter = Departments.LetterFor(visit.ReceptionDepartment);
         visit.QueueNumber = await NextQueueNumberAsync(queueDate, visit.QueueLetter);
 
-        // Every new patient starts the multi-dimensional clock: waiting for a nurse and a doctor.
-        foreach (var step in CareStepService.InitialSteps(visit.ReceptionDepartment))
+        // Every new patient starts the multi-dimensional clock — the initial steps depend on the
+        // department (and, for pregnant women, on the admission reason: US/lab + monitor from week 28).
+        foreach (var step in CareStepService.InitialSteps(visit.ReceptionDepartment, visit.AdmissionReason))
             visit.CareSteps.Add(step);
 
         db.Visits.Add(visit);
