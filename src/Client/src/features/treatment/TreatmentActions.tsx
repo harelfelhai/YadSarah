@@ -7,7 +7,7 @@ import { visitsApi } from '../../api/visits';
 import { useAuthStore } from '../../store/auth';
 import { isClinicalStaff, canPrioritizeQueue, canReassignDepartment } from '../../constants/roles';
 import { DEPARTMENTS, WOMENS_DEPARTMENT, SPECIAL_QUEUE_LETTER, queueLabel } from '../../constants/departments';
-import { REFERRAL_OPTIONS, DEPARTMENT_STATIONS } from '../../constants/careSteps';
+import { REFERRAL_GROUPS, DEPARTMENT_STATIONS } from '../../constants/careSteps';
 import type { Visit } from '../../types';
 
 /**
@@ -187,7 +187,7 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
           <Text size="sm">{patientName} — סמן תחנה אחת או יותר שאליהן המטופל מופנה.</Text>
           <MultiSelect
             label="תחנות"
-            data={REFERRAL_OPTIONS}
+            data={REFERRAL_GROUPS}
             value={referStations}
             onChange={setReferStations}
             searchable
@@ -195,8 +195,8 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
             comboboxProps={{ withinPortal: true }}
           />
           <Text size="xs" c="dimmed">
-            בסיום כל תחנה המטופל חוזר אוטומטית להמתין לאיש הצוות שהפנה אותו. תחנה משויכת-מחלקה
-            (למשל "רופא נשים") מעבירה את המטופל לאותה מחלקה.
+            בסיום כל תחנה המטופל חוזר אוטומטית להמתין לאיש הצוות שהפנה אותו. "אחות כללית" מוסיפה
+            המתנה לאחות באותה מחלקה; הפניה להעברת-מחלקה (למשל "רופא נשים") מעבירה את המטופל לאותה מחלקה.
           </Text>
           <Group justify="flex-end">
             <Button variant="subtle" color="slate" onClick={() => setReferOpen(false)}>ביטול</Button>

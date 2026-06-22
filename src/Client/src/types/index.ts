@@ -18,7 +18,7 @@ export interface CareStep {
   id: string;
   visitId: string;
   category: CareStepCategory;
-  label: string;                 // role label ("רופא"/"אחות") or station name ("US")
+  label: string;                 // role label ("רופא"/"אחות") or station name ("אולטרסאונד")
   clinicianRole?: UserRole | null;
   department?: string | null;    // which department track (clinician steps)
   trackOrder: number;            // 0 = first track (women's, when dual)

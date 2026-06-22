@@ -119,7 +119,10 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   [CareStepService.cs](src/Server/YadSarah.Application/Services/CareStepService.cs); `CareStep` entity).
   Every new patient starts with two waiting clinician steps — **nurse + doctor** (`InitialSteps`). Steps move
   Waiting → Called → InProgress → Done (`CallAsync`/`EnterAsync`/`CompleteAsync`). A clinician can refer the
-  patient to a **station** (`ReferToStationAsync`; closed catalog `US, בדיקת דם, צילום, CT, אקג, ייעוץ`);
+  patient to one or more **stations** (`ReferToStationsAsync`; closed `CareStepCatalog` —
+  `אולטרסאונד/א.ק.ג/בדיקות מעבדה/צילום רנטגן/מוניטור עוברי`, an `אחות כללית` referral that adds a
+  same-department nurse step, and `DepartmentStations` "department-moves" (`רופא X` per doctor-staffed
+  dept + `אחות עירוי`→עירוי) that reassign the visit's department);
   completing a station **auto-creates a waiting step back to the referrer** so they review the result. The
   coarse `Visit.Status` (`Waiting/Called/InTreatment/FinishedTreatment/Discharged`) used by analytics + the
   shift board is **derived** from the steps by `DeriveStatus` — never set it directly except for sign-all /
