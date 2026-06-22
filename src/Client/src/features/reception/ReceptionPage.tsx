@@ -9,7 +9,6 @@ import { useForm } from '@mantine/form';
 import { useQuery } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { IconSearch, IconX, IconAlertCircle, IconSparkles, IconLock } from '@tabler/icons-react';
-import { DEPARTMENTS } from '../../constants/departments';
 import { DEFAULT_CITY, orderCitiesByFrequency } from '../../constants/israeliCities';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { patientsApi } from '../../api/patients';
@@ -329,15 +328,12 @@ export default function ReceptionPage() {
         gender: patientForm.values.gender || undefined,
       });
       setRouteResult(res);
-      // The AI ranks the departments best-first. We assign the FIRST as the active department
-      // (drives the queue letter + treatment) and keep the rest as a displayed suggestion — reception
-      // no longer picks. A clinician finalizes the department during treatment. When the AI is
-      // unavailable (fallback), reception picks manually.
-      const aiAssigned = res.source === 'ai' && res.departments.length >= 1;
-      visitForm.setFieldValue('receptionDepartment', aiAssigned ? res.departments[0] : '');
-      visitForm.setFieldValue('departmentAssignedByAi', aiAssigned);
+      // Routing always commits to exactly ONE department (rule/ai/fallback). Reception never picks
+      // (the field is read-only); a clinician finalizes the department during treatment.
+      visitForm.setFieldValue('receptionDepartment', res.departments[0] ?? '');
+      visitForm.setFieldValue('departmentAssignedByAi', res.source === 'ai');
       visitForm.setFieldValue('departmentConfidence', res.confidence);
-      visitForm.setFieldValue('departmentCandidatesJson', res.departments.length > 1 ? JSON.stringify(res.departments) : '');
+      visitForm.setFieldValue('departmentCandidatesJson', '');
     } catch {
       setRouteResult(null);
       notifications.show({ message: 'קביעת מחלקה נכשלה — בחר ידנית', color: 'orange' });
@@ -688,38 +684,30 @@ export default function ReceptionPage() {
                   />
                 </Grid.Col>
 
-                {/* מחלקה — ה-AI קובע (ראשי + הצעה נוספת); בחירה ידנית רק כשה-AI לא זמין */}
+                {/* מחלקה — נקבעת אוטומטית (AI/כלל/ברירת מחדל) ונעולה בקבלה; שינוי ע"י צוות קליני בטיפול */}
                 <Grid.Col span={6}>
-                  {routeResult?.source === 'ai' && routeResult.departments.length >= 1 ? (
-                    <TextInput
-                      label="מחלקה"
-                      readOnly
-                      value={visitForm.values.receptionDepartment}
-                      rightSectionWidth={70}
-                      rightSection={
-                        <Badge color="grape" size="sm" leftSection={<IconSparkles size={11} />}>AI</Badge>
-                      }
-                      description={
-                        routeResult.departments.length > 1
-                          ? `נקבע ע"י AI · הצעה נוספת: ${routeResult.departments[1]}`
-                          : `נקבע אוטומטית · ודאות ${Math.round((routeResult.confidence ?? 0) * 100)}%`
-                      }
-                      inputWrapperOrder={['label', 'input', 'description', 'error']}
-                    />
-                  ) : (
-                    <Select
-                      label="מחלקה"
-                      withAsterisk
-                      data={[...DEPARTMENTS]}
-                      description={
-                        routing ? 'קובע מחלקה…'
-                          : routeResult ? 'ה-AI לא זמין — בחר מחלקה'
-                            : 'תיקבע אוטומטית לפי סיבת הקבלה'
-                      }
-                      inputWrapperOrder={['label', 'input', 'description', 'error']}
-                      {...visitForm.getInputProps('receptionDepartment')}
-                    />
-                  )}
+                  <TextInput
+                    label="מחלקה"
+                    readOnly
+                    withAsterisk
+                    value={visitForm.values.receptionDepartment}
+                    placeholder={routing ? 'קובע מחלקה…' : 'תיקבע אוטומטית לפי סיבת הקבלה'}
+                    error={visitForm.errors.receptionDepartment}
+                    rightSectionWidth={routeResult?.source === 'ai' ? 70 : undefined}
+                    rightSection={
+                      routeResult?.source === 'ai'
+                        ? <Badge color="grape" size="sm" leftSection={<IconSparkles size={11} />}>AI</Badge>
+                        : undefined
+                    }
+                    description={
+                      routing ? 'קובע מחלקה…'
+                        : routeResult?.source === 'ai' ? `נקבע ע"י AI · ודאות ${Math.round((routeResult.confidence ?? 0) * 100)}%`
+                          : routeResult?.source === 'rule' ? 'נקבע לפי כלל ניתוב'
+                            : routeResult?.source === 'fallback' ? 'נקבע אוטומטית (AI לא זמין)'
+                              : 'תיקבע אוטומטית לפי סיבת הקבלה'
+                    }
+                    inputWrapperOrder={['label', 'input', 'description', 'error']}
+                  />
                 </Grid.Col>
 
                 <Grid.Col span={12}>

@@ -89,9 +89,9 @@ public class LlmDepartmentClassifier(
     }
 
     // Zero-shot routing by clinical logic. The department "mhut" (nature) descriptions are the
-    // steering signal; the allowed set is injected dynamically (age-gate may drop "ילדים"). The
-    // model returns the departments ranked best-first — reception assigns the first as the active
-    // department and surfaces the second as an alternative suggestion.
+    // steering signal; the allowed set is injected dynamically (age-gates may drop "ילדים"/"אורטופדיה").
+    // The model returns the departments ranked best-first; DepartmentRoutingService always collapses
+    // that ranking to a SINGLE department (top pick, or the priority order when ambiguous).
     private static string BuildSystemPrompt(IReadOnlyList<string> candidates) =>
         $$"""
         אתה מנתב מטופלים במלר"ד (מיון) למחלקה, לפי סיבת הקבלה (וגיל/מין אם נתונים).
@@ -107,13 +107,20 @@ public class LlmDepartmentClassifier(
           כאב בטן תחתונה בהקשר גינקולוגי, תלונות שד, מצבים שלאחר לידה.
         • עירוי תרופות — הגעה יזומה לעירוי/טיפול תרופתי מתוכנן (אנטיביוטיקה IV, כימותרפיה,
           תרופות ביולוגיות, נוזלים) — המשך טיפול מוכר, לא מצב חירום אקוטי.
+        • ביקורת — מטופל שמגיע לביקורת חוזרת / מעקב אצל רופא ספציפי (לא פנייה חדשה). נתב לכאן אם
+          סיבת הקבלה היא "ביקורת", או אם היא מקושרת לרופא בשם "מתי". שים לב: "מתי" היא גם מילת שאלה
+          בעברית ("when") — הבחן לפי ההקשר בין שם של רופא (למשל "ביקורת אצל מתי", "ד״ר מתי") לבין
+          שימוש לשוני רגיל ("מתי כדאי להגיע").
 
         כללים:
         1. בחר אך ורק מתוך הרשימה המותרת: {{string.Join(", ", candidates)}}.
-        2. אם גיל המטופל ≤ 17 ו-"ילדים" נמצאת ברשימה המותרת — "ילדים" היא הראשונה.
-        3. החזר את המחלקות מדורגות לפי התאמה, הטובה ביותר ראשונה. מקרה חד-משמעי → מחלקה אחת
-           בודאות גבוהה (0.8–1.0). מקרה עמום בין כמה מחלקות → 2–3 מחלקות מדורגות בודאות נמוכה (מתחת ל-0.7).
-        4. השב אך ורק כ-JSON קומפקטי, ללא טקסט נוסף:
+        2. אם גיל המטופל ≤ 17 ו-"ילדים" נמצאת ברשימה המותרת — "ילדים" היא הראשונה. חריג: ביקורת
+           חוזרת אצל רופא ספציפי גוברת על הגיל.
+        3. אישה בהיריון או שמצוין "שבוע X" (שבוע היריון) → "נשים".
+        4. החזר את המחלקות מדורגות לפי התאמה, הטובה ביותר ראשונה. מקרה חד-משמעי → מחלקה אחת
+           בודאות גבוהה (0.8–1.0). במקרה עמום בין כמה מחלקות דרג אותן לפי סדר העדיפות
+           נשים → רפואה דחופה → אורטופדיה, בודאות נמוכה (מתחת ל-0.7).
+        5. השב אך ורק כ-JSON קומפקטי, ללא טקסט נוסף:
            {"departments":["..."],"confidence":0.0-1.0}
         """;
 

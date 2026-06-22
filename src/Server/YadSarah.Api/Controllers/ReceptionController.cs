@@ -22,8 +22,13 @@ public class ReceptionController(
     [HttpPost("route-department")]
     public async Task<IActionResult> RouteDepartment([FromBody] RouteDepartmentRequest req, CancellationToken ct)
     {
+        // Data minimization: the admission reason is now free text and leaves to an external LLM.
+        // Bound it to the persisted field length (200) so nothing larger is ever sent off-box.
+        var reason = req.AdmissionReason;
+        if (reason is { Length: > 200 }) reason = reason[..200];
+
         var result = await routing.RouteAsync(
-            req.AdmissionReason, new RoutingContext(req.Age, req.Gender), ct);
+            reason, new RoutingContext(req.Age, req.Gender), ct);
         return Ok(new
         {
             departments = result.Departments,
