@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { Visit, VisitCreate, VisitStatus } from '../types';
+import type { CareStep, CareStepAction, Visit, VisitCreate, VisitStatus } from '../types';
 import { getOrCreateDeviceId } from '../utils/deviceId';
 
 export interface VisitHistoryItem {
@@ -72,4 +72,18 @@ export const visitsApi = {
   // Clinical professional (not reception) overrides the AI/reception department routing.
   reassignDepartment: (id: string, department: string) =>
     api.patch<Visit>(`/visits/${id}/department`, { department }),
+
+  // Clinician classifies the patient into a SECOND department track (allowed only when one of the
+  // two departments is "נשים"). Opens a second medical process; the queue ticket is unchanged.
+  setDualDepartment: (id: string, secondaryDepartment: string) =>
+    api.patch<Visit>(`/visits/${id}/dual-department`, { secondaryDepartment }),
+
+  // ── Care steps (live multi-dimensional status) ────────────────────────────
+  // Advance a step: call (page) / enter (admit) / complete. deviceId stamps the room.
+  updateStep: (visitId: string, stepId: string, action: CareStepAction) =>
+    api.patch<CareStep>(`/visits/${visitId}/steps/${stepId}`, { action, deviceId: getOrCreateDeviceId() }),
+
+  // Refer the patient to a station (test/consult) — creates a "waiting for [station]" step.
+  referToStation: (visitId: string, label: string, department?: string | null) =>
+    api.post<CareStep>(`/visits/${visitId}/steps`, { label, department: department ?? null }),
 };

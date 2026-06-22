@@ -35,6 +35,13 @@ public class Visit
     /// <summary>Department the patient is routed to. Decided by AI routing — or chosen by
     /// reception among the AI-narrowed candidates when confidence is low.</summary>
     public string? ReceptionDepartment { get; set; }
+
+    /// <summary>Optional second department for a dual clinical track. Set ONLY by a clinical
+    /// professional, and ONLY when one of the two departments is "נשים" (women's). When set, the
+    /// patient runs two full medical processes (two forms); the women's track is handled first.
+    /// The issued queue ticket (letter + number) is unchanged — it stays a single queue row.</summary>
+    public string? SecondaryDepartment { get; set; }
+
     public bool DepartmentAssignedByAi { get; set; }
     public double? DepartmentConfidence { get; set; }
     /// <summary>JSON array of candidate departments offered when AI confidence was low
@@ -90,4 +97,8 @@ public class Visit
     // Navigation — excluded from API serialization
     [System.Text.Json.Serialization.JsonIgnore]
     public ICollection<MedicalForm> Forms { get; set; } = [];
+
+    /// <summary>Live multi-dimensional status: everything the patient is waiting for / present at.
+    /// Serialized with the queue so the board can render the per-step status.</summary>
+    public ICollection<CareStep> CareSteps { get; set; } = [];
 }

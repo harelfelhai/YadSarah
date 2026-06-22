@@ -11,6 +11,9 @@ export const DEPARTMENTS = [
 
 export type Department = (typeof DEPARTMENTS)[number];
 
+// The women's department — the only one that permits a dual (two-track) classification.
+export const WOMENS_DEPARTMENT = 'נשים';
+
 // ── Queue letters ─────────────────────────────────────────────────────────────
 // Each department runs its own numbered queue, identified by a letter (A,B,C,…), plus a
 // separate "S" (special / priority) queue. Mirrors the server-side `Departments.LetterFor`

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using YadSarah.Infrastructure.Data;
@@ -11,9 +12,11 @@ using YadSarah.Infrastructure.Data;
 namespace YadSarah.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260622064926_MultiDimStatusAndDualDept")]
+    partial class MultiDimStatusAndDualDept
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -69,7 +72,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("EntityType", "EntityId");
 
-                    b.ToTable("AuditLogs", (string)null);
+                    b.ToTable("AuditLogs");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.CareStep", b =>
@@ -165,7 +168,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("VisitId");
 
-                    b.ToTable("CareSteps", (string)null);
+                    b.ToTable("CareSteps");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.FeedbackReport", b =>
@@ -229,7 +232,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("FeedbackReports", (string)null);
+                    b.ToTable("FeedbackReports");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.FormLock", b =>
@@ -257,7 +260,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("ExpiresAt");
 
-                    b.ToTable("FormLocks", (string)null);
+                    b.ToTable("FormLocks");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.MedicalForm", b =>
@@ -384,7 +387,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("VisitId");
 
-                    b.ToTable("MedicalForms", (string)null);
+                    b.ToTable("MedicalForms");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.Medication", b =>
@@ -422,7 +425,7 @@ namespace YadSarah.Infrastructure.Migrations
                     b.HasIndex("RegistrationNumber")
                         .IsUnique();
 
-                    b.ToTable("Medications", (string)null);
+                    b.ToTable("Medications");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.Patient", b =>
@@ -568,7 +571,7 @@ namespace YadSarah.Infrastructure.Migrations
                         .IsUnique()
                         .HasFilter("\"IdentityNumber\" IS NOT NULL AND \"IdentityNumber\" <> ''");
 
-                    b.ToTable("Patients", (string)null);
+                    b.ToTable("Patients");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.PatientIntakeSubmission", b =>
@@ -683,7 +686,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("SubmittedAt");
 
-                    b.ToTable("PatientIntakeSubmissions", (string)null);
+                    b.ToTable("PatientIntakeSubmissions");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.QueueCounter", b =>
@@ -700,7 +703,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasKey("DateKey", "QueueLetter");
 
-                    b.ToTable("QueueCounters", (string)null);
+                    b.ToTable("QueueCounters");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.Street", b =>
@@ -729,7 +732,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("CityName", "StreetName");
 
-                    b.ToTable("Streets", (string)null);
+                    b.ToTable("Streets");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.SystemSetting", b =>
@@ -753,7 +756,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasKey("Key");
 
-                    b.ToTable("SystemSettings", (string)null);
+                    b.ToTable("SystemSettings");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.User", b =>
@@ -870,7 +873,7 @@ namespace YadSarah.Infrastructure.Migrations
                     b.HasIndex("Username")
                         .IsUnique();
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.Visit", b =>
@@ -986,7 +989,7 @@ namespace YadSarah.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("Visits", (string)null);
+                    b.ToTable("Visits");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.Workstation", b =>
@@ -1028,7 +1031,7 @@ namespace YadSarah.Infrastructure.Migrations
                     b.HasIndex("DeviceId")
                         .IsUnique();
 
-                    b.ToTable("Workstations", (string)null);
+                    b.ToTable("Workstations");
                 });
 
             modelBuilder.Entity("YadSarah.Domain.Entities.CareStep", b =>

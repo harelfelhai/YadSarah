@@ -7,8 +7,8 @@ export const formsApi = {
 
   getById: (id: string) => api.get<MedicalForm>(`/forms/${id}`),
 
-  create: (visitId: string, stationType: StationType, formType: FormType) =>
-    api.post<MedicalForm>(`/visits/${visitId}/forms`, { stationType, formType }),
+  create: (visitId: string, stationType: StationType, formType: FormType, department?: string | null) =>
+    api.post<MedicalForm>(`/visits/${visitId}/forms`, { stationType, formType, department: department ?? null }),
 
   updateSection: (id: string, section: string, data: unknown, version: number) =>
     api.patch<MedicalForm>(`/forms/${id}/sections/${section}`, { data, version }),

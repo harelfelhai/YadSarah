@@ -15,7 +15,7 @@ namespace YadSarah.Api.Controllers;
 [Authorize]
 public class VisitsController(
     VisitService svc, IHubContext<MainHub> hub, AuditService audit, WorkstationService workstations,
-    AuthService auth, PricingService pricing) : ControllerBase
+    AuthService auth, PricingService pricing, CareStepService steps) : ControllerBase
 {
     private Guid UserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
@@ -226,7 +226,106 @@ public class VisitsController(
         }
     }
 
+    // PATCH /api/visits/{id}/dual-department — a clinician classifies the patient into a SECOND
+    // department track. Allowed only when one of the two departments is women's (enforced in the
+    // service). Opens a second medical process; the queue ticket is unchanged (single row).
+    [HttpPatch("{id:guid}/dual-department")]
+    [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent")]
+    public async Task<IActionResult> SetDualDepartment(Guid id, [FromBody] DualDepartmentRequest req)
+    {
+        try
+        {
+            var updated = await steps.SetDualDepartmentAsync(id, req.SecondaryDepartment, UserId, UserName, CallerRole);
+            await audit.LogAsync("DualDepartmentSet", "Visit", id, "SecondaryDepartment", newValue: req.SecondaryDepartment);
+            await BroadcastQueueUpdateAsync(id);
+            return Ok(updated);
+        }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    // ── Care steps (live multi-dimensional status) ─────────────────────────────
+
+    // POST /api/visits/{id}/steps — a clinician refers the patient to a station (test/consult).
+    // Creates a "waiting for [station]" step; completing it later returns the patient to the referrer.
+    [HttpPost("{id:guid}/steps")]
+    [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent")]
+    public async Task<IActionResult> ReferToStation(Guid id, [FromBody] ReferStationRequest req)
+    {
+        try
+        {
+            var step = await steps.ReferToStationAsync(
+                id, req.Label, UserId, UserName, CallerRole, req.Department);
+            await audit.LogAsync("CareStepReferred", "Visit", id, "careStep", newValue: step.Label);
+            await BroadcastQueueUpdateAsync(id);
+            return Ok(step);
+        }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    // PATCH /api/visits/{id}/steps/{stepId} — advance a step: call (page) / enter (admit) / complete.
+    [HttpPatch("{id:guid}/steps/{stepId:guid}")]
+    [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent,LabStaff")]
+    public async Task<IActionResult> UpdateStep(Guid id, Guid stepId, [FromBody] StepActionRequest req)
+    {
+        var action = (req.Action ?? "").Trim().ToLowerInvariant();
+        try
+        {
+            CareStep step;
+            switch (action)
+            {
+                case "call":
+                    step = await steps.CallAsync(stepId, UserId, UserName, CallerRole,
+                        await workstations.ResolveRoomAsync(req.DeviceId));
+                    break;
+                case "enter":
+                    step = await steps.EnterAsync(stepId, UserId, UserName, CallerRole,
+                        await workstations.ResolveRoomAsync(req.DeviceId));
+                    break;
+                case "complete":
+                    step = await steps.CompleteAsync(stepId, UserId, UserName, CallerRole);
+                    break;
+                default:
+                    return BadRequest(new { message = "פעולה לא חוקית." });
+            }
+            await audit.LogAsync("CareStep" + char.ToUpperInvariant(action[0]) + action[1..],
+                "Visit", id, "careStep", newValue: step.Label);
+            await BroadcastQueueUpdateAsync(id);
+            return Ok(step);
+        }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    /// <summary>Re-broadcast the visit's queue row after a care-step change so every board refreshes.</summary>
+    private async Task BroadcastQueueUpdateAsync(Guid id)
+    {
+        var v = await svc.GetByIdAsync(id);
+        if (v is null) return;
+        await hub.Clients.All.SendAsync("QueueUpdate", new
+        {
+            visitId = v.Id,
+            status = v.Status.ToString(),
+            queueNumber = v.QueueNumber,
+            queueLetter = v.QueueLetter,
+            treatingUserName = v.TreatingUserName,
+            room = v.TreatmentRoom,
+        });
+    }
+
     public record UpdateStatusRequest(string Status, [param: StringLength(120)] string? DeviceId = null);
 
     public record ReassignDepartmentRequest([param: Required, StringLength(100)] string Department);
+
+    public record DualDepartmentRequest([param: Required, StringLength(100)] string SecondaryDepartment);
+
+    public record ReferStationRequest(
+        [param: Required, StringLength(100)] string Label,
+        [param: StringLength(100)] string? Department = null,
+        [param: StringLength(120)] string? DeviceId = null);
+
+    public record StepActionRequest(
+        [param: Required, StringLength(20)] string Action,
+        [param: StringLength(120)] string? DeviceId = null);
 }

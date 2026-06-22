@@ -11,6 +11,12 @@ public class MedicalForm
     public string StationType { get; set; } = string.Empty;
     public string FormType { get; set; } = string.Empty;
 
+    /// <summary>Which department track this form belongs to. For a dual (women's + other) visit
+    /// each track has its own form; null/legacy forms predate dual tracks. Paired with
+    /// <see cref="TrackOrder"/> (0 = first track = women's when dual).</summary>
+    public string? Department { get; set; }
+    public int? TrackOrder { get; set; }
+
     // Optimistic concurrency version
     public int Version { get; set; } = 1;
 

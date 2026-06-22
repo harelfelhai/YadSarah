@@ -325,3 +325,45 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 קבצים: `Domain/Entities/Visit.cs` (`DepartedAt`), `Application/Services/AnalyticsService.cs`,
 `Api/Controllers/AnalyticsController.cs`, `Api/Program.cs` (רישום DI), `Client/src/features/analytics/AnalyticsPage.tsx`,
 `Client/src/api/analytics.ts`, `Client/src/App.tsx` + `layout/AppShell.tsx` (route+ניווט מגודרים).
+
+## 18. סטטוס-תור רב-מימדי (צעדי-טיפול), הפניות לתחנות, ושיוך כפול (נשים)
+
+מעבר מסטטוס-ביקור שטוח יחיד ל**אוסף צעדי-טיפול מקבילים** (`CareStep`): כל מטופל ממתין בו-זמנית
+למספר גורמים (רופא + אחות + בדיקות), עם פעולות "קרא" / "הכנס" / "סיים" לכל צעד, הפניה לתחנות
+(US/בדיקת דם/…), ושיוך כפול למחלקת נשים + מחלקה נוספת (שני טפסים, שורת-תור אחת).
+
+- **הרשאות (need-to-know):** כל ה-endpoints החדשים ב-`VisitsController` מוגבלים לצוות הקליני
+  ו**קבלה חסומה** (כמו שינוי-מחלקה): `POST /visits/{id}/steps` (הפניה לתחנה) ו-
+  `PATCH /visits/{id}/dual-department` ל-`Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent`;
+  `PATCH /visits/{id}/steps/{stepId}` (קרא/הכנס/סיים) כולל גם `LabStaff` (לסגירת תחנת-מעבדה).
+  צעדי-הטיפול אינם תוכן קליני (PHI) — הם מטא-דאטה תפעולי (תפקיד נדרש, שם הקורא/המטפל, חדר),
+  בהתאמה לנראות-התור הקיימת לצוות; הטופס הרפואי נותר מאחורי `FormsController` המוגן.
+- **ייחוס פעולה ומניעת over-posting:** זהות מבצע הפעולה (`CalledBy*`/`StartedBy*`/`ReferredBy*`)
+  נחתמת **בשרת מתוך ה-JWT** (claims), לא מקלט הלקוח; הלקוח שולח רק `action`/`label`/`deviceId`/
+  `secondaryDepartment`. החדר נגזר בשרת מ-`deviceId` (`WorkstationService.ResolveRoomAsync`).
+  הקלט נקשר ל-DTOs ייעודיים (`StepActionRequest`/`ReferStationRequest`/`DualDepartmentRequest`)
+  עם `[Required]`/`[StringLength]` — אין קשירה ישירה לישות `CareStep`.
+- **בקרת קלט (whitelist בשרת):** שם-התחנה מאומת מול קטלוג סגור (`CareStepCatalog.Stations`),
+  המחלקה מאומתת מול `Departments.All`, ו**שיוך כפול נאכף בשרת**: מותר אך ורק כשאחת משתי
+  המחלקות היא "נשים" (`CareStepService.SetDualDepartmentAsync` → `400` אחרת) — אין מסלול לפצל
+  ביקור לשתי מחלקות שרירותיות.
+- **שלמות מחזור-החיים (שחרור):** חתימת טופס מסיימת את ה-track שלה בלבד; הביקור עובר ל-`Discharged`
+  **רק כששני הטפסים חתומים** (`FormService.SignAsync`) — מונע שחרור מוקדם של מטופלת בתהליך כפול.
+  אין נתיב-הרשאה חדש: חתימה עדיין דורשת `Doctor` + step-up re-auth (§9), והשחרור הידני נותר
+  מוגבל (§2). הסטטוס הגס (`Visit.Status`) **נגזר** מהצעדים בשרת (`CareStepService.DeriveStatus`),
+  ואינו ניתן לקביעה ישירה מהלקוח.
+- **שדות-טופס משותפים בשיוך כפול:** מדדים/אלרגיות/עבר-רפואי מוזנים פעם אחת ומשתקפים לטופס האח
+  של **אותו ביקור בלבד** (`f.VisitId == form.VisitId`), רק לאחר שהקורא עבר את `FormSectionPolicy.CanEdit`
+  של אותו section, ו**לא** משתקפים לטופס חתום — אין מעקף הרשאה ואין כתיבה חוצת-ביקורים.
+- **תיעוד (audit):** כל פעולה נרשמת — הפניה (`CareStepReferred`), קרא/הכנס/סיים
+  (`CareStepCall`/`CareStepEnter`/`CareStepComplete`), ושיוך כפול (`DualDepartmentSet`), כולן על
+  `EntityType="Visit"` עם IP.
+- **SQLi:** כל גישת-הנתונים EF (LINQ פרמטרי); אין SQL גולמי. **XSS:** הצגת הצעדים בלקוח
+  (`CareStepList.tsx`) דרך React בלבד (escaping אוטומטי, ללא `dangerouslySetInnerHTML`).
+- **מצב הדגמה:** זריעת צעדי-טיפול ל-fill-queue מתבצעת רק דרך מסלול ה-Demo המגודר (§13), וניקוי
+  היום מוחק גם את הצעדים (`ClearTodayAsync`).
+
+קבצים: `Domain/Entities/CareStep.cs`, `Domain/Entities/{Visit,MedicalForm}.cs` (שדות track),
+`Application/Services/{CareStepService,VisitService,FormService}.cs`, `Api/Controllers/{VisitsController,FormsController}.cs`,
+`Infrastructure/Data/AppDbContext.cs` (+ מיגרציה `MultiDimStatusAndDualDept`), `Client/src/components/CareStepList.tsx`,
+`Client/src/constants/careSteps.ts`, `Client/src/features/{queue/QueuePage,treatment/TreatmentFormPage}.tsx`.
