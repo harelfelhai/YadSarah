@@ -7,6 +7,7 @@ export const DEPARTMENTS = [
   'אורטופדיה',
   'נשים',
   'עירוי תרופות',
+  'ביקורת',
 ] as const;
 
 export type Department = (typeof DEPARTMENTS)[number];
@@ -26,6 +27,7 @@ export const DEPARTMENT_LETTERS: Record<string, string> = {
   'אורטופדיה': 'C',
   'נשים': 'D',
   'עירוי תרופות': 'E',
+  'ביקורת': 'F',
 };
 
 /** The displayed queue ticket: "C-7" (letter + per-department number), or just the

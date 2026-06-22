@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace YadSarah.Application.Services;
 
 /// <summary>Canonical department set used for AI routing at reception (2026-06-19).</summary>
@@ -8,9 +10,10 @@ public static class Departments
     public const string Orthopedics = "אורטופדיה";
     public const string Womens = "נשים";
     public const string Infusion = "עירוי תרופות";
+    public const string Review = "ביקורת";           // ביקורת חוזרת/מעקב אצל רופא ספציפי
 
     public static readonly IReadOnlyList<string> All =
-        new[] { Emergency, Pediatrics, Orthopedics, Womens, Infusion };
+        new[] { Emergency, Pediatrics, Orthopedics, Womens, Infusion, Review };
 
     // ── Queue letters ─────────────────────────────────────────────────────────
     // Each department runs its own numbered queue, identified by a letter (A,B,C,…),
@@ -25,6 +28,7 @@ public static class Departments
         [Orthopedics] = "C",
         [Womens] = "D",
         [Infusion] = "E",
+        [Review] = "F",
     };
 
     /// <summary>The queue letter for a department. Unknown/empty → "A" (Emergency) as a
@@ -51,36 +55,56 @@ public interface IDepartmentClassifier
 }
 
 /// <summary>
-/// The router's decision. One department ⇒ confident assignment; several ⇒ low confidence,
-/// reception picks among the AI-narrowed candidates.
+/// The router's decision. By policy the routing ALWAYS commits to exactly ONE department
+/// (low confidence is broken deterministically, not deferred to reception). <see cref="Departments"/>
+/// therefore always holds a single item; <see cref="Source"/> says how it was decided
+/// ("rule" = deterministic policy, "ai" = LLM, "fallback" = AI unavailable).
 /// </summary>
 public record DepartmentRoutingResult(IReadOnlyList<string> Departments, double Confidence, string Source)
 {
     public bool IsConfident => Departments.Count == 1;
-    public string? Assigned => Departments.Count == 1 ? Departments[0] : null;
+    public string? Assigned => Departments.Count >= 1 ? Departments[0] : null;
 }
 
 /// <summary>
 /// Decides the department for a visit from its admission reason. Pipeline:
-///   (1) algorithmic pre-filter — hard deterministic rules (e.g. age gate);
-///   (2) AI classifier — DECIDES (not just recommends); below a confidence threshold it
-///       returns MORE THAN ONE option for reception to choose among;
-///   (3) deterministic fallback — when the AI is disabled/unavailable/errors.
+///   (1) algorithmic pre-filter — hard deterministic candidate narrowing (age gates, rules 4+5);
+///   (2) deterministic policy override — pregnancy/gestational-week ⇒ "נשים" (rule 6);
+///   (3) AI classifier — returns a ranked list, which is ALWAYS collapsed to a single department
+///       (confident ⇒ top pick; ambiguous ⇒ broken by a fixed priority order, rule 3);
+///   (4) deterministic fallback — one department when the AI is disabled/unavailable/errors.
 ///
-/// The AI rules/examples and most pre-filter narrowing are TODO seams to be filled from
-/// client-supplied rules. Internet in the critical path is permitted (on-prem dropped 2026-06-19).
+/// By policy the result is ALWAYS exactly one department — reception never picks (the field is
+/// read-only); a clinician finalizes the department during treatment. Internet in the critical
+/// path is permitted (on-prem dropped 2026-06-19).
 /// </summary>
 public class DepartmentRoutingService(IDepartmentClassifier classifier)
 {
-    // Tunable later (settings/config). Below this confidence the AI's narrowed candidate set is
-    // returned so reception chooses, rather than the system committing to a single department.
+    // Tunable later (settings/config). At/above this AI confidence we take the top pick; below it
+    // the ambiguity is broken deterministically by AmbiguityPriority rather than deferred to reception.
     private const double ConfidenceThreshold = 0.70;
+
+    // Rule 3 — when departments are ambiguous, prefer in this order. Only these three genuinely
+    // conflict; the rest are decided deterministically (age ⇒ ילדים, keyword ⇒ ביקורת/נשים).
+    private static readonly IReadOnlyList<string> AmbiguityPriority =
+        new[] { Departments.Womens, Departments.Emergency, Departments.Orthopedics };
+
+    // Rule 6 — pregnancy / "שבוע <n>" (gestational week). Rule 1 fallback — "ביקורת" or the
+    // follow-up doctor "מתי" as a standalone word ("מתי" also means "when", so require a word boundary).
+    private static readonly Regex PregnancyRx = new(@"הריון|היריון|שבוע\s*\d+", RegexOptions.Compiled);
+    private static readonly Regex ReviewRx = new(@"ביקורת|(?<!\p{L})מתי(?!\p{L})", RegexOptions.Compiled);
 
     public async Task<DepartmentRoutingResult> RouteAsync(
         string? admissionReason, RoutingContext ctx, CancellationToken ct = default)
     {
-        var candidates = PreFilter(admissionReason, ctx);
+        var candidates = PreFilter(ctx);
 
+        // (2) Hard policy override (rule 6): pregnancy + not explicitly male ⇒ women's. Guaranteed
+        // regardless of the AI (and saves a call). The AI prompt reinforces the same for robustness.
+        if (PregnancyRx.IsMatch(admissionReason ?? "") && !IsMale(ctx.Gender))
+            return new DepartmentRoutingResult(new[] { Departments.Womens }, 1.0, "rule");
+
+        // (3) AI classifier — ranked list, always collapsed to ONE.
         if (!string.IsNullOrWhiteSpace(admissionReason))
         {
             try
@@ -90,8 +114,8 @@ public class DepartmentRoutingService(IDepartmentClassifier classifier)
                 {
                     var picked = c.Departments.Where(candidates.Contains).ToList();
                     if (picked.Count == 0) picked = c.Departments.ToList();
-                    var final = c.Confidence >= ConfidenceThreshold ? picked.Take(1).ToList() : picked;
-                    return new DepartmentRoutingResult(final, c.Confidence, "ai");
+                    var one = c.Confidence >= ConfidenceThreshold ? picked[0] : CollapseAmbiguous(picked);
+                    return new DepartmentRoutingResult(new[] { one }, c.Confidence, "ai");
                 }
             }
             catch
@@ -100,20 +124,53 @@ public class DepartmentRoutingService(IDepartmentClassifier classifier)
             }
         }
 
-        // Fallback (AI disabled / unconfigured / errored): offer the pre-filtered set for a
-        // manual pick. Deterministic and offline-safe.
-        return new DepartmentRoutingResult(candidates, 0.0, "fallback");
+        // (4) Fallback (AI disabled / unconfigured / errored): pick ONE deterministically.
+        return new DepartmentRoutingResult(new[] { FallbackDepartment(admissionReason, ctx) }, 0.0, "fallback");
     }
 
     /// <summary>
-    /// Hard, deterministic narrowing applied BEFORE the AI.
-    /// TODO(pending): full rules from the client (keyword maps, gender gating for "נשים", …).
-    /// The one concrete rule kept now: a known adult (age &gt; 17) is never routed to "ילדים".
+    /// Hard, deterministic candidate narrowing applied BEFORE the AI:
+    ///   • a known adult (age &gt; 17) is never routed to "ילדים";
+    ///   • age &gt; 70 (rule 4) or ≤ 2 (rule 5) is never routed to "אורטופדיה" — an orthopedic-looking
+    ///     complaint then falls to "רפואה דחופה" (urgent) for the elderly, or "ילדים" for an infant.
     /// </summary>
-    private static IReadOnlyList<string> PreFilter(string? admissionReason, RoutingContext ctx)
+    private static IReadOnlyList<string> PreFilter(RoutingContext ctx)
     {
         var set = Departments.All.ToList();
         if (ctx.Age is > 17) set.Remove(Departments.Pediatrics);
+        if (ctx.Age is > 70 or <= 2) set.Remove(Departments.Orthopedics);
         return set.Count > 0 ? set : Departments.All;
+    }
+
+    /// <summary>Break an ambiguous (low-confidence) candidate set. Only נשים/רפואה דחופה/אורטופדיה
+    /// genuinely conflict, so a deliberate non-conflicting top pick (ביקורת/ילדים/עירוי) is respected
+    /// as-is; otherwise the three conflicting departments are reordered by the fixed priority (rule 3).</summary>
+    private static string CollapseAmbiguous(IReadOnlyList<string> picked)
+    {
+        if (!AmbiguityPriority.Contains(picked[0])) return picked[0];
+        foreach (var dept in AmbiguityPriority)
+            if (picked.Contains(dept)) return dept;
+        return picked[0];
+    }
+
+    /// <summary>The single department to use when the AI is unavailable: an explicit follow-up
+    /// ("ביקורת"/"מתי") wins, then pregnancy ⇒ women's, then a child ⇒ pediatrics, else the safe
+    /// default "רפואה דחופה". (Orthopedics is never auto-assigned without the AI.)</summary>
+    private static string FallbackDepartment(string? reason, RoutingContext ctx)
+    {
+        var text = reason ?? "";
+        if (ReviewRx.IsMatch(text)) return Departments.Review;
+        if (PregnancyRx.IsMatch(text) && !IsMale(ctx.Gender)) return Departments.Womens;
+        if (ctx.Age is <= 17) return Departments.Pediatrics;
+        return Departments.Emergency;
+    }
+
+    /// <summary>Whether the gender value denotes male — reception uses "ז", admin uses "זכר".</summary>
+    private static bool IsMale(string? gender)
+    {
+        var g = gender?.Trim();
+        return g is "ז" or "זכר"
+            || string.Equals(g, "male", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(g, "m", StringComparison.OrdinalIgnoreCase);
     }
 }

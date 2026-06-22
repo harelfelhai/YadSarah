@@ -73,7 +73,7 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
 
 - **`YadSarah.Domain/Entities`** — entities + the `UserRole` enum, no dependencies.
 - **`YadSarah.Application/Services`** — all business logic (`AuthService`, `VisitService`,
-  `FormService`, `AuditService`, `MedicationCatalogService`, etc.) + policy classes
+  `FormService`, `CareStepService`, `AuditService`, `MedicationCatalogService`, etc.) + policy classes
   (`FormSectionPolicy`, `PasswordPolicy`). **Put business rules here, not in controllers.**
 - **`YadSarah.Infrastructure/Data`** — `AppDbContext`, `Migrations/`.
 - **`YadSarah.Api`** — thin controllers, SignalR `Hubs/MainHub.cs`, `Middleware/`, `Converters/`,
@@ -87,7 +87,7 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   the client mirror is [src/Client/src/constants/formPolicy.ts](src/Client/src/constants/formPolicy.ts).
   Section keys must match exactly across both. The nurse-editable mapping is a client-pending TODO.
 
-- **Three more server↔client "keep-in-sync" mirrors (same discipline as the RBAC mirror above).** Change
+- **Four more server↔client "keep-in-sync" mirrors (same discipline as the RBAC mirror above).** Change
   one side, change the other: (1) ED-charge pricing —
   [PricingService.cs](src/Server/YadSarah.Application/Services/PricingService.cs) ↔
   [constants/pricing.ts](src/Client/src/constants/pricing.ts) (the client mirror only feeds the live
@@ -95,7 +95,9 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   queue letters — [DepartmentRoutingService.cs](src/Server/YadSarah.Application/Services/DepartmentRoutingService.cs)
   ↔ [constants/departments.ts](src/Client/src/constants/departments.ts). (3) Role capability helpers —
   the server permission checks ↔ [constants/roles.ts](src/Client/src/constants/roles.ts) (`canDischarge`,
-  `canReassignDepartment`, `canPrioritizeQueue`, `isClinicalStaff`, …).
+  `canReassignDepartment`, `canPrioritizeQueue`, `isClinicalStaff`, …). (4) Care-step labels + station
+  catalog — `CareStepCatalog` in [CareStepService.cs](src/Server/YadSarah.Application/Services/CareStepService.cs)
+  ↔ [constants/careSteps.ts](src/Client/src/constants/careSteps.ts).
 
 - **Roles are multi-valued; the `UserRole` enum order is load-bearing.** A user holds a
   **`List<UserRole>`** (`User.Roles`) and receives the **union** of those roles' permissions;
@@ -113,8 +115,24 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   Signing (and signing an addendum) requires **step-up re-auth**: the clinician re-enters their own
   username + password in `ReauthModal`, verified server-side against the logged-in user.
 
+- **A visit's live status is multi-dimensional "care steps", not a single column** (in
+  [CareStepService.cs](src/Server/YadSarah.Application/Services/CareStepService.cs); `CareStep` entity).
+  Every new patient starts with two waiting clinician steps — **nurse + doctor** (`InitialSteps`). Steps move
+  Waiting → Called → InProgress → Done (`CallAsync`/`EnterAsync`/`CompleteAsync`). A clinician can refer the
+  patient to a **station** (`ReferToStationAsync`; closed catalog `US, בדיקת דם, צילום, CT, אקג, ייעוץ`);
+  completing a station **auto-creates a waiting step back to the referrer** so they review the result. The
+  coarse `Visit.Status` (`Waiting/Called/InTreatment/FinishedTreatment/Discharged`) used by analytics + the
+  shift board is **derived** from the steps by `DeriveStatus` — never set it directly except for sign-all /
+  manual discharge (which is terminal). `EnterAsync` on a clinician step also stamps the visit's treating
+  owner/room.
+
+- **Dual department track (women's only).** A visit normally has one `ReceptionDepartment`; clinical staff
+  (not Reception) may add a `SecondaryDepartment` via `SetDualDepartmentAsync` **only when one of the two is
+  נשים** (women's). This creates a second nurse+doctor track (women's sorts first, `TrackOrder` 0); the issued
+  queue ticket stays a single row. `WOMENS_DEPARTMENT`/`Departments.Womens` is the gate on both sides.
+
 - **Queue is per-department and lettered.** Each department runs its own daily-resetting numbered queue
-  identified by a letter (A=רפואה דחופה, B=ילדים, C=אורטופדיה, D=נשים, E=עירוי תרופות), plus a separate
+  identified by a letter (A=רפואה דחופה, B=ילדים, C=אורטופדיה, D=נשים, E=עירוי תרופות, F=ביקורת), plus a separate
   priority **"S"** queue; tickets render as `C-7` (`queueLabel` in `constants/departments.ts`). Numbers come
   from per-letter `QueueCounter` rows via `VisitService.NextQueueNumberAsync`. Clinical staff (never plain
   Reception) can override routing with `ReassignDepartmentAsync`; a ShiftManager/Admin can promote a patient
@@ -123,10 +141,20 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   route guard).
 
 - **AI department routing at reception.** Selecting an arrival reason calls
-  `POST /api/reception/route-department` (`ReceptionController` → `DepartmentRoutingService`). When the LLM is
-  off it returns a deterministic **fallback** ranking (`source: "fallback"`), so reception always gets
-  candidate departments. This is the one place internet sits in the critical path (allowed since the
-  2026-06-19 web-hosting change).
+  `POST /api/reception/route-department` (`ReceptionController` → `DepartmentRoutingService`). The classifier
+  is **Google Gemini** (`gemini-2.5-flash`, [LlmDepartmentClassifier.cs](src/Server/YadSarah.Api/Services/LlmDepartmentClassifier.cs),
+  the `IDepartmentClassifier` impl in the Api layer) — a **paid LLM call** behind config keys
+  `DepartmentRouting:{Enabled,ApiKey,Model}`. **The API key is a secret** (appsettings/env, sent as the
+  `x-goog-api-key` header — never the DB). Pipeline: pre-filter (deterministic candidate narrowing — age
+  gates: >17 drops ילדים, >70 or ≤2 drops אורטופדיה) → deterministic policy overrides (pregnancy/"שבוע N"
+  + not-male → נשים) → AI ranks the candidates → **the result is ALWAYS collapsed to exactly one department**
+  (top pick, or a fixed priority order נשים→רפואה דחופה→אורטופדיה when ambiguous) → deterministic fallback.
+  By policy reception **never picks** — the department field is read-only and a clinician finalizes it in
+  treatment (`source` is `rule`/`ai`/`fallback`). "ביקורת" (follow-up with a specific doctor, e.g. "מתי") is
+  AI-routed by the prompt, with a keyword fallback. The classifier returns null and **never throws** when
+  disabled/keyless/erroring (8s per-call timeout), so when the LLM is off/slow reception still gets a single
+  `source: "fallback"` department. This is the one place internet sits in the critical path (allowed since the
+  2026-06-19 web-hosting change). Per global prefs, **confirm cost before any bulk/real run** against the paid endpoint.
 
 - **Workstation/room tracking feeds the shift-status board.** Each browser gets a stable device id
   (`utils/deviceId.ts`); on first login `WorkstationSetupModal` pins it to a room (`Workstation` entity,
@@ -170,8 +198,8 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
 - `api/*.ts` — typed wrappers over the shared `api` helper in [api/client.ts](src/Client/src/api/client.ts).
 - `realtime/hub.ts` — SignalR connection. `store/auth.ts` — Zustand auth state.
 - `constants/` — `departments.ts` (department set + queue letters), `pricing.ts` (ED-charge mirror),
-  `roles.ts` (role labels + capability helpers), `formPolicy.ts` (field/section RBAC mirror) — all
-  server↔client mirrors, above.
+  `roles.ts` (role labels + capability helpers), `formPolicy.ts` (field/section RBAC mirror),
+  `careSteps.ts` (care-step labels + station catalog mirror) — all server↔client mirrors, above.
 - `components/FeedbackWidget.tsx` — app-wide in-app bug/feedback reporter (`FeedbackController` →
   `FeedbackReport`), surfaced to admins on the feedback-review screen.
 

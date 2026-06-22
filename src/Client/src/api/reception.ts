@@ -1,11 +1,12 @@
 import { api } from './client';
 
-// AI department-routing result. `departments` holds one item when the AI is confident
-// (assigned), or several candidates when confidence is low (reception picks one).
+// Department-routing result. The routing ALWAYS commits to exactly one department, so
+// `departments` holds a single item; `source` says how it was decided ('rule' = deterministic
+// policy, 'ai' = LLM, 'fallback' = AI unavailable). Reception never picks — the field is read-only.
 export interface RouteDepartmentResult {
   departments: string[];
   confidence: number;
-  source: 'ai' | 'fallback' | string;
+  source: 'rule' | 'ai' | 'fallback' | string;
   assigned?: string | null;
   assignedByAi: boolean;
 }
