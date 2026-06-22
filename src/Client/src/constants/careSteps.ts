@@ -9,6 +9,17 @@ export const NURSE_LABEL = 'אחות';
 // pre-assigns: US + מעבדה, plus מוניטור from gestational week 28).
 export const STATIONS = ['US', 'בדיקת דם', 'מעבדה', 'צילום', 'CT', 'אקג', 'מוניטור', 'ייעוץ'] as const;
 
+// Department-stations: referral targets that MOVE the patient to that department (mirror of the server
+// CareStepCatalog.DepartmentStations). Selecting one reassigns the visit's department automatically.
+// PLACEHOLDER mapping — the full list is pending. Keep in sync with the server.
+export const DEPARTMENT_STATIONS: Record<string, string> = {
+  'רופא ילדים': 'ילדים',
+  'רופא נשים': 'נשים',
+};
+
+// Everything shown in the referral picker — regular stations + department-stations.
+export const REFERRAL_OPTIONS: string[] = [...STATIONS, ...Object.keys(DEPARTMENT_STATIONS)];
+
 // Per-step status labels + colors (same muted palette as visitStatus.ts).
 export const STEP_STATUS_LABEL: Record<CareStepStatus, string> = {
   Waiting: 'ממתין',

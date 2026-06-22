@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Group, Modal, Select, Stack, Text } from '@mantine/core';
+import { Button, Group, Modal, MultiSelect, Select, Stack, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconStar } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import { visitsApi } from '../../api/visits';
 import { useAuthStore } from '../../store/auth';
 import { isClinicalStaff, canPrioritizeQueue, canReassignDepartment } from '../../constants/roles';
 import { DEPARTMENTS, WOMENS_DEPARTMENT, SPECIAL_QUEUE_LETTER, queueLabel } from '../../constants/departments';
-import { STATIONS } from '../../constants/careSteps';
+import { REFERRAL_OPTIONS, DEPARTMENT_STATIONS } from '../../constants/careSteps';
 import type { Visit } from '../../types';
 
 /**
@@ -71,19 +71,23 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
     }
   };
 
-  // ── Refer to station ──
+  // ── Refer to stations (multi-select; a department-station moves the patient's department) ──
   const [referOpen, setReferOpen] = useState(false);
-  const [referStation, setReferStation] = useState<string | null>(null);
+  const [referStations, setReferStations] = useState<string[]>([]);
   const [referring, setReferring] = useState(false);
   const doRefer = async () => {
-    if (!referStation) return;
+    if (referStations.length === 0) return;
     setReferring(true);
     try {
-      await visitsApi.referToStation(visit.id, referStation, visit.receptionDepartment ?? null);
+      await visitsApi.referToStations(visit.id, referStations, visit.receptionDepartment ?? null);
       refresh();
-      notifications.show({ color: 'pine', message: `המטופל הופנה ל${referStation}` });
+      const movedTo = referStations.map((s) => DEPARTMENT_STATIONS[s]).find(Boolean);
+      notifications.show({
+        color: 'pine',
+        message: movedTo ? `ההפניה בוצעה; המחלקה עודכנה ל${movedTo}` : 'ההפניה לתחנות בוצעה',
+      });
       setReferOpen(false);
-      setReferStation(null);
+      setReferStations([]);
     } catch {
       notifications.show({ color: 'brick', message: 'ההפניה לתחנה נכשלה' });
     } finally {
@@ -114,7 +118,7 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
     <>
       <Group gap="xs">
         {isClinical && !discharged && (
-          <Button size="xs" variant="light" color="steel" onClick={() => { setReferStation(null); setReferOpen(true); }}>
+          <Button size="xs" variant="light" color="steel" onClick={() => { setReferStations([]); setReferOpen(true); }}>
             הפנה לתחנה
           </Button>
         )}
@@ -178,20 +182,25 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
         </Stack>
       </Modal>
 
-      <Modal opened={referOpen} onClose={() => setReferOpen(false)} title="הפניה לתחנה" centered>
+      <Modal opened={referOpen} onClose={() => setReferOpen(false)} title="הפניה לתחנות" centered>
         <Stack gap="sm">
-          <Text size="sm">{patientName} — בחר תחנה שאליה המטופל מופנה.</Text>
-          <Select
-            label="תחנה"
-            data={[...STATIONS]}
-            value={referStation}
-            onChange={setReferStation}
+          <Text size="sm">{patientName} — סמן תחנה אחת או יותר שאליהן המטופל מופנה.</Text>
+          <MultiSelect
+            label="תחנות"
+            data={REFERRAL_OPTIONS}
+            value={referStations}
+            onChange={setReferStations}
+            searchable
+            clearable
             comboboxProps={{ withinPortal: true }}
           />
-          <Text size="xs" c="dimmed">בסיום התחנה המטופל יחזור אוטומטית להמתין לאיש הצוות שהפנה אותו.</Text>
+          <Text size="xs" c="dimmed">
+            בסיום כל תחנה המטופל חוזר אוטומטית להמתין לאיש הצוות שהפנה אותו. תחנה משויכת-מחלקה
+            (למשל "רופא נשים") מעבירה את המטופל לאותה מחלקה.
+          </Text>
           <Group justify="flex-end">
             <Button variant="subtle" color="slate" onClick={() => setReferOpen(false)}>ביטול</Button>
-            <Button loading={referring} disabled={!referStation} onClick={doRefer}>הפנה</Button>
+            <Button loading={referring} disabled={referStations.length === 0} onClick={doRefer}>הפנה</Button>
           </Group>
         </Stack>
       </Modal>

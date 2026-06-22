@@ -246,21 +246,45 @@ public class VisitsController(
 
     // ── Care steps (live multi-dimensional status) ─────────────────────────────
 
-    // POST /api/visits/{id}/steps — a clinician refers the patient to a station (test/consult).
-    // Creates a "waiting for [station]" step; completing it later returns the patient to the referrer.
+    // POST /api/visits/{id}/steps — a clinician refers the patient to one or more stations (test/consult)
+    // in a single action. A regular station creates a "waiting for [station]" step (auto-returns to the
+    // referrer on completion); a department-station (e.g. "רופא נשים") instead moves the patient to that
+    // department and seeds its default clinician waits.
     [HttpPost("{id:guid}/steps")]
     [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent")]
     public async Task<IActionResult> ReferToStation(Guid id, [FromBody] ReferStationRequest req)
     {
         try
         {
-            var step = await steps.ReferToStationAsync(
-                id, req.Label, UserId, UserName, CallerRole, req.Department);
-            await audit.LogAsync("CareStepReferred", "Visit", id, "careStep", newValue: step.Label);
+            var result = await steps.ReferToStationsAsync(
+                id, req.Labels, UserId, UserName, CallerRole, req.Department);
+            if (result.StationSteps.Count > 0)
+                await audit.LogAsync("CareStepReferred", "Visit", id, "careStep",
+                    newValue: string.Join(", ", result.StationSteps.Select(s => s.Label)));
+            if (result.ReassignedDepartment is not null)
+                await audit.LogAsync("DepartmentReassignedByReferral", "Visit", id, "ReceptionDepartment",
+                    newValue: result.ReassignedDepartment);
             await BroadcastQueueUpdateAsync(id);
-            return Ok(step);
+            return Ok(result.StationSteps);
         }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    // POST /api/visits/{id}/finish — a NON-doctor professional finished their part (clicked "סיים" or
+    // left the medical form). Completes their nurse clinician step(s) WITHOUT discharging. A doctor
+    // finishes by signing the form (POST /forms/{id}/sign), so the Doctor role is intentionally excluded.
+    [HttpPost("{id:guid}/finish")]
+    [Authorize(Roles = "Nurse,ShiftManager,Admin,NursingStudent,LabStaff")]
+    public async Task<IActionResult> FinishNonDoctor(Guid id, [FromBody] FinishNonDoctorRequest? req = null)
+    {
+        try
+        {
+            var updated = await steps.FinishNonDoctorAsync(id, UserId, UserName, CallerRole);
+            await audit.LogAsync("CareStepNonDoctorFinished", "Visit", id, "careStep");
+            await BroadcastQueueUpdateAsync(id);
+            return Ok(updated);
+        }
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
@@ -321,9 +345,11 @@ public class VisitsController(
     public record DualDepartmentRequest([param: Required, StringLength(100)] string SecondaryDepartment);
 
     public record ReferStationRequest(
-        [param: Required, StringLength(100)] string Label,
+        [param: Required, MinLength(1)] List<string> Labels,
         [param: StringLength(100)] string? Department = null,
         [param: StringLength(120)] string? DeviceId = null);
+
+    public record FinishNonDoctorRequest([param: StringLength(120)] string? DeviceId = null);
 
     public record StepActionRequest(
         [param: Required, StringLength(20)] string Action,

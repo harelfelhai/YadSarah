@@ -83,7 +83,14 @@ export const visitsApi = {
   updateStep: (visitId: string, stepId: string, action: CareStepAction) =>
     api.patch<CareStep>(`/visits/${visitId}/steps/${stepId}`, { action, deviceId: getOrCreateDeviceId() }),
 
-  // Refer the patient to a station (test/consult) — creates a "waiting for [station]" step.
-  referToStation: (visitId: string, label: string, department?: string | null) =>
-    api.post<CareStep>(`/visits/${visitId}/steps`, { label, department: department ?? null }),
+  // Refer the patient to one or more stations in a single action. Regular stations create
+  // "waiting for [station]" steps; a department-station (e.g. "רופא נשים") moves the patient to that
+  // department. Returns the created station steps.
+  referToStations: (visitId: string, labels: string[], department?: string | null) =>
+    api.post<CareStep[]>(`/visits/${visitId}/steps`, { labels, department: department ?? null }),
+
+  // A non-doctor professional finished their part (clicked "סיים" or left the form): completes their
+  // nurse clinician step without discharging. Doctors finish by signing the form instead.
+  finishTreatment: (visitId: string) =>
+    api.post<Visit>(`/visits/${visitId}/finish`, { deviceId: getOrCreateDeviceId() }),
 };
