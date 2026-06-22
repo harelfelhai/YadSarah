@@ -295,6 +295,14 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
   בלבד** מסודרים לפי תדירות-רישום (נגזר מ-`GROUP BY Patients.City`; **המונה עצמו לעולם אינו נחשף**,
   רק הסדר — אגרגציה לא-PHI). אין כאן פרטי-מטופל, חיפוש-מטופל, או כתיבה. שאילתות EF פרמטריות (אין SQLi).
   ה-`/api/streets` המקורי נשאר מאחורי auth לצוות; זהו נתיב-קריאה אנונימי נפרד ומצומצם.
+- **פתרון-סתירות שדה-אחר-שדה לפני קליטה (`IntakeSubmissionService.BuildDiffs` + `IntakeReviewBoard`):**
+  ה-diff מציג כעת גם שדות ש**המטופל השאיר ריקים אך קיימים במערכת** (ולא רק סתירות-תוכן) — כדי שהקבלה
+  תוכל לשאת אותם קדימה ולא לאבד נתון קיים. נתוני-המטופל-הקיים האלה נמסרים **לאותו קהל מורשה בלבד**
+  (`Reception/ShiftManager/Admin`, שכבר רשאי לצפות/לערוך את רשומת-המטופל המלאה) — אין מחלקת-חשיפה
+  חדשה, אין דליפה לאנונימי. הבחירה-לכל-שדה והמיזוג הם **כולם בצד-לקוח** ומפיקים מילוי-מראש לאשף-הקבלה;
+  הכתיבה הסמכותית עדיין עוברת דרך `PatientsController`/`VisitsController` המאומתים על ולידציית-השרת ו-RBAC
+  שלהם. הקבלה ממילא יכולה להקליד כל ערך בטופס, ולכן "בחר ערך-מטופל מול ערך-מערכת" אינה מעניקה יכולת חדשה
+  (אין over-posting / הסלמת-הרשאה / נתיב-כתיבה חדש; ה-create הקיים נשאר מקור-האמת והוא הנרשם ל-audit).
 
 קבצים: `Domain/Entities/PatientIntakeSubmission.cs`, `Application/Services/IntakeSubmissionService.cs`,
 `Api/Dtos/PublicIntakeRequest.cs`, `Api/Controllers/{PublicIntakeController,IntakeReviewController}.cs`,
@@ -362,8 +370,18 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 - **שדות-טופס משותפים בשיוך כפול:** מדדים/אלרגיות/עבר-רפואי מוזנים פעם אחת ומשתקפים לטופס האח
   של **אותו ביקור בלבד** (`f.VisitId == form.VisitId`), רק לאחר שהקורא עבר את `FormSectionPolicy.CanEdit`
   של אותו section, ו**לא** משתקפים לטופס חתום — אין מעקף הרשאה ואין כתיבה חוצת-ביקורים.
+- **הפניה מרובת-תחנות, סיום-לא-רופא, ותחנת-מחלקה (תוך טיפול):** ההפניה (`POST /visits/{id}/steps`)
+  מקבלת **כמה תחנות** (`Labels[]`), כל אחת מאומתת מול הקטלוג הסגור (`CareStepCatalog.IsKnownReferral`)
+  — קלט whitelisted, EF פרמטרי. **תחנת-מחלקה** ("רופא נשים"/"רופא ילדים", `DepartmentStations`) מעבירה
+  את מחלקת הביקור עם provenance של **הפניה** (לא AI, לא ידני; audit `DepartmentReassignedByReferral`),
+  שומרת אות-תור, ו**מיישבת את צעדי-הקלינאי לברירת-המחדל של המחלקה החדשה** (מבטלת תפקיד שהמחלקה
+  החדשה אינה צריכה, משאירה תפקיד משותף, ומוסיפה חסר; הפניות-תחנה מפורשות אינן מושפעות). **סיום-לא-רופא**
+  (`POST /visits/{id}/finish`, `CareStepNonDoctorFinished`) פתוח לצוות **שאינו רופא** בלבד
+  (`Nurse,ShiftManager,Admin,NursingStudent,LabStaff` — Doctor חסום) ומסיים אך-ורק צעדי-**אחות**;
+  לעולם אינו משחרר ואינו נוגע בצעד-רופא — **שחרור נשאר בלעדי לחתימת רופא** (§9).
 - **תיעוד (audit):** כל פעולה נרשמת — הפניה (`CareStepReferred`), קרא/הכנס/סיים
-  (`CareStepCall`/`CareStepEnter`/`CareStepComplete`), ושיוך כפול (`DualDepartmentSet`), כולן על
+  (`CareStepCall`/`CareStepEnter`/`CareStepComplete`), שיוך כפול (`DualDepartmentSet`), סיום-לא-רופא
+  (`CareStepNonDoctorFinished`), והעברת-מחלקה-בהפניה (`DepartmentReassignedByReferral`), כולן על
   `EntityType="Visit"` עם IP.
 - **SQLi:** כל גישת-הנתונים EF (LINQ פרמטרי); אין SQL גולמי. **XSS:** הצגת הצעדים בלקוח
   (`CareStepList.tsx`) דרך React בלבד (escaping אוטומטי, ללא `dangerouslySetInnerHTML`).
