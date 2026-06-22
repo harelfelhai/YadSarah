@@ -64,7 +64,10 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
     enabled: !!user,
     staleTime: 5 * 60_000,
   });
-  const needsRoom = !!user && ws !== undefined && !ws.room;
+  // A user may skip pinning this computer to a room (e.g. a personal / off-site machine).
+  // The choice is remembered on this device so it won't prompt again.
+  const [roomSkipped, setRoomSkipped] = useState(() => localStorage.getItem('ys_ws_room_skipped') === '1');
+  const needsRoom = !!user && ws !== undefined && !ws.room && !roomSkipped;
 
   // Ensure the SignalR connection is live whenever an authenticated user is in the
   // app — not only right after login. On a page refresh the auth token persists
@@ -164,6 +167,7 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
         {needsRoom && (
           <WorkstationSetupModal
             onDone={() => queryClient.invalidateQueries({ queryKey: ['workstation-me'] })}
+            onSkip={() => { localStorage.setItem('ys_ws_room_skipped', '1'); setRoomSkipped(true); }}
           />
         )}
       </MantineAppShell.Main>
