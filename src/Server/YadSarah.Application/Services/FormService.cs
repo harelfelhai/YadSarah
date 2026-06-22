@@ -94,7 +94,10 @@ public class FormService(AppDbContext db)
         // (a patient who left without a signed form, or a manual release).
         var visit = await db.Visits.FindAsync(form.VisitId);
         if (visit is not null && visit.Status != VisitStatus.Discharged)
+        {
             visit.Status = VisitStatus.Discharged;
+            visit.DepartedAt ??= DateTime.UtcNow; // departure instant for the analytics census chart
+        }
 
         await db.SaveChangesAsync();
         return form;

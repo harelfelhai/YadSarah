@@ -47,3 +47,11 @@ export const canSign = (roles?: UserRole[]) => hasAnyRole(roles, 'Doctor');
 export const isAdmin = (roles?: UserRole[]) => hasAnyRole(roles, 'Admin');
 export const canManageUsers = (roles?: UserRole[]) => hasAnyRole(roles, 'Admin', 'ShiftManager');
 export const canEditIdentity = (roles?: UserRole[]) => hasAnyRole(roles, 'Admin', 'ShiftManager');
+// Manual discharge is a shift-manager/admin action (a doctor discharges automatically by
+// signing the form). Plain reception no longer discharges.
+export const canDischarge = (roles?: UserRole[]) => hasAnyRole(roles, 'ShiftManager', 'Admin');
+// Promoting a patient into the special ("S") queue is a shift-manager/admin override.
+export const canPrioritizeQueue = (roles?: UserRole[]) => hasAnyRole(roles, 'ShiftManager', 'Admin');
+// Overriding the AI/reception department routing is a clinical-professional call — any
+// non-reception clinical staff, never plain reception (mirrors the server's role gate).
+export const canReassignDepartment = (roles?: UserRole[]) => isClinicalStaff(roles);

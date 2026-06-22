@@ -299,3 +299,29 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 `Api/Dtos/PublicIntakeRequest.cs`, `Api/Controllers/{PublicIntakeController,IntakeReviewController}.cs`,
 `Api/Program.cs` (מדיניות `publicIntake`), `Client/src/features/intake/PublicIntakePage.tsx`,
 `Client/src/features/reception/{IntakeReviewBoard,IntakeQrButton}.tsx`, `Client/src/api/intake.ts`.
+
+## 17. ניתוח נתונים למנהל (Analytics)
+
+טאב **"ניתוח נתונים"** למנהלים: גרפים תפעוליים על-פני ציר הזמן (מטופלים לפי יום-בשבוע, הגעות
+לפי חצי-שעה, ונוכחות בו-זמנית לפי חצי-שעה) לזיהוי עומסים וצווארי בקבוק. נוסף שדה `Visit.DepartedAt`
+(חותמת עזיבה) כבסיס לגרף הנוכחות.
+
+- **הרשאות (need-to-know):** `GET /api/analytics/overview` מוגן ב-`[Authorize(Roles="Admin,ShiftManager")]`
+  — מנהלים בלבד (אומת: ללא token → `401`). ה-route `/analytics` והקישור בניווט מגודרים ב-
+  `RequireRole(ShiftManager/Admin)` כ**שיקוף-לקוח**; השרת הוא גבול-האמון.
+- **אי-חשיפת PHI:** התשובה היא **אך ורק נתון מצרפי** (ספירות/ממוצעים לכל יום-בשבוע ולכל תא חצי-שעה).
+  אין שמות, ת"ז, טקסט-חופשי או כל מזהה-מטופל — חשיפה נמוכה אף מלוח המשמרת (§14, שחושף שמות).
+  למרות זאת, כל צפייה **נרשמת ל-audit** (`Viewed`, `Analytics`, שדה `overview`).
+- **בקרת קלט + הגנת-עומס:** `from`/`to` כ-`DateOnly?` (קלט פגום → `400` ע"י model-binding); הטווח
+  **חסום ל-366 יום** (`MaxRangeDays`) כדי שקלט שנוצר-ידנית לא ימשוך נפח בלתי-חסום לזיכרון. האגרגציה
+  רצה בזיכרון בשעון ישראל — ללא קריאות-חוץ.
+- **מניעת over-posting:** ה-endpoint הוא GET קריאה-בלבד; השדה החדש `DepartedAt` נקבע **בשרת בלבד**
+  (`VisitService.UpdateStatusAsync` / `FormService` במעבר ל-`Discharged`), **אינו** מועתק ב-
+  `VisitService.UpdateAsync` ו**אינו** מופיע ב-DTO כלשהו → הלקוח אינו יכול לקבוע/לזייף אותו. זהו
+  חותמת-זמן לא-PHI. רשומות legacy שהן `Discharged` ללא חותמת-עזיבה אינן נספרות בגרף הנוכחות
+  (זמן-יציאה לא-ידוע) ולא נמרחות על הציר.
+- **SQLi:** כל גישת-הנתונים EF (LINQ פרמטרי) — אין SQL גולמי.
+
+קבצים: `Domain/Entities/Visit.cs` (`DepartedAt`), `Application/Services/AnalyticsService.cs`,
+`Api/Controllers/AnalyticsController.cs`, `Api/Program.cs` (רישום DI), `Client/src/features/analytics/AnalyticsPage.tsx`,
+`Client/src/api/analytics.ts`, `Client/src/App.tsx` + `layout/AppShell.tsx` (route+ניווט מגודרים).

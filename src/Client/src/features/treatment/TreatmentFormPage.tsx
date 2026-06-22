@@ -21,6 +21,7 @@ import { useAuthStore } from '../../store/auth';
 import { newId } from '../../utils/id';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
 import { hasAnyRole } from '../../constants/roles';
+import { queueLabel } from '../../constants/departments';
 import {
   joinForm, leaveForm, onLockAcquired, onLockReleased,
   onFormSectionUpdated, onPresenceUpdate, onFormSigned, onFormAddendaChanged,
@@ -326,7 +327,7 @@ export default function TreatmentFormPage() {
             </Box>
             <Box>
               <Text size="xs" c="dimmed">מס׳ תור</Text>
-              <Text fw={600}>{visit?.queueNumber ?? '—'}</Text>
+              <Text fw={600}>{visit ? queueLabel(visit.queueLetter, visit.queueNumber) : '—'}</Text>
             </Box>
             <Box>
               <Text size="xs" c="dimmed">ת.ז</Text>
@@ -677,7 +678,7 @@ function printForm(form: MedicalForm, visit: import('../../types').Visit) {
     <div class="meta">
       <span>מטופל: <b>${esc(patientName)}</b></span>
       <span>ת.ז: ${esc(visit.patient?.identityNumber)}</span>
-      <span>מס׳ תור: ${esc(visit.queueNumber)}</span>
+      <span>מס׳ תור: ${esc(queueLabel(visit.queueLetter, visit.queueNumber))}</span>
       <span>תאריך: ${esc(visit.admissionDate)} ${esc(visit.admissionTime)}</span>
     </div>
   </div>`);

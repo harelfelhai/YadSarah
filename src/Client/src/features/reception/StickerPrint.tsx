@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Button, Group, Stack, Title, Text, Paper, Divider, Box } from '@mantine/core';
 import { IconPrinter, IconArrowLeft, IconUserPlus } from '@tabler/icons-react';
+import { queueLabel } from '../../constants/departments';
+import Barcode from '../../components/Barcode';
 import type { Patient, Visit } from '../../types';
 
 interface Props {
@@ -26,7 +28,9 @@ function formatTime(t?: string): string {
 export default function StickerPrint({ patient, visit, onContinue, onAdmitAnother }: Props) {
   const printRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const autoPrinted = useRef(false);
+  // Tracks which created-visit we've already auto-printed for, so the dialog opens
+  // exactly once per admission (and never re-opens on an incidental re-render).
+  const printedVisitId = useRef<string | null>(null);
 
   // Print via a hidden iframe (not window.open) so it can also be triggered
   // automatically on mount without being blocked as a pop-up.
@@ -65,20 +69,27 @@ export default function StickerPrint({ patient, visit, onContinue, onAdmitAnothe
     frameRef.current?.contentWindow?.print();
   };
 
-  // Auto-open the print dialog once, when the sticker screen appears.
+  // Auto-open the print dialog exactly once, only after the sticker screen for a
+  // COMPLETED admission is mounted and painted. This screen renders only once a visit
+  // has been created (the reception wizard gates it behind createdVisit), so the dialog
+  // can never appear mid-wizard. Keyed to the created visit's id + guarded by a ref so it
+  // fires once per admission and survives React StrictMode's dev mount→unmount→remount
+  // (we deliberately don't cancel on cleanup, so the dialog isn't swallowed in dev). Two
+  // animation frames ensure the sticker DOM is painted before it's copied into the print
+  // iframe — deterministic, instead of a fragile fixed delay that could fire too early.
   useEffect(() => {
-    if (autoPrinted.current) return;
-    autoPrinted.current = true;
-    const t = setTimeout(handlePrint, 500);
-    return () => clearTimeout(t);
+    if (!visit.id || printedVisitId.current === visit.id) return;
+    printedVisitId.current = visit.id;
+    requestAnimationFrame(() => requestAnimationFrame(handlePrint));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [visit.id]);
 
   const admissionTime = formatTime(visit.admissionTime);
   const admissionDate = formatDate(visit.admissionDate);
   const birthDate = formatDate(patient.birthDate);
   const patientName = `${patient.lastName} ${patient.firstName}`;
   const genderInitial = patient.gender ?? '';
+  const queue = queueLabel(visit.queueLetter, visit.queueNumber);
 
   return (
     <Stack gap="md" p="md">
@@ -117,8 +128,9 @@ export default function StickerPrint({ patient, visit, onContinue, onAdmitAnothe
         <Paper withBorder p="md" mb="md" style={{ width: 320, textAlign: 'center' }}>
           <Text fw={700} size="xl">{patientName}</Text>
           <Text style={{ fontSize: 96, fontWeight: 900, lineHeight: 1 }}>
-            {visit.queueNumber}
+            {queue}
           </Text>
+          <Barcode value={visit.id} height="14mm" style={{ marginTop: 8 }} />
         </Paper>
 
         <Divider mb="md" label="מדבקות קטנות" />
@@ -142,7 +154,7 @@ export default function StickerPrint({ patient, visit, onContinue, onAdmitAnothe
               <Text size="xs" fw={700}>מלר"ד יד שרה&nbsp;&nbsp;{admissionTime}</Text>
               <Text size="xs">{admissionDate}</Text>
               <Text size="xs">
-                מ.אשפוז: {visit.queueNumber}&nbsp;&nbsp;{patientName} {genderInitial}
+                מ.אשפוז: {queue}&nbsp;&nbsp;{patientName} {genderInitial}
               </Text>
               {patient.fatherName && (
                 <Text size="xs">שם האב: {patient.fatherName}</Text>
@@ -156,6 +168,7 @@ export default function StickerPrint({ patient, visit, onContinue, onAdmitAnothe
               >
                 {patient.identityNumber ?? ''}
               </Text>
+              <Barcode value={visit.id} height="9mm" style={{ marginTop: 2 }} />
             </Paper>
           ))}
         </Box>

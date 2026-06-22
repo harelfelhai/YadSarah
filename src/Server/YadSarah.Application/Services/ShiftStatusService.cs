@@ -9,7 +9,7 @@ public record RoomStatus(
     Guid WorkstationId, string Room,
     Guid? UserId, string? UserName, string? UserRole,
     bool Occupied, bool Busy,
-    int? PatientQueueNumber, string? PatientName);
+    int? PatientQueueNumber, string? PatientQueueLetter, string? PatientName);
 
 /// <summary>One worker who logged in during the current shift, with their live busy state.</summary>
 public record ShiftWorker(
@@ -60,7 +60,7 @@ public class ShiftStatusService(AppDbContext db, SettingsService settings)
                 occupied ? w.CurrentUserName : null,
                 occupied ? w.CurrentUserRole?.ToString() : null,
                 occupied, Busy: visit is not null,
-                visit?.QueueNumber, visit is null ? null : PatientName(visit));
+                visit?.QueueNumber, visit?.QueueLetter, visit is null ? null : PatientName(visit));
         }).ToList();
 
         // ── On-shift roster ─────────────────────────────────────────────────

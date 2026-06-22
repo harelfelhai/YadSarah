@@ -4,6 +4,7 @@ import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
+import '@mantine/charts/styles.css';
 import { theme } from './theme';
 import { useAuthStore } from './store/auth';
 import { hasAnyRole, isClinicalStaff } from './constants/roles';
@@ -17,6 +18,7 @@ import TreatmentFormPage from './features/treatment/TreatmentFormPage';
 import VisitSummaryPage from './features/treatment/VisitSummaryPage';
 import AdminPage from './features/admin/AdminPage';
 import ShiftStatusPage from './features/shift/ShiftStatusPage';
+import AnalyticsPage from './features/analytics/AnalyticsPage';
 import SettingsPage from './features/admin/SettingsPage';
 import AuditPage from './features/admin/AuditPage';
 import FeedbackPage from './features/admin/FeedbackPage';
@@ -66,13 +68,14 @@ export default function App() {
                     <Routes>
                       <Route path="/queue" element={<QueuePage />} />
                       <Route path="/reception" element={<RequireRole roles={['Reception', 'ShiftManager', 'Admin']}><ReceptionDeskPage /></RequireRole>} />
-                      <Route path="/reception/discharge/:visitId" element={<RequireRole roles={['Reception', 'ShiftManager', 'Admin']}><DischargePage /></RequireRole>} />
+                      <Route path="/reception/discharge/:visitId" element={<RequireRole roles={['ShiftManager', 'Admin']}><DischargePage /></RequireRole>} />
                       <Route path="/reception/new" element={<Navigate to="/reception" replace />} />
                       <Route path="/visits/:visitId" element={<TreatmentFormPage />} />
                       <Route path="/visits/:visitId/summary" element={<VisitSummaryPage />} />
                       <Route path="/history" element={<HistoryPage />} />
                       <Route path="/admin/users" element={<AdminPage />} />
                       <Route path="/shift-status" element={<ShiftStatusPage />} />
+                      <Route path="/analytics" element={<RequireRole roles={['ShiftManager', 'Admin']}><AnalyticsPage /></RequireRole>} />
                       <Route path="/admin/settings" element={<SettingsPage />} />
                       <Route path="/admin/audit" element={<AuditPage />} />
                       <Route path="/admin/feedback" element={<FeedbackPage />} />

@@ -28,7 +28,7 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? "Israel Standard Time" : "Asia/Jerusalem");
     private static DateTime IsraelNow() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, IsraelTz);
 
-    public static readonly string[] Departments = ["רפואה דחופה", "ילדים", "נשים"];
+    public static readonly string[] DemoDepartments = ["רפואה דחופה", "ילדים", "נשים"];
 
     // ── Hebrew name & locale pools ──────────────────────────────────────────
     private static readonly string[] MaleNames =
@@ -148,11 +148,13 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             visitsLeft--;
         }
 
-        // 4) Per-day running queue numbers for the historical visits.
-        foreach (var dayGroup in visits.GroupBy(v => v.AdmissionDate))
+        // 4) Per-(day, department-letter) running queue numbers for the historical visits.
+        foreach (var v in visits)
+            v.QueueLetter = Departments.LetterFor(v.ReceptionDepartment);
+        foreach (var g in visits.GroupBy(v => (v.AdmissionDate, v.QueueLetter)))
         {
             int n = 1;
-            foreach (var v in dayGroup.OrderBy(v => v.AdmissionTime))
+            foreach (var v in g.OrderBy(v => v.AdmissionTime))
                 v.QueueNumber = n++;
         }
 
@@ -208,8 +210,12 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         var chosen = poolIds.OrderBy(_ => rng.Next()).Take(count).ToList();
         var patients = await db.Patients.Where(p => chosen.Contains(p.Id)).ToListAsync();
 
-        int startNumber = (await db.Visits.Where(v => v.AdmissionDate == today)
-            .MaxAsync(v => (int?)v.QueueNumber)) ?? 0;
+        // Per-letter running counters for today, seeded from any existing today's visits.
+        var startByLetter = (await db.Visits.Where(v => v.AdmissionDate == today && v.QueueLetter != null)
+            .GroupBy(v => v.QueueLetter!)
+            .Select(g => new { Letter = g.Key, Max = g.Max(v => v.QueueNumber) })
+            .ToListAsync())
+            .ToDictionary(c => c.Letter, c => c.Max);
 
         var now = IsraelNow();
         var visits = new List<Visit>();
@@ -217,7 +223,11 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         int idx = 0;
         foreach (var p in patients)
         {
-            var dept = Departments[rng.Next(Departments.Length)];
+            var dept = DemoDepartments[rng.Next(DemoDepartments.Length)];
+            var letter = Departments.LetterFor(dept);
+            startByLetter.TryGetValue(letter, out var last);
+            var queueNumber = last + 1;
+            startByLetter[letter] = queueNumber;
             // Arrivals spread across the last ~6 hours, in arrival order.
             var minutesAgo = (patients.Count - idx) * rng.Next(3, 9);
             var arrival = now.AddMinutes(-minutesAgo);
@@ -226,7 +236,8 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             var visit = new Visit
             {
                 PatientId = p.Id,
-                QueueNumber = ++startNumber,
+                QueueNumber = queueNumber,
+                QueueLetter = letter,
                 Status = status,
                 ReceptionDepartment = dept,
                 AdmissionDate = today,
@@ -234,6 +245,11 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
                 AdmissionReason = AdmissionReasons[rng.Next(AdmissionReasons.Length)],
                 CreatedAt = arrival.ToUniversalTime(),
                 UpdatedAt = arrival.ToUniversalTime(),
+                // Already-discharged arrivals get a departure instant (between arrival and now)
+                // so today shows up on the census chart; everyone else is still "present".
+                DepartedAt = status == VisitStatus.Discharged
+                    ? arrival.AddMinutes(rng.Next(20, Math.Max(21, (int)(now - arrival).TotalMinutes))).ToUniversalTime()
+                    : null,
             };
             visits.Add(visit);
 
@@ -299,9 +315,9 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         var docFirst = new[] { "ד\"ר רון", "ד\"ר ענת", "ד\"ר יואב", "ד\"ר מירב", "ד\"ר אסף", "ד\"ר נטע" };
         var nurseFirst = new[] { "אחות חני", "אח עומר", "אחות דנה", "אח טל", "אחות שירן", "אח גיל" };
         int d = 0, nu = 0;
-        for (int depi = 0; depi < Departments.Length; depi++)
+        for (int depi = 0; depi < DemoDepartments.Length; depi++)
         {
-            var dept = Departments[depi];
+            var dept = DemoDepartments[depi];
             Add($"doc{depi * 2 + 1}", UserRole.Doctor, dept, docFirst[d], LastNames[d * 3 % LastNames.Length]); d++;
             Add($"doc{depi * 2 + 2}", UserRole.Doctor, dept, docFirst[d], LastNames[d * 3 % LastNames.Length]); d++;
             Add($"nurse{depi * 2 + 1}", UserRole.Nurse, dept, nurseFirst[nu], LastNames[nu * 5 % LastNames.Length]); nu++;
@@ -353,6 +369,10 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         var time = new TimeOnly(rng.Next(7, 23), rng.Next(0, 60));
         var status = rng.Next(100) < 85 ? VisitStatus.Discharged : VisitStatus.FinishedTreatment;
         var dt = date.ToDateTime(time);
+        // All historical visits have ended → give them a realistic length-of-stay so the
+        // analytics census chart has data. (Right-skewed: most short, a few long.)
+        var lengthOfStayMin = 25 + rng.Next(0, 60) + rng.Next(0, 160);
+        var departed = dt.AddMinutes(lengthOfStayMin);
 
         var visit = new Visit
         {
@@ -363,7 +383,8 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             AdmissionTime = time,
             AdmissionReason = AdmissionReasons[rng.Next(AdmissionReasons.Length)],
             CreatedAt = dt.ToUniversalTime(),
-            UpdatedAt = dt.ToUniversalTime(),
+            UpdatedAt = departed.ToUniversalTime(),
+            DepartedAt = departed.ToUniversalTime(),
         };
         visits.Add(visit);
         forms.Add(BuildForm(visit, dept, dt, rng, drugs, doctorsByDept, nursesByDept, signed: true));

@@ -12,8 +12,9 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { useAuthStore } from '../../store/auth';
-import { isReceptionStaff } from '../../constants/roles';
+import { canDischarge } from '../../constants/roles';
 import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
+import { queueLabel } from '../../constants/departments';
 
 export default function DischargePage() {
   const { visitId } = useParams<{ visitId: string }>();
@@ -43,9 +44,9 @@ export default function DischargePage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [discharging, setDischarging] = useState(false);
 
-  // Clinical staff don't discharge — keep them out of the administrative surface
-  // (the server enforces this too on the status PATCH / visit PUT).
-  if (roles && !isReceptionStaff(roles)) return <Navigate to="/queue" replace />;
+  // Only shift-manager / admin discharge manually (a doctor discharges by signing).
+  // Keep everyone else out of the administrative surface (server enforces this too).
+  if (roles && !canDischarge(roles)) return <Navigate to="/queue" replace />;
 
   if (isLoading) return <Box ta="center" py="xl"><Loader /></Box>;
   if (isError || !visit) {
@@ -126,7 +127,7 @@ export default function DischargePage() {
             </Box>
             <Box>
               <Text size="xs" c="dimmed">מס׳ תור</Text>
-              <Text fw={600} style={{ fontVariantNumeric: 'tabular-nums' }}>{visit.queueNumber}</Text>
+              <Text fw={600} style={{ fontVariantNumeric: 'tabular-nums' }}>{queueLabel(visit.queueLetter, visit.queueNumber)}</Text>
             </Box>
             <Box>
               <Text size="xs" c="dimmed">מחלקה</Text>
@@ -209,7 +210,7 @@ export default function DischargePage() {
       <Modal opened={confirmOpen} onClose={() => setConfirmOpen(false)} title="שחרור מטופל" centered>
         <Stack gap="sm">
           <Text size="sm">
-            לשחרר את {fullName} (מס׳ תור {visit.queueNumber})? המטופל יוסר מהתור הפעיל.
+            לשחרר את {fullName} (מס׳ תור {queueLabel(visit.queueLetter, visit.queueNumber)})? המטופל יוסר מהתור הפעיל.
           </Text>
           <Group justify="flex-end">
             <Button variant="subtle" color="slate" onClick={() => setConfirmOpen(false)}>ביטול</Button>

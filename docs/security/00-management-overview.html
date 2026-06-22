@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>אבטחת המידע במערכת יד שרה — סקירה להנהלה</title>
+<style>
+  :root{
+    --bg:#eef2f6; --card:#ffffff; --ink:#1f2a37; --muted:#5b6b7d;
+    --teal:#0e7c86; --teal-dark:#0a5b63; --teal-soft:#e6f4f5;
+    --green:#1f9d57; --green-soft:#e7f6ee;
+    --amber:#c47d09; --amber-soft:#fdf3e0;
+    --blue:#2563a8; --blue-soft:#e8f0fb;
+    --line:#dde4ec; --shadow:0 2px 14px rgba(20,40,60,.07);
+  }
+  *{box-sizing:border-box}
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Segoe UI","Assistant",Tahoma,Arial,sans-serif;
+    font-size:17px; line-height:1.7;
+  }
+  .wrap{max-width:980px; margin:0 auto; padding:0 20px 64px;}
+
+  /* ── Hero ─────────────────────────────────────────── */
+  header.hero{
+    background:linear-gradient(135deg,var(--teal) 0%,var(--teal-dark) 100%);
+    color:#fff; padding:46px 20px 40px; text-align:center;
+  }
+  .hero h1{margin:0 0 6px; font-size:30px; font-weight:700; letter-spacing:.2px}
+  .hero .sub{font-size:18px; opacity:.92; margin:0 auto; max-width:680px}
+  .hero .meta{margin-top:16px; font-size:14px; opacity:.8}
+  .shield{font-size:40px; line-height:1; margin-bottom:8px}
+
+  /* ── Scorecard ────────────────────────────────────── */
+  .scorecard{
+    display:flex; flex-wrap:wrap; gap:16px; justify-content:center;
+    margin:-28px auto 8px; max-width:880px; position:relative; z-index:2;
+  }
+  .score{
+    background:var(--card); border-radius:14px; box-shadow:var(--shadow);
+    padding:18px 22px; text-align:center; flex:1 1 200px; min-width:200px;
+    border-top:4px solid var(--teal);
+  }
+  .score .num{font-size:34px; font-weight:800; line-height:1; color:var(--teal-dark)}
+  .score.amber{border-top-color:var(--amber)} .score.amber .num{color:var(--amber)}
+  .score.green{border-top-color:var(--green)} .score.green .num{color:var(--green)}
+  .score .lbl{font-size:14px; color:var(--muted); margin-top:6px}
+
+  /* ── Generic blocks ───────────────────────────────── */
+  .lead{
+    background:var(--card); border-radius:14px; box-shadow:var(--shadow);
+    padding:24px 26px; margin:24px 0; border-right:5px solid var(--teal);
+  }
+  .lead p{margin:.5em 0}
+  h2.section{
+    font-size:23px; margin:40px 0 6px; display:flex; align-items:center; gap:12px;
+  }
+  h2.section .ic{
+    background:var(--teal-soft); color:var(--teal-dark); width:42px; height:42px;
+    border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
+    font-size:22px; flex:none;
+  }
+  .section-note{color:var(--muted); margin:0 0 14px 54px; font-size:15.5px}
+
+  /* ── Requirement cards ────────────────────────────── */
+  .card{
+    background:var(--card); border-radius:14px; box-shadow:var(--shadow);
+    padding:20px 22px; margin:14px 0; border-right:5px solid var(--blue);
+  }
+  .card.ok{border-right-color:var(--green)}
+  .card.deploy{border-right-color:var(--amber)}
+  .card h3{margin:0 0 4px; font-size:18.5px; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  .pill{
+    font-size:12.5px; font-weight:700; padding:3px 11px; border-radius:999px;
+    white-space:nowrap;
+  }
+  .pill.ok{background:var(--green-soft); color:var(--green)}
+  .pill.deploy{background:var(--amber-soft); color:var(--amber)}
+  .pill.comp{background:var(--blue-soft); color:var(--blue)}
+  .law{color:var(--muted); font-size:14.5px; margin:2px 0 12px}
+  .law b{color:var(--ink)}
+  .rows{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+  @media(max-width:680px){ .rows{grid-template-columns:1fr} }
+  .rowbox{background:#f7fafc; border:1px solid var(--line); border-radius:10px; padding:12px 14px}
+  .rowbox .t{font-size:13px; font-weight:700; color:var(--muted); text-transform:none; margin-bottom:4px; display:flex; align-items:center; gap:6px}
+  .rowbox.mean .t{color:var(--blue)}
+  .rowbox.do .t{color:var(--green)}
+  .rowbox p{margin:0; font-size:15.5px}
+
+  /* ── Pending / deployment ─────────────────────────── */
+  .pending{
+    background:var(--amber-soft); border:1px solid #f0d9a8; border-radius:14px;
+    padding:22px 24px; margin:18px 0;
+  }
+  .pending h3{margin:0 0 10px; color:var(--amber)}
+  .pending ul{margin:0; padding-inline-start:22px}
+  .pending li{margin:9px 0}
+  .pending li b{color:var(--ink)}
+
+  .residual{background:var(--card); border-radius:14px; box-shadow:var(--shadow); padding:20px 24px; margin:16px 0}
+  .residual table{width:100%; border-collapse:collapse; font-size:15px}
+  .residual td{padding:10px 8px; border-bottom:1px solid var(--line); vertical-align:top}
+  .residual tr:last-child td{border-bottom:none}
+  .residual td.k{font-weight:600; width:38%}
+
+  .bottom{
+    background:linear-gradient(135deg,var(--green) 0%,#157a43 100%); color:#fff;
+    border-radius:16px; padding:28px 30px; margin:34px 0 0; box-shadow:var(--shadow);
+  }
+  .bottom h2{margin:0 0 8px; font-size:24px}
+  .bottom p{margin:.4em 0; opacity:.96}
+
+  .legend{display:flex; flex-wrap:wrap; gap:10px 22px; margin:18px 0 4px; font-size:14.5px; color:var(--muted)}
+  .legend span{display:inline-flex; align-items:center; gap:7px}
+  .dot{width:13px; height:13px; border-radius:50%; display:inline-block}
+  .dot.g{background:var(--green)} .dot.a{background:var(--amber)} .dot.b{background:var(--blue)}
+
+  footer{color:var(--muted); font-size:13.5px; text-align:center; margin-top:34px; line-height:1.6}
+  .print-tip{
+    text-align:center; margin:22px 0 0;
+  }
+  .print-tip button{
+    background:var(--teal); color:#fff; border:none; border-radius:10px;
+    padding:11px 22px; font-size:15px; font-weight:600; cursor:pointer;
+    font-family:inherit;
+  }
+  .print-tip button:hover{background:var(--teal-dark)}
+
+  @media print{
+    body{background:#fff; font-size:13px}
+    .print-tip{display:none}
+    .card,.lead,.pending,.residual,.score{box-shadow:none; border:1px solid var(--line)}
+    .card,.pending,.lead{break-inside:avoid}
+    header.hero{padding:26px 10px}
+    .bottom{background:#157a43 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
+    .pill,.dot,.score,h2.section .ic{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="shield">🛡️</div>
+  <h1>אבטחת המידע במערכת יד שרה</h1>
+  <p class="sub">סקירה להנהלה — מה דורש החוק, מה זה אומר בפשטות, ואיך התוכנה עומדת בכך</p>
+  <div class="meta">רפואה דחופה · מידע רפואי אישי (PHI) · מבוסס על תקנות הגנת הפרטיות (אבטחת מידע), התשע״ז־2017 — רמת אבטחה גבוהה · עודכן 18 ביוני 2026</div>
+</header>
+
+<div class="wrap">
+
+  <div class="scorecard">
+    <div class="score green"><div class="num">14</div><div class="lbl">בקרות ליבה ממומשות במלואן בתוכנה</div></div>
+    <div class="score amber"><div class="num">4</div><div class="lbl">דרישות תשתית להשלמה בעת ההתקנה</div></div>
+    <div class="score"><div class="num">15/15</div><div class="lbl">בדיקות חדירה שעברו בהצלחה</div></div>
+  </div>
+
+  <div class="lead">
+    <p><b>מה המערכת מחזיקה.</b> המערכת מנהלת מידע רפואי אישי על מטופלים — אבחנות, תרופות, מדדים, היסטוריה רפואית — לצד פרטים מזהים (ת״ז, שם, תאריך לידה). על פי החוק זהו <b>״מידע בעל רגישות מיוחדת״</b>, והמאגר מסווג ברמת האבטחה <b>הגבוהה ביותר</b> שקבועה בתקנות.</p>
+    <p><b>מה המסמך הזה אומר.</b> בנינו את המערכת כדי לעמוד ברמה זו. למטה מפורטות דרישות החוק המרכזיות — כל אחת מוסברת בשפה יומיומית, ולצידה מה התוכנה עושה בפועל כדי לקיים אותה. בסוף מופיע בכנות גם <b>מה עדיין צריך להשלים</b> בשלב ההתקנה בארגון, לפני שמכניסים למערכת נתוני מטופלים אמיתיים.</p>
+    <div class="legend">
+      <span><span class="dot g"></span> ממומש בתוכנה</span>
+      <span><span class="dot a"></span> להשלמה בעת ההתקנה בארגון</span>
+      <span><span class="dot b"></span> בקרה מפצה / החלטה מודעת</span>
+    </div>
+  </div>
+
+  <!-- ── 4 העקרונות ─────────────────────────────────── -->
+  <h2 class="section"><span class="ic">🧭</span> ארבעת עקרונות־העל</h2>
+  <p class="section-note">לפני הפרטים — אלה ארבעת היסודות שכל שאר ההגנות נשענות עליהם.</p>
+
+  <div class="card ok">
+    <div class="rows">
+      <div class="rowbox mean">
+        <div class="t">🔌 ניתוק מהאינטרנט (On-Prem)</div>
+        <p>כל המידע והעיבוד נשארים ברשת הפנימית של הארגון. אין יציאה ל״ענן״ בנתיב הרפואי. כך משטח התקיפה מבחוץ קטֵן דרמטית — אין דרך להגיע למידע דרך האינטרנט.</p>
+      </div>
+      <div class="rowbox do">
+        <div class="t">🔑 צורך לדעת (Need-to-Know)</div>
+        <p>כל עובד רואה רק את מה שתפקידו מצריך. פקיד קבלה רואה פרטים מנהליים ולא תוכן רפואי; רק צוות קליני נכנס לתיק הרפואי.</p>
+      </div>
+      <div class="rowbox mean">
+        <div class="t">🧱 הגנה לעומק</div>
+        <p>אין הסתמכות על מחסום יחיד. אותו כלל נאכף בכמה שכבות — רשת, שרת, ומסד הנתונים — כך שכשל בשכבה אחת אינו חושף את המידע.</p>
+      </div>
+      <div class="rowbox do">
+        <div class="t">📝 אחריותיות (Accountability)</div>
+        <p>כל גישה ושינוי במידע רפואי נרשמים ביומן שלא ניתן לערוך — מי עשה, מה, מתי ומאיזו עמדה.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 1. זהות וכניסה ─────────────────────────────── -->
+  <h2 class="section"><span class="ic">🔐</span> מי נכנס למערכת — וכמה קשה להתחזות</h2>
+  <p class="section-note">החוק דורש שכל משתמש יזוהה באופן ייחודי, עם סיסמאות חזקות והגנה מפני ניחוש.</p>
+
+  <div class="card ok">
+    <h3>זיהוי אישי וסיסמה חזקה <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> לכל משתמש חשבון אישי ונפרד, עם אמצעי הזדהות חזק.</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>אין חשבונות משותפים. לכל עובד שם משתמש משלו, וכל פעולה ניתנת לייחוס לאדם ספציפי. הסיסמה חייבת להיות קשה לניחוש.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>נדרשת סיסמה של 12 תווים לפחות, עם אות גדולה, אות קטנה, ספרה ותו מיוחד. הסיסמה נשמרת ב״טשטוש״ חד־כיווני (BCrypt) — גם מי שמציץ במסד הנתונים אינו יכול לקרוא אותה.</p></div>
+    </div>
+  </div>
+
+  <div class="card ok">
+    <h3>נעילת חשבון והגנה מפני ניחוש סיסמה <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> חסימה לאחר ניסיונות כושלים, והגנה מפני תקיפת ״כוח גס״ (ניחוש אוטומטי).</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>תוקף שמנסה לנחש סיסמה שוב ושוב נחסם מהר מאוד — בדיוק כמו כספומט שנועל את הכרטיס אחרי כמה ניסיונות.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>אחרי 5 ניסיונות כושלים החשבון ננעל ל־15 דקות (מנהל יכול לשחרר מיד). בנוסף, המערכת מגבילה את קצב ניסיונות הכניסה מאותו מחשב — כך שניחוש המוני בלתי אפשרי.</p></div>
+    </div>
+  </div>
+
+  <div class="card ok">
+    <h3>אישור חוזר בעת חתימה על מסמך רפואי <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה (תקן רפואי מקובל, ברוח 21 CFR Part 11):</b> חתימה אלקטרונית חייבת להיות מיוחסת ודאית לחותם.</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>כשרופא חותם על תיק — אקט עם משמעות משפטית — לא מספיק שהוא ״מחובר״. הוא מקליד שוב את שם המשתמש והסיסמה שלו ברגע החתימה, כדי לוודא שזה באמת הוא ולא מישהו שמצא מסך פתוח.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>בעת חתימה (וגם בעת תוספת לתיק) המערכת דורשת הזדהות מחדש, ומוודאת שהפרטים תואמים בדיוק למשתמש המחובר. כך החתימה לעולם אינה מיוחסת לאדם הלא־נכון.</p></div>
+    </div>
+  </div>
+
+  <!-- ── 2. מי רואה מה ───────────────────────────────── -->
+  <h2 class="section"><span class="ic">👁️</span> מי רואה מה — הרשאות לפי תפקיד</h2>
+  <p class="section-note">הלב של ההגנה על הפרטיות: לא כל עובד רשאי לראות הכול.</p>
+
+  <div class="card ok">
+    <h3>הפרדה בין מידע מנהלי לתוכן רפואי <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> גישה למידע רפואי רק לבעלי תפקיד שזקוקים לו (need-to-know).</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>פקיד הקבלה צריך שם ות״ז כדי לקלוט מטופל — אבל אין לו שום סיבה לראות אבחנות או טיפול. לכן הוא פשוט לא יכול.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>התיק הרפואי חסום לקבלה — בשרת, ולא רק במסך. גם בעדכונים החיים (״בזמן אמת״) קבלה אינה מקבלת תוכן רפואי. ההגבלה נאכפת בשרת, כך שאי אפשר לעקוף אותה מהדפדפן.</p></div>
+    </div>
+  </div>
+
+  <div class="card ok">
+    <h3>כל תפקיד והפעולות שלו <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> הרשאות מינימליות לכל תפקיד, ומניעת ״הסלמת הרשאות״.</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>לכל תפקיד גבולות ברורים: רק רופא חותם וסוגר טיפול; שחרור מטופל שמור לקבלה/מנהל; פתיחת חשבונות חדשים והגדרות מערכת — רק למנהל־על. אף תפקיד אינו יכול ״לקדם את עצמו״.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>כל פעולה נבדקת מול תפקיד המשתמש בשרת. למשל: מנהל־משמרת מנוע מלערוך חשבון מנהל־על או להעניק הרשאת מנהל; סיום טיפול מושג אך ורק דרך חתימה, ולא דרך ״קיצור דרך״.</p></div>
+    </div>
+  </div>
+
+  <!-- ── 3. תיעוד ─────────────────────────────────────── -->
+  <h2 class="section"><span class="ic">📋</span> מעקב ואחריותיות — יומן שאי אפשר לשנות</h2>
+  <p class="section-note">אם משהו קורה, חייבים לדעת מי, מה ומתי — בלי אפשרות ״לטשטש עקבות״.</p>
+
+  <div class="card ok">
+    <h3>יומן ביקורת על כל גישה למידע רפואי <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> תיעוד גישה ואירועים, ושמירתו מפני שינוי.</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>כמו מצלמות אבטחה לנתונים: כל צפייה, עריכה, חתימה, כניסה וכישלון־כניסה נרשמים — מי, מה, מתי, ומאיזו כתובת. היומן ניתן לצפייה למנהל בלבד, ואי אפשר למחוק או לערוך אותו דרך המערכת.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>שירות ייעודי כותב כל פעולה רגישה ליומן. למערכת אין כלל אפשרות לעריכה או מחיקה של רשומות יומן — היא יכולה רק להוסיף (״append-only״).</p></div>
+    </div>
+  </div>
+
+  <!-- ── 4. שלמות הרשומה ─────────────────────────────── -->
+  <h2 class="section"><span class="ic">✍️</span> שלמות הרשומה הרפואית</h2>
+  <p class="section-note">רשומה רפואית חתומה היא מסמך משפטי — אסור שתשתנה ״בשקט״ בדיעבד.</p>
+
+  <div class="card ok">
+    <h3>חתימה, נעילה ותוספות מתועדות <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק/תקן:</b> שמירה על שלמות הרשומה ואי־התכחשות (non-repudiation).</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>ברגע שרופא חותם, התיק ננעל. אם צריך לתקן או להוסיף משהו אחר־כך — זה נעשה כ״תוספת״ נפרדת וחתומה בנפרד, ולא בעריכה שקטה של הטקסט המקורי. ההיסטוריה תמיד נשמרת.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>טופס חתום ננעל לעריכה (חלון תיקון קצר ומבוקר למנהל בלבד). כל הוספה לאחר חתימה היא ״תוספת״ נפרדת, עם חתימה ואישור־חוזר משלה. כך נשמרת שרשרת מלאה של מי כתב מה ומתי.</p></div>
+    </div>
+  </div>
+
+  <!-- ── 5. הגנה על הנתונים עצמם ─────────────────────── -->
+  <h2 class="section"><span class="ic">🧪</span> הגנה על הנתונים עצמם</h2>
+  <p class="section-note">הגנות טכניות שמונעות פריצה, שיבוש או דליפה דרך המערכת.</p>
+
+  <div class="card ok">
+    <h3>חסימת קלט זדוני (הזרקות / SQL Injection) <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> בקרת קלט ומניעת תקיפות הזרקה — פגיעות נפוצה למאגרים.</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>תקיפת ״הזרקה״ היא ניסיון להבריח פקודה זדונית בתוך שדה טקסט תמים (כמו תיבת חיפוש). המערכת בנויה כך שזה פשוט לא עובד.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>כל פנייה למסד הנתונים מתבצעת בצורה ״פרמטרית״ — הקלט מטופל תמיד כנתון ולעולם לא כפקודה. בנוסף, השרת מאמת אורך ותקינות של כל שדה ודוחה קלט חריג.</p></div>
+    </div>
+  </div>
+
+  <div class="card ok">
+    <h3>הקשחת דפדפן וטיפול בשגיאות <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> מניעת דליפת מידע טכני והקשחה מול תקיפות דפדפן.</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>גם כשמשהו משתבש, המערכת לא ״מפטפטת״ פרטים פנימיים שעוזרים לתוקף. כותרות־הגנה מיוחדות חוסמות ניסיונות נפוצים לתקוף דרך הדפדפן.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>בסביבת ייצור הודעות השגיאה ״מעוקרות״ — ללא פרטים טכניים פנימיים. כותרות אבטחה תקניות מונעות הטמעה בעמוד זר וזיהוי שקרי של סוג קובץ, והשרת אינו חושף את הטכנולוגיה שמאחוריו.</p></div>
+    </div>
+  </div>
+
+  <div class="card ok">
+    <h3>ניהול סודות ומינימום נתונים <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> שמירת סודות מחוץ לקוד, ואיסוף המידע המינימלי ההכרחי.</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>סיסמאות ומפתחות לא ״מודבקים״ בתוך הקוד, ולא נשמר מידע מעבר לנדרש. פחות מידע = פחות מה לאבד.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>קבצי הקוד אינם מכילים סודות אמיתיים (רק ״ממלאי־מקום״); הסודות מוזנים בנפרד בעת ההתקנה. נאספים רק השדות הנדרשים, ופרטים שאינם דרושים בין ביקורים אינם נשמרים.</p></div>
+    </div>
+  </div>
+
+  <!-- ── 6. On-Prem & קטלוג תרופות ───────────────────── -->
+  <h2 class="section"><span class="ic">🔌</span> עבודה ללא תלות באינטרנט</h2>
+  <p class="section-note">דרישת־יסוד של הפרויקט: הנתיב הרפואי חייב לעבוד גם בלי אינטרנט.</p>
+
+  <div class="card ok">
+    <h3>קטלוג תרופות מקומי — ללא תלות ברשת <span class="pill ok">ממומש</span></h3>
+    <p class="law"><b>הדרישה:</b> רציפות תפקודית גם בניתוק מהאינטרנט; בידוד הרכיב היחיד שנוגע לרשת חיצונית.</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>רשימת התרופות (מתוך פנקס התרופות של משרד הבריאות) שמורה אצלנו מקומית. גם אם האינטרנט נופל — הרופא ממשיך לעבוד כרגיל.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה התוכנה עושה</div><p>הקטלוג נשמר במסד הפנימי. עדכון מהאינטרנט הוא תהליך רקע נפרד, מחוץ לנתיב הקריטי — וכשל בו אינו פוגע בכלום (נשארת הרשימה האחרונה התקינה). זהו מידע ציבורי, לא מידע רפואי של מטופלים.</p></div>
+    </div>
+  </div>
+
+  <!-- ── 7. בדיקות חדירה ─────────────────────────────── -->
+  <h2 class="section"><span class="ic">🎯</span> בדיקות חדירה — ניסינו לשבור בעצמנו</h2>
+  <p class="section-note">לא להסתפק בתכנון נכון — אלא לתקוף את המערכת ולהוכיח שהיא עומדת.</p>
+
+  <div class="card ok">
+    <h3>בדיקת חדירה מתועדת — 15/15 עברו <span class="pill ok">בוצע</span></h3>
+    <p class="law"><b>הדרישה בחוק:</b> בדיקות חדירות תקופתיות (לפחות אחת לשנה ולאחר שינוי מהותי).</p>
+    <div class="rows">
+      <div class="rowbox mean"><div class="t">💬 בפשטות</div><p>שיחקנו את התוקף: ניסינו להיכנס בלי הרשאה, לקרוא מידע שאסור, לזייף הרשאות, להזריק קוד ולנחש סיסמאות בכוח. כל הניסיונות נחסמו.</p></div>
+      <div class="rowbox do"><div class="t">⚙️ מה נמצא</div><p>נסקרו 10 ממצאים ראשוניים (חלקם קריטיים) — וכולם תוקנו ואומתו מחדש ב־15 תרחישי תקיפה דינמיים. הדוח המלא שמור כקובץ נפרד. <b>יש לחזור על הבדיקה תקופתית.</b></p></div>
+    </div>
+  </div>
+
+  <!-- ── מה להשלים בפריסה ─────────────────────────────── -->
+  <h2 class="section"><span class="ic">⚠️</span> מה עדיין צריך להשלים — לפני נתוני מטופלים אמיתיים</h2>
+  <p class="section-note">החלק החשוב ביותר לקריאה. <b>התוכנה מוקשחת — אך חלק מההגנות תלוי בהתקנה בארגון</b> ואינו ניתן למימוש בקוד בלבד. כל עוד המערכת מריצה נתוני הדגמה סינתטיים זה תקין; אך אסור שתחזיק מידע רפואי אמיתי לפני שהושלמו הסעיפים הבאים.</p>
+
+  <div class="pending">
+    <h3>⚠️ דרישות תשתית להשלמה בעת ההתקנה (באחריות הארגון)</h3>
+    <ul>
+      <li><b>הצפנת התקשורת (TLS):</b> התקנת תעודת אבטחה פנימית כדי שכל התקשורת ברשת תהיה מוצפנת. במצב הנוכחי התקשורת אינה מוצפנת — מתאים להדגמה, לא למידע אמיתי.</li>
+      <li><b>הצפנת הנתונים בדיסק (Encryption at Rest):</b> הצפנת הכונן של שרת מסד הנתונים (BitLocker / הצפנת PostgreSQL), כך שגניבת דיסק פיזי לא תחשוף מידע.</li>
+      <li><b>גיבוי מוצפן + תרגול שחזור (DR):</b> נוהל גיבוי מוצפן וקבוע, כולל תרגול שחזור מתועד — כדי שלא לאבד מידע באסון.</li>
+      <li><b>הקשחה פיזית והפרדת רשת:</b> נעילת מסך אוטומטית בעמדות, בקרת גישה פיזית לחדר השרת, והפרדת הרשת הפנימית.</li>
+      <li><b>החלפת סיסמת מנהל־העל הראשונית</b> בסיסמה חזקה התואמת למדיניות, והזנת הסודות (מפתחות/חיבור) דרך הגדרות סביבה ולא קבצים.</li>
+    </ul>
+  </div>
+
+  <!-- ── סיכונים שיוריים ─────────────────────────────── -->
+  <h2 class="section"><span class="ic">⚖️</span> סיכונים שיוריים — החלטות מודעות</h2>
+  <p class="section-note">שקיפות מלאה: נקודות שבהן נבחרה הגנה ״טובה־מספיק״ במקום מושלמת, מתוך שיקול מודע המתאים לסביבה סגורה (On-Prem).</p>
+
+  <div class="residual">
+    <table>
+      <tr>
+        <td class="k">היומן ״לא ניתן לעריכה״ דרך המערכת — אך לא חסין־התעסקות מוחלט</td>
+        <td>אין כל אפשרות במערכת לערוך או למחוק רשומת יומן. עם זאת, למי שיש גישה ישירה למסד הנתונים תיאורטית יכול לגעת בו. שדרוג עתידי אפשרי: ״חתימה דיגיטלית״ על היומן שתחשוף כל נגיעה. <b>מומלץ לשקול לסביבת ייצור.</b></td>
+      </tr>
+      <tr>
+        <td class="k">אסימון הכניסה נשמר בדפדפן</td>
+        <td>החלטה מקובלת למערכת סגורה (On-Prem), מגובה בכותרות אבטחה, בתוקף קצר ובבקרת קלט. מעבר לשיטה מחמירה יותר — אפשרות עתידית.</td>
+      </tr>
+      <tr>
+        <td class="k">אין אימות דו־שלבי (MFA) ואין ביטול אסימון מיידי מהשרת</td>
+        <td>מתאים לרשת פנימית סגורה עם בקרת גישה פיזית. שדרוגים אפשריים בעתיד: MFA למנהלים, וקיצור תוקף האסימון.</td>
+      </tr>
+      <tr>
+        <td class="k">מדיניות שמירת לוגים (Retention)</td>
+        <td>יש לתעד באופן רשמי לכמה זמן נשמר יומן הביקורת, בהתאם לדרישת התקנות. <b>פעולה מנהלית קצרה להשלמה.</b></td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ── שורה תחתונה ─────────────────────────────────── -->
+  <div class="bottom">
+    <h2>השורה התחתונה</h2>
+    <p>שכבת אבטחת התוכנה <b>בנויה לרמת האבטחה הגבוהה</b> שהחוק דורש למאגר רפואי, ונבדקה בפועל — לא רק תוארה על הנייר. ההגנות המהותיות (זיהוי, הרשאות, תיעוד, שלמות הרשומה, חסימת תקיפות) ממומשות ואומתו.</p>
+    <p>נותרו <b>דרישות תשתית התלויות בהתקנה בארגון</b> (הצפנה, גיבוי, הקשחה פיזית) — אלה באחריות הארגון, ויש להשלימן לפני שהמערכת תחזיק מידע רפואי אמיתי. עד אז — המערכת מתאימה להדגמה ולנתונים סינתטיים בלבד.</p>
+  </div>
+
+  <div class="print-tip">
+    <button onclick="window.print()">🖨️ הדפסה / שמירה כ־PDF</button>
+  </div>
+
+  <footer>
+    מסמך זה הוא תקציר הנהלה בשפה פשוטה. הפירוט הטכני המלא, עם הפניות לקוד והוכחות, מצוי במסמכים:
+    <br>«דרישות אבטחת מידע» · «בקרות האבטחה שיושמו» · «דוח בדיקות חדירה» (תיקיית <code>docs/security/</code>).
+    <br>התוכן אומת מול קוד המערכת בתאריך 18 ביוני 2026.
+  </footer>
+
+</div>
+</body>
+</html>

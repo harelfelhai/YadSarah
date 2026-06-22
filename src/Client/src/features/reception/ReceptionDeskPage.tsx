@@ -5,6 +5,8 @@ import ReceptionPage from './ReceptionPage';
 import DischargeBoard from './DischargeBoard';
 import IntakeReviewBoard from './IntakeReviewBoard';
 import IntakeQrButton from './IntakeQrButton';
+import { useAuthStore } from '../../store/auth';
+import { canDischarge } from '../../constants/roles';
 
 // The reception desk owns both ends of the patient flow: admission (intake) and
 // discharge (release), plus review of patient-submitted self-service forms. Each is a
@@ -18,7 +20,10 @@ function parseTab(raw: string | null): DeskTab {
 
 export default function ReceptionDeskPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = parseTab(searchParams.get('tab'));
+  // Discharge is shift-manager/admin only — plain reception never sees that tab.
+  const showDischarge = canDischarge(useAuthStore((s) => s.user?.roles));
+  const requested = parseTab(searchParams.get('tab'));
+  const tab = requested === 'discharge' && !showDischarge ? 'admit' : requested;
 
   const setTab = (value: string | null) => {
     const next = parseTab(value);
@@ -31,7 +36,7 @@ export default function ReceptionDeskPage() {
   return (
     <Stack gap="md" p="md">
       <Group justify="space-between" align="center">
-        <Title order={3}>קבלה ושחרור</Title>
+        <Title order={3}>{showDischarge ? 'קבלה ושחרור' : 'קבלה'}</Title>
         <IntakeQrButton />
       </Group>
 
@@ -40,9 +45,11 @@ export default function ReceptionDeskPage() {
           <Tabs.Tab value="admit" leftSection={<IconUserPlus size={16} />}>
             קבלת מטופל
           </Tabs.Tab>
-          <Tabs.Tab value="discharge" leftSection={<IconLogout size={16} />}>
-            שחרור מטופל
-          </Tabs.Tab>
+          {showDischarge && (
+            <Tabs.Tab value="discharge" leftSection={<IconLogout size={16} />}>
+              שחרור מטופל
+            </Tabs.Tab>
+          )}
           <Tabs.Tab value="intake" leftSection={<IconDeviceMobileMessage size={16} />}>
             טפסים מקוונים
           </Tabs.Tab>
@@ -51,9 +58,11 @@ export default function ReceptionDeskPage() {
         <Tabs.Panel value="admit">
           <ReceptionPage />
         </Tabs.Panel>
-        <Tabs.Panel value="discharge">
-          <DischargeBoard />
-        </Tabs.Panel>
+        {showDischarge && (
+          <Tabs.Panel value="discharge">
+            <DischargeBoard />
+          </Tabs.Panel>
+        )}
         <Tabs.Panel value="intake">
           <IntakeReviewBoard />
         </Tabs.Panel>

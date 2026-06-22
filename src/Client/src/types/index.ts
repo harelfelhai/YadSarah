@@ -88,6 +88,7 @@ export interface Visit {
   patientId: string;
   patient?: Pick<Patient, 'id' | 'firstName' | 'lastName' | 'identityNumber' | 'identityType' | 'birthDate'>;
   queueNumber: number;
+  queueLetter?: string | null;
   status: VisitStatus;
   admissionDate: string;
   admissionTime: string;
@@ -97,6 +98,12 @@ export interface Visit {
   departmentAssignedByAi?: boolean;
   departmentConfidence?: number;
   departmentCandidatesJson?: string;
+  // Set when a clinical professional overrides the routed department — marks it as a
+  // professional's determination (not an AI recommendation).
+  departmentChangedByUserId?: string | null;
+  departmentChangedByName?: string | null;
+  departmentChangedByRole?: UserRole | null;
+  departmentChangedAt?: string | null;
   notes?: string;
   totalToCollect?: number;        // server-derived (read-only)
   exemptionReason?: string;
@@ -307,6 +314,7 @@ export interface RoomStatus {
   occupied: boolean;
   busy: boolean;
   patientQueueNumber?: number | null;
+  patientQueueLetter?: string | null;
   patientName?: string | null;
 }
 
@@ -331,6 +339,7 @@ export interface QueueUpdate {
   visitId: string;
   status: VisitStatus;
   queueNumber: number;
+  queueLetter?: string | null;
   treatingUserName?: string | null;
   room?: string | null;
 }
