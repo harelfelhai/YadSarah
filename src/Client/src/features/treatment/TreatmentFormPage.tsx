@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ActionIcon, Alert, Autocomplete, Badge, Box, Button, Card, Checkbox, Divider,
-  Group, Loader, Modal, NumberInput, Paper, Select, Stack, Table, Text, Textarea, TextInput,
+  Group, Loader, Modal, NumberInput, Paper, Select, SegmentedControl, Stack, Table, Text, Textarea, TextInput,
   Tooltip,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
@@ -21,7 +21,7 @@ import { useAuthStore } from '../../store/auth';
 import { newId } from '../../utils/id';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
 import { hasAnyRole } from '../../constants/roles';
-import { queueLabel } from '../../constants/departments';
+import { queueLabel, WOMENS_DEPARTMENT } from '../../constants/departments';
 import {
   joinForm, leaveForm, onLockAcquired, onLockReleased,
   onFormSectionUpdated, onPresenceUpdate, onFormSigned, onFormAddendaChanged,
@@ -72,6 +72,21 @@ function formatDateTime(iso?: string): string {
   return d.toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// The form serving a department track. A pre-dual single form has a null department, so it
+// stands in for the primary track.
+function formForDept(list: MedicalForm[], dept: string, primaryDept?: string): MedicalForm | undefined {
+  return list.find((f) => f.department === dept)
+    ?? (dept === primaryDept ? list.find((f) => !f.department) : undefined);
+}
+
+// The department tracks a visit runs: one for a single department, or two (women's first) when dual.
+function trackList(primary?: string | null, secondary?: string | null): string[] {
+  if (!primary) return [];
+  const pair = [primary, secondary].filter(Boolean) as string[];
+  if (!secondary) return pair;
+  return [...pair].sort((a, b) => (a === WOMENS_DEPARTMENT ? -1 : b === WOMENS_DEPARTMENT ? 1 : 0));
+}
+
 export default function TreatmentFormPage() {
   const { visitId } = useParams<{ visitId: string }>();
   const navigate = useNavigate();
@@ -110,20 +125,36 @@ export default function TreatmentFormPage() {
     enabled: !!visitId,
   });
 
-  // Auto-create a single shared form if the visit has none yet
+  // The department tracks this visit runs. Single department → one track; a dual women's + other
+  // visit → two, with the women's track ordered first. (Plain render-time value, not an effect dep.)
+  const tracks = trackList(visit?.receptionDepartment, visit?.secondaryDepartment);
+
+  // Ensure a form exists per track (a single-track visit gets one form, a dual visit two).
+  // A creating-set dedupes the POST while the refetch is in flight.
+  const creatingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!formsLoading && forms.length === 0 && visitId && user) {
-      formsApi.create(visitId, 'רופא ר.דחופה' as import('../../types').StationType, 'סיכום ביקור' as import('../../types').FormType)
+    if (formsLoading || !visitId || !user) return;
+    const deptTracks = trackList(visit?.receptionDepartment, visit?.secondaryDepartment);
+    if (deptTracks.length === 0) return;
+    const list = forms as unknown as MedicalForm[];
+    for (const dept of deptTracks) {
+      if (formForDept(list, dept, visit?.receptionDepartment)) continue;
+      if (creatingRef.current.has(dept)) continue;
+      creatingRef.current.add(dept);
+      formsApi.create(visitId, 'רופא ר.דחופה' as import('../../types').StationType, 'סיכום ביקור' as import('../../types').FormType, dept)
         .then(() => queryClient.invalidateQueries({ queryKey: ['forms', visitId] }))
-        .catch(() => {/* already has a form, ignore */ });
+        .catch(() => {/* already exists / race — ignore */ })
+        .finally(() => creatingRef.current.delete(dept));
     }
-  }, [formsLoading, forms.length, visitId, user, queryClient]);
+  }, [formsLoading, forms, visitId, user, visit?.receptionDepartment, visit?.secondaryDepartment, queryClient]);
 
   useEffect(() => {
     if (forms.length > 0) {
+      const list = forms as unknown as MedicalForm[];
       setActiveForm((prev) => prev
-        ? (forms as unknown as MedicalForm[]).find((f) => f.id === prev.id) ?? prev
-        : (forms[0] as unknown as MedicalForm));
+        ? (list.find((f) => f.id === prev.id) ?? prev)
+        // default to the women's track when dual, else the first form
+        : (list.find((f) => f.department === WOMENS_DEPARTMENT) ?? list[0]));
     }
   }, [forms]);
 
@@ -337,6 +368,21 @@ export default function TreatmentFormPage() {
               <Text size="xs" c="dimmed">שעת הגעה</Text>
               <Text>{visit?.admissionTime ?? '—'}</Text>
             </Box>
+            {/* Dual women's + other visit: switch between the two medical processes. */}
+            {tracks.length > 1 && (
+              <Box>
+                <Text size="xs" c="dimmed">תהליך רפואי (מחלקה)</Text>
+                <SegmentedControl
+                  size="xs"
+                  value={activeForm?.department ?? visit?.receptionDepartment ?? tracks[0]}
+                  onChange={(dept) => {
+                    const target = formForDept(forms as unknown as MedicalForm[], dept, visit?.receptionDepartment);
+                    if (target) setActiveForm(target);
+                  }}
+                  data={tracks.map((d) => ({ value: d, label: d }))}
+                />
+              </Box>
+            )}
           </Group>
           <Group gap="xs">
             {presence.map((u) => (

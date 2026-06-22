@@ -51,6 +51,8 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         visitId = f.VisitId,
         stationType = f.StationType,
         formType = f.FormType,
+        department = f.Department,
+        trackOrder = f.TrackOrder,
         version = f.Version,
         chiefComplaint = f.ChiefComplaint,
         presentIllness = f.PresentIllness,
@@ -100,6 +102,7 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
             VisitId = visitId,
             StationType = req.StationType,
             FormType = req.FormType,
+            Department = req.Department,
             CreatedByUserId = UserId,
         };
         var created = await svc.CreateAsync(form);
@@ -279,7 +282,7 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         return Ok(MapForm(form));
     }
 
-    public record CreateFormRequest(string StationType, string FormType);
+    public record CreateFormRequest(string StationType, string FormType, string? Department = null);
     public record UpdateSectionRequest(object? Data, int Version);
     public record AddAddendumRequest(string Text);
 

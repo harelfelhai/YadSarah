@@ -20,6 +20,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<FeedbackReport> FeedbackReports => Set<FeedbackReport>();
     public DbSet<Workstation> Workstations => Set<Workstation>();
     public DbSet<PatientIntakeSubmission> PatientIntakeSubmissions => Set<PatientIntakeSubmission>();
+    public DbSet<CareStep> CareSteps => Set<CareStep>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -47,6 +48,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(v => v.TreatingUserRole).HasConversion<string>();
             e.Property(v => v.AdmissionReason).HasMaxLength(200);
             e.Property(v => v.ReceptionDepartment).HasMaxLength(100);
+            e.Property(v => v.SecondaryDepartment).HasMaxLength(100);
             e.Property(v => v.QueueLetter).HasMaxLength(4);
             e.Property(v => v.DepartmentCandidatesJson).HasMaxLength(500);
             e.Property(v => v.DepartmentChangedByName).HasMaxLength(200);
@@ -66,6 +68,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasOne(f => f.Visit).WithMany(v => v.Forms).HasForeignKey(f => f.VisitId);
             e.Property(f => f.StationType).HasMaxLength(50).IsRequired();
             e.Property(f => f.FormType).HasMaxLength(50).IsRequired();
+            e.Property(f => f.Department).HasMaxLength(100);
             // Use EF row-version for optimistic concurrency backstop
             e.Property(f => f.Version).IsConcurrencyToken();
         });
@@ -167,6 +170,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(w => w.RoomName).HasMaxLength(60).IsRequired();
             // Store role as its string name, consistent with User.Role / Visit.TreatingUserRole
             e.Property(w => w.CurrentUserRole).HasConversion<string>();
+        });
+
+        // CareStep — one parallel dimension of a visit's live status (waiting-for / present-at)
+        b.Entity<CareStep>(e =>
+        {
+            e.HasKey(s => s.Id);
+            e.HasOne(s => s.Visit).WithMany(v => v.CareSteps).HasForeignKey(s => s.VisitId);
+            e.Property(s => s.Category).HasConversion<string>();
+            e.Property(s => s.Status).HasConversion<string>();
+            e.Property(s => s.ClinicianRole).HasConversion<string>();
+            e.Property(s => s.CalledByRole).HasConversion<string>();
+            e.Property(s => s.StartedByRole).HasConversion<string>();
+            e.Property(s => s.ReferredByRole).HasConversion<string>();
+            e.Property(s => s.Label).HasMaxLength(100).IsRequired();
+            e.Property(s => s.Department).HasMaxLength(100);
+            e.Property(s => s.ReferredByDepartment).HasMaxLength(100);
+            e.Property(s => s.CalledByName).HasMaxLength(200);
+            e.Property(s => s.CalledRoom).HasMaxLength(60);
+            e.Property(s => s.StartedByName).HasMaxLength(200);
+            e.Property(s => s.StartedRoom).HasMaxLength(60);
+            e.Property(s => s.ReferredByName).HasMaxLength(200);
+            e.HasIndex(s => s.VisitId);
         });
 
         // PatientIntakeSubmission — staging table for public self-service intake forms.

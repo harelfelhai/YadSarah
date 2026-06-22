@@ -220,6 +220,7 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         var now = IsraelNow();
         var visits = new List<Visit>();
         var forms = new List<MedicalForm>();
+        var careSteps = new List<CareStep>();
         int idx = 0;
         foreach (var p in patients)
         {
@@ -252,6 +253,7 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
                     : null,
             };
             visits.Add(visit);
+            careSteps.AddRange(BuildCareSteps(visit, dept, rng, doctorsByDept, nursesByDept));
 
             // Waiting/Called patients haven't been seen yet → no clinical form.
             if (status is VisitStatus.InTreatment or VisitStatus.FinishedTreatment or VisitStatus.Discharged)
@@ -263,10 +265,79 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         }
 
         db.Visits.AddRange(visits);
+        db.CareSteps.AddRange(careSteps);
         await db.SaveChangesAsync();
         db.MedicalForms.AddRange(forms);
         await db.SaveChangesAsync();
         return visits.Count;
+    }
+
+    // Demo care steps for a today-queue visit, reflecting its coarse status so the board shows the
+    // multi-dimensional view (waiting for nurse + doctor, called, in-treatment with who/room, done).
+    private static readonly string[] DemoRooms = { "חדר 1", "חדר 2", "חדר 3", "מלר\"ד א'", "מלר\"ד ב'" };
+
+    private static IEnumerable<CareStep> BuildCareSteps(
+        Visit visit, string dept, Random rng,
+        Dictionary<string, List<User>> doctorsByDept, Dictionary<string, List<User>> nursesByDept)
+    {
+        User? Pick(Dictionary<string, List<User>> by) =>
+            by.TryGetValue(dept, out var l) && l.Count > 0 ? l[rng.Next(l.Count)] : null;
+        string Room() => DemoRooms[rng.Next(DemoRooms.Length)];
+
+        CareStep Step(UserRole role) => new()
+        {
+            VisitId = visit.Id,
+            Category = CareStepCategory.Clinician,
+            ClinicianRole = role,
+            Label = role == UserRole.Nurse ? "אחות" : "רופא",
+            Department = dept,
+            TrackOrder = 0,
+            Status = CareStepStatus.Waiting,
+            CreatedAt = visit.CreatedAt,
+            UpdatedAt = visit.UpdatedAt,
+        };
+
+        var nurse = Step(UserRole.Nurse);
+        var doctor = Step(UserRole.Doctor);
+
+        switch (visit.Status)
+        {
+            case VisitStatus.Called:
+            {
+                var d = Pick(doctorsByDept);
+                doctor.Status = CareStepStatus.Called;
+                doctor.CalledByUserId = d?.Id;
+                doctor.CalledByName = d?.DisplayName ?? d?.FullName;
+                doctor.CalledByRole = UserRole.Doctor;
+                doctor.CalledRoom = Room();
+                doctor.CalledAt = visit.UpdatedAt;
+                break;
+            }
+            case VisitStatus.InTreatment:
+            {
+                var d = Pick(doctorsByDept);
+                doctor.Status = CareStepStatus.InProgress;
+                doctor.StartedByUserId = d?.Id;
+                doctor.StartedByName = d?.DisplayName ?? d?.FullName;
+                doctor.StartedByRole = UserRole.Doctor;
+                doctor.StartedRoom = Room();
+                doctor.StartedAt = visit.UpdatedAt;
+                nurse.Status = CareStepStatus.Done;
+                nurse.CompletedAt = visit.UpdatedAt;
+                break;
+            }
+            case VisitStatus.FinishedTreatment:
+            case VisitStatus.Discharged:
+                nurse.Status = CareStepStatus.Done;
+                nurse.CompletedAt = visit.UpdatedAt;
+                doctor.Status = CareStepStatus.Done;
+                doctor.CompletedAt = visit.UpdatedAt;
+                break;
+            // Waiting → both left as Waiting.
+        }
+
+        yield return nurse;
+        yield return doctor;
     }
 
     public async Task<int> ClearTodayAsync()
@@ -276,6 +347,7 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         if (ids.Count == 0) return 0;
         await db.MedicalForms.Where(f => ids.Contains(f.VisitId)).ExecuteDeleteAsync();
         await db.FormLocks.Where(l => ids.Contains(l.FormId)).ExecuteDeleteAsync();
+        await db.CareSteps.Where(s => ids.Contains(s.VisitId)).ExecuteDeleteAsync();
         await db.Visits.Where(v => ids.Contains(v.Id)).ExecuteDeleteAsync();
         return ids.Count;
     }

@@ -45,6 +45,7 @@ public class VisitService(AppDbContext db, SettingsService settings)
         var queueDate = await CurrentQueueDateAsync();
         var query = db.Visits
             .Include(v => v.Patient)
+            .Include(v => v.CareSteps)
             .Where(v => v.AdmissionDate == queueDate);
         if (!includeDischarged)
             query = query.Where(v => v.Status != VisitStatus.Discharged);
@@ -56,6 +57,7 @@ public class VisitService(AppDbContext db, SettingsService settings)
         // Forms are clinical PHI and are fetched only via the gated FormsController.
         return await db.Visits
             .Include(v => v.Patient)
+            .Include(v => v.CareSteps)
             .FirstOrDefaultAsync(v => v.Id == id);
     }
 
@@ -203,6 +205,11 @@ public class VisitService(AppDbContext db, SettingsService settings)
         // the running number is per (day, letter).
         visit.QueueLetter = Departments.LetterFor(visit.ReceptionDepartment);
         visit.QueueNumber = await NextQueueNumberAsync(queueDate, visit.QueueLetter);
+
+        // Every new patient starts the multi-dimensional clock: waiting for a nurse and a doctor.
+        foreach (var step in CareStepService.InitialSteps(visit.ReceptionDepartment))
+            visit.CareSteps.Add(step);
+
         db.Visits.Add(visit);
         await db.SaveChangesAsync();
         return visit;

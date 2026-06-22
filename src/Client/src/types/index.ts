@@ -10,6 +10,32 @@ export type IdentityType =
 
 export type VisitStatus = 'Waiting' | 'Called' | 'InTreatment' | 'FinishedTreatment' | 'Discharged';
 
+// ─── Care steps (live multi-dimensional status) ──────────────────────────────
+export type CareStepCategory = 'Clinician' | 'Station';
+export type CareStepStatus = 'Waiting' | 'Called' | 'InProgress' | 'Done' | 'Canceled';
+
+export interface CareStep {
+  id: string;
+  visitId: string;
+  category: CareStepCategory;
+  label: string;                 // role label ("רופא"/"אחות") or station name ("US")
+  clinicianRole?: UserRole | null;
+  department?: string | null;    // which department track (clinician steps)
+  trackOrder: number;            // 0 = first track (women's, when dual)
+  status: CareStepStatus;
+  calledByName?: string | null;
+  calledRoom?: string | null;
+  calledAt?: string | null;
+  startedByName?: string | null;
+  startedRoom?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  referredByName?: string | null;
+  referredByDepartment?: string | null;
+}
+
+export type CareStepAction = 'call' | 'enter' | 'complete';
+
 export type UserRole =
   | 'Reception' | 'Nurse' | 'Doctor' | 'Admin' | 'ShiftManager'
   | 'MedStudent' | 'NursingStudent' | 'LabStaff';
@@ -95,6 +121,8 @@ export interface Visit {
   // Event screen (reworked 2026-06-19)
   admissionReason?: string;
   receptionDepartment?: string;
+  // Optional second department track — set only by a clinician, only when one dept is "נשים".
+  secondaryDepartment?: string | null;
   departmentAssignedByAi?: boolean;
   departmentConfidence?: number;
   departmentCandidatesJson?: string;
@@ -116,6 +144,8 @@ export interface Visit {
   treatingUserRole?: UserRole;
   treatmentStartedAt?: string;
   treatmentRoom?: string;
+  // Live multi-dimensional status — everything the patient is waiting for / present at.
+  careSteps?: CareStep[];
   createdAt: string;
   updatedAt: string;
 }
@@ -125,7 +155,7 @@ export type VisitCreate = Omit<
   | 'id' | 'queueNumber' | 'patient' | 'createdAt' | 'updatedAt'
   | 'treatingUserId' | 'treatingUserName' | 'treatingUserRole' | 'treatmentStartedAt' | 'treatmentRoom'
   // server-derived / server-stamped — never sent by the client
-  | 'totalToCollect' | 'discountApprovedByName'
+  | 'totalToCollect' | 'discountApprovedByName' | 'careSteps' | 'secondaryDepartment'
 > & {
   // Manager step-up credentials — required only when discountReason is set; verified server-side.
   discountApprovalUsername?: string;
@@ -225,6 +255,9 @@ export interface MedicalForm {
   visitId: string;
   stationType: StationType;
   formType: FormType;
+  // Department track this form belongs to (dual women's + other visit); null for single-track.
+  department?: string | null;
+  trackOrder?: number | null;
   version: number;
   isSigned: boolean;
   signedByUserId?: string;

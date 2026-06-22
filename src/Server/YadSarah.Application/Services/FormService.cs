@@ -15,6 +15,11 @@ public class FormService(AppDbContext db)
 
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
+    // Sections shared across all of a visit's forms (a dual women's + other-dept visit has two).
+    // They are objective / patient-level data captured once, so an edit on one form mirrors to the
+    // siblings. Matches the client decision (vitals + allergies + past medical history).
+    private static readonly HashSet<string> SharedSections = new() { "vitalSigns", "allergies", "pastMedicalHistory" };
+
     public async Task<List<MedicalForm>> GetByVisitAsync(Guid visitId) =>
         await db.MedicalForms.Where(f => f.VisitId == visitId).ToListAsync();
 
@@ -59,6 +64,24 @@ public class FormService(AppDbContext db)
         form.UpdatedAt = DateTime.UtcNow;
         form.UpdatedByUserId = userId;
 
+        // Shared sections (vitals/allergies/past history) mirror to the visit's other forms,
+        // so a dual women's + other-dept visit keeps one set of objective data. Signed siblings
+        // are skipped — their clinical record is already finalized.
+        if (SharedSections.Contains(section))
+        {
+            var siblings = await db.MedicalForms
+                .Where(f => f.VisitId == form.VisitId && f.Id != form.Id && !f.IsSigned)
+                .ToListAsync();
+            foreach (var sib in siblings)
+            {
+                SetSection(sib, section, jsonOrText);
+                RecordFieldEdit(sib, section, userId, userName);
+                sib.Version++;
+                sib.UpdatedAt = DateTime.UtcNow;
+                sib.UpdatedByUserId = userId;
+            }
+        }
+
         await db.SaveChangesAsync();
         return form;
     }
@@ -89,14 +112,40 @@ public class FormService(AppDbContext db)
         form.UpdatedAt = DateTime.UtcNow;
         form.UpdatedByUserId = userId;
 
-        // Signing both ends treatment AND discharges the patient: the doctor releases the
-        // patient at signing. The reception discharge board now serves only edge cases
-        // (a patient who left without a signed form, or a manual release).
-        var visit = await db.Visits.FindAsync(form.VisitId);
+        // Signing completes THIS form's track. The patient is discharged only once EVERY form
+        // is signed — a dual women's + other-dept visit runs two processes, so signing the first
+        // (women's) form must not release the patient before the second. The reception discharge
+        // board still serves edge cases (left without a signed form, or a manual release).
+        var visit = await db.Visits
+            .Include(v => v.Forms)
+            .Include(v => v.CareSteps)
+            .FirstOrDefaultAsync(v => v.Id == form.VisitId);
         if (visit is not null && visit.Status != VisitStatus.Discharged)
         {
-            visit.Status = VisitStatus.Discharged;
-            visit.DepartedAt ??= DateTime.UtcNow; // departure instant for the analytics census chart
+            // This track's doctor finished → mark its doctor care-step(s) done. A null Department
+            // (legacy / single-track form) matches every doctor step.
+            foreach (var s in visit.CareSteps.Where(s =>
+                s.Category == CareStepCategory.Clinician &&
+                s.ClinicianRole == UserRole.Doctor &&
+                (form.Department == null || s.Department == form.Department) &&
+                s.Status != CareStepStatus.Done && s.Status != CareStepStatus.Canceled))
+            {
+                s.Status = CareStepStatus.Done;
+                s.CompletedAt = DateTime.UtcNow;
+                s.UpdatedAt = DateTime.UtcNow;
+            }
+
+            var allFormsSigned = visit.Forms.All(f => f.IsSigned); // current form is tracked as signed
+            if (allFormsSigned)
+            {
+                visit.Status = VisitStatus.Discharged;
+                visit.DepartedAt ??= DateTime.UtcNow; // departure instant for the analytics census chart
+            }
+            else
+            {
+                visit.Status = CareStepService.DeriveStatus(visit.CareSteps, allFormsSigned: false);
+            }
+            visit.UpdatedAt = DateTime.UtcNow;
         }
 
         await db.SaveChangesAsync();
