@@ -11,7 +11,14 @@ public class Visit
     public Guid PatientId { get; set; }
     public Patient? Patient { get; set; }
 
+    /// <summary>Per-department running number within the queue-day. Paired with
+    /// <see cref="QueueLetter"/> to form the displayed ticket (e.g. "C-7").</summary>
     public int QueueNumber { get; set; }
+
+    /// <summary>Queue letter: one per department (A,B,C,…) or "S" for the special
+    /// (priority) queue. Each (day, letter) runs its own number sequence.</summary>
+    public string? QueueLetter { get; set; }
+
     public VisitStatus Status { get; set; } = VisitStatus.Waiting;
 
     // ── Reception / event details ─────────────────────────────────────────────
@@ -33,6 +40,16 @@ public class Visit
     /// <summary>JSON array of candidate departments offered when AI confidence was low
     /// (reception then picked one into ReceptionDepartment). Null on a confident assignment.</summary>
     public string? DepartmentCandidatesJson { get; set; }
+
+    // ── Department reassignment (clinical override) ───────────────────────────
+    /// <summary>When a clinician (NOT reception, NOT the AI) overrides the routed department,
+    /// the professional who decided is stamped here. A non-null name ⇒ the department is a
+    /// professional's determination, shown distinctly from an AI recommendation. Setting these
+    /// also clears <see cref="DepartmentAssignedByAi"/>.</summary>
+    public Guid? DepartmentChangedByUserId { get; set; }
+    public string? DepartmentChangedByName { get; set; }
+    public UserRole? DepartmentChangedByRole { get; set; }
+    public DateTime? DepartmentChangedAt { get; set; }
 
     /// <summary>Free-text reception notes for this visit/event.</summary>
     public string? Notes { get; set; }
@@ -60,6 +77,11 @@ public class Visit
     public UserRole? TreatingUserRole { get; set; }
     public DateTime? TreatmentStartedAt { get; set; }
     public string? TreatmentRoom { get; set; }
+
+    /// <summary>When the visit was discharged (status → Discharged). The patient's "departure"
+    /// instant — paired with <see cref="CreatedAt"/> it bounds the time the patient was present,
+    /// the basis for the analytics concurrent-presence (census) chart. Null while still present.</summary>
+    public DateTime? DepartedAt { get; set; }
 
     // Audit
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

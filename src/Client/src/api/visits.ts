@@ -10,6 +10,7 @@ export interface VisitHistoryItem {
   admissionDate: string;
   admissionTime?: string | null;
   queueNumber: number;
+  queueLetter?: string | null;
   department?: string | null;
   status: VisitStatus;
   signedByName?: string | null;
@@ -63,4 +64,12 @@ export const visitsApi = {
 
   update: (id: string, data: Partial<VisitCreate>) =>
     api.put<Visit>(`/visits/${id}`, data),
+
+  // Shift-manager / admin override: move a patient into the special ("S") priority queue.
+  moveToSpecialQueue: (id: string) =>
+    api.patch<Visit>(`/visits/${id}/special-queue`, {}),
+
+  // Clinical professional (not reception) overrides the AI/reception department routing.
+  reassignDepartment: (id: string, department: string) =>
+    api.patch<Visit>(`/visits/${id}/department`, { department }),
 };

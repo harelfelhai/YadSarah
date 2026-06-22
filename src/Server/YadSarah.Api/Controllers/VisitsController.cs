@@ -103,6 +103,7 @@ public class VisitsController(
             visitId = created.Id,
             status = created.Status.ToString(),
             queueNumber = created.QueueNumber,
+            queueLetter = created.QueueLetter,
         });
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
@@ -135,11 +136,12 @@ public class VisitsController(
         if (status == VisitStatus.FinishedTreatment)
             return Forbid();
 
-        // Discharge is an administrative release — reception / shift-manager / admin only.
-        // Clinical staff (doctor/nurse) drive the in-treatment workflow (call patient,
-        // start treatment) but end a treatment by signing the form, not by discharging.
+        // Discharge authority: a doctor discharges automatically by signing the form
+        // (FormsController.Sign, with step-up re-auth); a manual release here is limited to
+        // shift-manager / admin. Plain reception no longer discharges, and clinical staff
+        // (doctor/nurse) end a treatment by signing — not via this status PATCH.
         if (status == VisitStatus.Discharged &&
-            !(User.IsInRole("Reception") || User.IsInRole("ShiftManager") || User.IsInRole("Admin")))
+            !(User.IsInRole("ShiftManager") || User.IsInRole("Admin")))
             return Forbid();
 
         // When a clinician starts treatment, stamp them as the (single) treating owner and
@@ -161,11 +163,70 @@ public class VisitsController(
             visitId = updated.Id,
             status = updated.Status.ToString(),
             queueNumber = updated.QueueNumber,
+            queueLetter = updated.QueueLetter,
             treatingUserName = updated.TreatingUserName,
             room = updated.TreatmentRoom,
         });
         return Ok(updated);
     }
 
+    // PATCH /api/visits/{id}/special-queue — move a patient into the special ("S") priority
+    // queue. Shift-manager / admin only: it's a deliberate override to advance someone ahead
+    // of the per-department queues.
+    [HttpPatch("{id:guid}/special-queue")]
+    [Authorize(Roles = "ShiftManager,Admin")]
+    public async Task<IActionResult> MoveToSpecialQueue(Guid id)
+    {
+        try
+        {
+            var updated = await svc.MoveToSpecialQueueAsync(id);
+            await audit.LogAsync(AuditService.StatusChanged, "Visit", id, "QueueLetter", newValue: updated.QueueLetter);
+            await hub.Clients.All.SendAsync("QueueUpdate", new
+            {
+                visitId = updated.Id,
+                status = updated.Status.ToString(),
+                queueNumber = updated.QueueNumber,
+                queueLetter = updated.QueueLetter,
+            });
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
+    // PATCH /api/visits/{id}/department — a clinical professional overrides the AI/reception
+    // routing and assigns a different department. Reception is intentionally NOT allowed (the
+    // routing decision is theirs only at intake); the AI never reaches this path. The chosen
+    // department + the deciding professional are stamped so the UI marks it as a professional's
+    // call rather than an AI recommendation.
+    [HttpPatch("{id:guid}/department")]
+    [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent")]
+    public async Task<IActionResult> ReassignDepartment(Guid id, [FromBody] ReassignDepartmentRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Department) || !Departments.All.Contains(req.Department))
+            return BadRequest(new { message = "מחלקה לא חוקית." });
+        try
+        {
+            var updated = await svc.ReassignDepartmentAsync(id, req.Department, UserId, UserName, CallerRole);
+            await audit.LogAsync("DepartmentReassigned", "Visit", id, "ReceptionDepartment", newValue: req.Department);
+            await hub.Clients.All.SendAsync("QueueUpdate", new
+            {
+                visitId = updated.Id,
+                status = updated.Status.ToString(),
+                queueNumber = updated.QueueNumber,
+                queueLetter = updated.QueueLetter,
+            });
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+    }
+
     public record UpdateStatusRequest(string Status, [param: StringLength(120)] string? DeviceId = null);
+
+    public record ReassignDepartmentRequest([param: Required, StringLength(100)] string Department);
 }

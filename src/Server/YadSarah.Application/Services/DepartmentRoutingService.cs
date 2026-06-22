@@ -11,6 +11,26 @@ public static class Departments
 
     public static readonly IReadOnlyList<string> All =
         new[] { Emergency, Pediatrics, Orthopedics, Womens, Infusion };
+
+    // ── Queue letters ─────────────────────────────────────────────────────────
+    // Each department runs its own numbered queue, identified by a letter (A,B,C,…),
+    // plus a separate "S" (special/priority) queue. Mirrored on the client in
+    // constants/departments.ts — keep in sync.
+    public const string SpecialQueueLetter = "S";
+
+    private static readonly IReadOnlyDictionary<string, string> Letters = new Dictionary<string, string>
+    {
+        [Emergency] = "A",
+        [Pediatrics] = "B",
+        [Orthopedics] = "C",
+        [Womens] = "D",
+        [Infusion] = "E",
+    };
+
+    /// <summary>The queue letter for a department. Unknown/empty → "A" (Emergency) as a
+    /// safe default; in practice the department is always one of the closed list.</summary>
+    public static string LetterFor(string? department) =>
+        department is not null && Letters.TryGetValue(department, out var l) ? l : "A";
 }
 
 /// <summary>Extra context the router may use to narrow departments (age gate, gender, …).</summary>

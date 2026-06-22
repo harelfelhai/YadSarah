@@ -10,3 +10,24 @@ export const DEPARTMENTS = [
 ] as const;
 
 export type Department = (typeof DEPARTMENTS)[number];
+
+// ── Queue letters ─────────────────────────────────────────────────────────────
+// Each department runs its own numbered queue, identified by a letter (A,B,C,…), plus a
+// separate "S" (special / priority) queue. Mirrors the server-side `Departments.LetterFor`
+// (DepartmentRoutingService.cs) — keep in sync.
+export const SPECIAL_QUEUE_LETTER = 'S';
+
+export const DEPARTMENT_LETTERS: Record<string, string> = {
+  'רפואה דחופה': 'A',
+  'ילדים': 'B',
+  'אורטופדיה': 'C',
+  'נשים': 'D',
+  'עירוי תרופות': 'E',
+};
+
+/** The displayed queue ticket: "C-7" (letter + per-department number), or just the
+ *  number when no letter is set (legacy rows admitted before per-department numbering). */
+export function queueLabel(letter: string | null | undefined, num: number | null | undefined): string {
+  if (num == null) return '—';
+  return letter ? `${letter}-${num}` : `${num}`;
+}

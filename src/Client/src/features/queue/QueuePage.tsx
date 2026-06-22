@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title,
+  ActionIcon, Badge, Box, Button, Card, Group, Loader, Modal, Select, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconUserPlus } from '@tabler/icons-react';
+import { IconSearch, IconUserPlus, IconStar, IconSparkles, IconStethoscope, IconPencil } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
-import { isReceptionStaff, isClinicalStaff, hasAnyRole } from '../../constants/roles';
+import { isReceptionStaff, isClinicalStaff, canPrioritizeQueue, canReassignDepartment, hasAnyRole, ROLE_LABELS } from '../../constants/roles';
 import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
+import { queueLabel, SPECIAL_QUEUE_LETTER, DEPARTMENTS } from '../../constants/departments';
 import type { Visit, VisitStatus } from '../../types';
 
 // Resolved hex for the leading status rail (var refs would need theme lookup)
@@ -34,6 +35,13 @@ export default function QueuePage() {
   const [search, setSearch] = useState('');
   // Re-render every 30s so wait-time chips stay live.
   const [, setTick] = useState(0);
+  // Shift-manager "advance to special queue" confirmation target.
+  const [promoteTarget, setPromoteTarget] = useState<Visit | null>(null);
+  const [promoting, setPromoting] = useState(false);
+  // Clinical "change department" target + chosen department.
+  const [reassignTarget, setReassignTarget] = useState<Visit | null>(null);
+  const [reassignDept, setReassignDept] = useState<string | null>(null);
+  const [reassigning, setReassigning] = useState(false);
 
   const { data: visits = [], isLoading } = useQuery({
     queryKey: ['queue', showAll],
@@ -71,8 +79,45 @@ export default function QueuePage() {
     }
   };
 
+  const confirmPromote = async () => {
+    if (!promoteTarget) return;
+    setPromoting(true);
+    try {
+      await visitsApi.moveToSpecialQueue(promoteTarget.id);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      notifications.show({ color: 'pine', message: 'המטופל קודם לתור המיוחד' });
+      setPromoteTarget(null);
+    } catch {
+      notifications.show({ color: 'brick', message: 'קידום המטופל נכשל' });
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  const openReassign = (visit: Visit) => {
+    setReassignTarget(visit);
+    setReassignDept(visit.receptionDepartment ?? null);
+  };
+
+  const confirmReassign = async () => {
+    if (!reassignTarget || !reassignDept) return;
+    setReassigning(true);
+    try {
+      await visitsApi.reassignDepartment(reassignTarget.id, reassignDept);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      notifications.show({ color: 'pine', message: 'המחלקה עודכנה (קביעת איש מקצוע)' });
+      setReassignTarget(null);
+    } catch {
+      notifications.show({ color: 'brick', message: 'עדכון המחלקה נכשל' });
+    } finally {
+      setReassigning(false);
+    }
+  };
+
   const isReception = isReceptionStaff(user?.roles);
   const isClinical = isClinicalStaff(user?.roles);
+  const canPrioritize = canPrioritizeQueue(user?.roles);
+  const canReassign = canReassignDepartment(user?.roles);
 
   const active = showAll ? visits : visits.filter((v) => {
     if (v.status === 'Discharged') return false;
@@ -83,12 +128,17 @@ export default function QueuePage() {
   const userDept = user?.department ?? null;
   const showDeptHighlight = !!userDept && hasAnyRole(user?.roles, 'Doctor', 'Nurse', 'MedStudent', 'NursingStudent');
 
-  const sorted = showDeptHighlight
+  const isSpecial = (v: Visit) => v.queueLetter === SPECIAL_QUEUE_LETTER;
+
+  // Department grouping (own dept first when highlighting), then the special/priority queue
+  // floats to the very top regardless — that's what "advancing" a patient means.
+  const grouped = showDeptHighlight
     ? [
         ...active.filter((v) => v.receptionDepartment === userDept),
         ...active.filter((v) => v.receptionDepartment !== userDept),
       ]
     : active;
+  const sorted = [...grouped.filter(isSpecial), ...grouped.filter((v) => !isSpecial(v))];
 
   // Find a patient quickly by name / ID (e.g. to open their form).
   const q = search.trim().toLowerCase();
@@ -174,9 +224,8 @@ export default function QueuePage() {
                 <Table.Th>שם</Table.Th>
                 <Table.Th>ת.ז / מזהה</Table.Th>
                 <Table.Th style={{ width: 56 }}>גיל</Table.Th>
-                <Table.Th style={{ width: 90 }}>שעת הגעה</Table.Th>
                 <Table.Th style={{ width: 120, whiteSpace: 'nowrap' }}>המתנה</Table.Th>
-                <Table.Th style={{ minWidth: 150, whiteSpace: 'nowrap' }}>מחלקה</Table.Th>
+                <Table.Th style={{ minWidth: 210, whiteSpace: 'nowrap' }}>מחלקה</Table.Th>
                 <Table.Th>סיבת קבלה</Table.Th>
                 <Table.Th style={{ width: 110 }}>סטטוס</Table.Th>
                 <Table.Th style={{ width: 230 }}>פעולות</Table.Th>
@@ -199,13 +248,18 @@ export default function QueuePage() {
                     }}
                   >
                     <Table.Td style={{ borderInlineStart: `4px solid ${railColor}` }}>
-                      <Text
-                        className={overdue ? 'ys-overdue' : undefined}
-                        fw={800}
-                        style={{ fontSize: 22, fontFamily: '"Frank Ruhl Libre", serif', fontVariantNumeric: 'tabular-nums', color: 'var(--ink)' }}
-                      >
-                        {visit.queueNumber}
-                      </Text>
+                      <Group gap={4} wrap="nowrap" align="center">
+                        {isSpecial(visit) && (
+                          <IconStar size={16} fill="var(--mantine-color-yellow-5)" color="var(--mantine-color-yellow-6)" />
+                        )}
+                        <Text
+                          className={overdue ? 'ys-overdue' : undefined}
+                          fw={800}
+                          style={{ fontSize: 22, fontFamily: '"Frank Ruhl Libre", serif', fontVariantNumeric: 'tabular-nums', color: 'var(--ink)' }}
+                        >
+                          {queueLabel(visit.queueLetter, visit.queueNumber)}
+                        </Text>
+                      </Group>
                     </Table.Td>
                     <Table.Td>
                       <Text fw={600}>
@@ -214,14 +268,38 @@ export default function QueuePage() {
                     </Table.Td>
                     <Table.Td style={{ fontVariantNumeric: 'tabular-nums' }}>{visit.patient?.identityNumber ?? '—'}</Table.Td>
                     <Table.Td style={{ fontVariantNumeric: 'tabular-nums' }}>{calcAge(visit.patient?.birthDate)}</Table.Td>
-                    <Table.Td style={{ fontVariantNumeric: 'tabular-nums' }}>{shortTime(visit.admissionTime)}</Table.Td>
                     <Table.Td>{waitChip(visit, wait, overdue)}</Table.Td>
                     <Table.Td>
-                      {visit.receptionDepartment ? (
-                        <Badge variant={isOtherDept ? 'outline' : 'light'} color={isOtherDept ? 'slate' : 'steel'} size="sm">
-                          {visit.receptionDepartment}
-                        </Badge>
-                      ) : '—'}
+                      <Group gap={6} wrap="nowrap" align="center">
+                        {visit.receptionDepartment ? (
+                          <Badge variant={isOtherDept ? 'outline' : 'light'} color={isOtherDept ? 'slate' : 'steel'} size="sm">
+                            {visit.receptionDepartment}
+                          </Badge>
+                        ) : <Text c="dimmed">—</Text>}
+                        {/* Provenance: a professional override is marked distinctly from an AI recommendation. */}
+                        {visit.departmentChangedByName ? (
+                          <Tooltip
+                            withArrow
+                            multiline
+                            label={`נקבע ע״י ${visit.departmentChangedByName}${visit.departmentChangedByRole ? ` · ${ROLE_LABELS[visit.departmentChangedByRole] ?? visit.departmentChangedByRole}` : ''}`}
+                          >
+                            <Badge size="xs" variant="light" color="teal" leftSection={<IconStethoscope size={11} />}>
+                              איש מקצוע
+                            </Badge>
+                          </Tooltip>
+                        ) : visit.departmentAssignedByAi ? (
+                          <Badge size="xs" variant="light" color="grape" leftSection={<IconSparkles size={11} />}>
+                            AI
+                          </Badge>
+                        ) : null}
+                        {canReassign && visit.status !== 'Discharged' && visit.receptionDepartment && (
+                          <Tooltip label="שינוי מחלקה" withArrow>
+                            <ActionIcon size="sm" variant="subtle" color="gray" onClick={() => openReassign(visit)}>
+                              <IconPencil size={14} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
+                      </Group>
                     </Table.Td>
                     <Table.Td>{visit.admissionReason ?? '—'}</Table.Td>
                     <Table.Td>
@@ -253,6 +331,17 @@ export default function QueuePage() {
                             המשך טיפול
                           </Button>
                         )}
+                        {canPrioritize && !isSpecial(visit) && visit.status !== 'Discharged' && (
+                          <Button
+                            size="xs"
+                            variant="subtle"
+                            color="yellow"
+                            leftSection={<IconStar size={14} />}
+                            onClick={() => setPromoteTarget(visit)}
+                          >
+                            קדם לתור מיוחד
+                          </Button>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -262,6 +351,67 @@ export default function QueuePage() {
           </Table>
         </Box>
       )}
+
+      <Modal
+        opened={!!promoteTarget}
+        onClose={() => setPromoteTarget(null)}
+        title="קידום לתור מיוחד"
+        centered
+      >
+        <Stack gap="sm">
+          <Text size="sm">
+            להעביר את{' '}
+            {promoteTarget?.patient
+              ? `${promoteTarget.patient.firstName} ${promoteTarget.patient.lastName}`
+              : 'המטופל'}{' '}
+            (מס׳ תור {queueLabel(promoteTarget?.queueLetter, promoteTarget?.queueNumber)}) לתור המיוחד?
+            המטופל יקבל מספר חדש בתור המיוחד ויקודם לראש התור.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="subtle" color="slate" onClick={() => setPromoteTarget(null)}>ביטול</Button>
+            <Button color="yellow" loading={promoting} leftSection={<IconStar size={16} />} onClick={confirmPromote}>
+              קדם לתור מיוחד
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={!!reassignTarget}
+        onClose={() => setReassignTarget(null)}
+        title="שינוי מחלקה"
+        centered
+      >
+        <Stack gap="sm">
+          <Text size="sm">
+            {reassignTarget?.patient
+              ? `${reassignTarget.patient.firstName} ${reassignTarget.patient.lastName}`
+              : 'המטופל'}
+            {' '}— מחלקה נוכחית: {reassignTarget?.receptionDepartment ?? '—'}
+          </Text>
+          <Select
+            label="מחלקה חדשה"
+            data={[...DEPARTMENTS]}
+            value={reassignDept}
+            onChange={setReassignDept}
+            allowDeselect={false}
+            comboboxProps={{ withinPortal: true }}
+          />
+          <Text size="xs" c="dimmed">
+            השינוי יסומן כקביעת איש מקצוע (לא המלצת AI). מספר התור נשמר.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="subtle" color="slate" onClick={() => setReassignTarget(null)}>ביטול</Button>
+            <Button
+              loading={reassigning}
+              disabled={!reassignDept || reassignDept === reassignTarget?.receptionDepartment}
+              onClick={confirmReassign}
+            >
+              שמור מחלקה
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
@@ -271,11 +421,6 @@ function calcAge(birthDate?: string): string {
   if (!birthDate) return '—';
   const diff = Date.now() - new Date(birthDate).getTime();
   return `${Math.floor(diff / (1000 * 60 * 60 * 24 * 365))}`;
-}
-
-function shortTime(t?: string): string {
-  if (!t) return '—';
-  return t.slice(0, 5); // HH:mm
 }
 
 function waitMinutes(v: Visit): number {

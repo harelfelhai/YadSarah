@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
 import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
+import { queueLabel } from '../../constants/departments';
 import type { Visit } from '../../types';
 
 // Patients who finished treatment (doctor signed) are the ones literally waiting
@@ -36,7 +37,10 @@ export default function DischargeBoard() {
   }, [queryClient]);
 
   const sorted = [...visits].sort(
-    (a, b) => dischargeRank(a) - dischargeRank(b) || a.queueNumber - b.queueNumber,
+    (a, b) =>
+      dischargeRank(a) - dischargeRank(b) ||
+      (a.queueLetter ?? '').localeCompare(b.queueLetter ?? '') ||
+      a.queueNumber - b.queueNumber,
   );
   const waitingCount = visits.filter((v) => v.status === 'FinishedTreatment').length;
 
@@ -92,7 +96,7 @@ export default function DischargeBoard() {
                   <Table.Tr key={visit.id} bg={ready ? 'var(--mantine-color-pine-0)' : undefined}>
                     <Table.Td>
                       <Text fw={800} style={{ fontSize: 20, fontVariantNumeric: 'tabular-nums', color: 'var(--ink)' }}>
-                        {visit.queueNumber}
+                        {queueLabel(visit.queueLetter, visit.queueNumber)}
                       </Text>
                     </Table.Td>
                     <Table.Td>

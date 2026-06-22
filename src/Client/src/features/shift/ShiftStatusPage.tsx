@@ -8,6 +8,7 @@ import { shiftStatusApi } from '../../api/shiftStatus';
 import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
 import { hasAnyRole } from '../../constants/roles';
+import { queueLabel } from '../../constants/departments';
 import type { RoomStatus, ShiftWorker } from '../../types';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -175,7 +176,7 @@ export default function ShiftStatusPage() {
                   <Box style={{ minHeight: 24 }}>
                     {r.busy && (
                       <Badge color="brick" variant="light" size="sm">
-                        מטופל #{r.patientQueueNumber} · {r.patientName}
+                        מטופל {queueLabel(r.patientQueueLetter, r.patientQueueNumber)} · {r.patientName}
                       </Badge>
                     )}
                   </Box>

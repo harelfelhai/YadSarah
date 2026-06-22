@@ -6,7 +6,7 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconList, IconUserPlus, IconLogout, IconUsers, IconSettings, IconHistory,
-  IconShieldLock, IconMessageReport, IconClock, IconLayoutDashboard,
+  IconShieldLock, IconMessageReport, IconClock, IconLayoutDashboard, IconChartHistogram,
 } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
@@ -24,6 +24,7 @@ const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[
   { href: '/reception', label: 'קבלה ושחרור', icon: <IconUserPlus size={18} />, roles: ['Reception', 'ShiftManager', 'Admin'] },
   { href: '/history', label: 'היסטוריית מטופלים', icon: <IconHistory size={18} /> },
   { href: '/shift-status', label: 'סטטוס משמרת', icon: <IconLayoutDashboard size={18} />, roles: ['Admin', 'ShiftManager'] },
+  { href: '/analytics', label: 'ניתוח נתונים', icon: <IconChartHistogram size={18} />, roles: ['Admin', 'ShiftManager'] },
   { href: '/admin/users', label: 'ניהול משתמשים', icon: <IconUsers size={18} />, roles: ['Admin', 'ShiftManager'] },
   { href: '/admin/settings', label: 'הגדרות מערכת', icon: <IconSettings size={18} />, roles: ['Admin'] },
   { href: '/admin/feedback', label: 'דיווחי משתמשים', icon: <IconMessageReport size={18} />, roles: ['Admin'] },

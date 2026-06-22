@@ -10,7 +10,7 @@ namespace YadSarah.Application.Services;
 /// <summary>One row of the patient-history view (visit + patient + treating staff + relevance tier).</summary>
 public record VisitHistoryItem(
     Guid VisitId, Guid PatientId, string PatientName, string? IdentityNumber,
-    DateOnly AdmissionDate, TimeOnly? AdmissionTime, int QueueNumber,
+    DateOnly AdmissionDate, TimeOnly? AdmissionTime, int QueueNumber, string? QueueLetter,
     string? Department, VisitStatus Status,
     string? SignedByName, List<string> Editors, int RelatedTier);
 
@@ -48,7 +48,7 @@ public class VisitService(AppDbContext db, SettingsService settings)
             .Where(v => v.AdmissionDate == queueDate);
         if (!includeDischarged)
             query = query.Where(v => v.Status != VisitStatus.Discharged);
-        return await query.OrderBy(v => v.QueueNumber).ToListAsync();
+        return await query.OrderBy(v => v.QueueLetter).ThenBy(v => v.QueueNumber).ToListAsync();
     }
 
     public async Task<Visit?> GetByIdAsync(Guid id)
@@ -172,7 +172,7 @@ public class VisitService(AppDbContext db, SettingsService settings)
             return new VisitHistoryItem(
                 v.Id, v.PatientId,
                 $"{v.Patient!.FirstName} {v.Patient.LastName}", v.Patient.IdentityNumber,
-                v.AdmissionDate, v.AdmissionTime, v.QueueNumber,
+                v.AdmissionDate, v.AdmissionTime, v.QueueNumber, v.QueueLetter,
                 v.ReceptionDepartment, v.Status, signedBy, editors, tier);
         }).ToList();
 
@@ -199,20 +199,73 @@ public class VisitService(AppDbContext db, SettingsService settings)
         visit.AdmissionDate = queueDate;
         visit.AdmissionTime = TimeOnly.FromDateTime(now);
 
-        visit.QueueNumber = await NextQueueNumberAsync(queueDate);
+        // Queue letter is derived from the department (one numbered queue per department);
+        // the running number is per (day, letter).
+        visit.QueueLetter = Departments.LetterFor(visit.ReceptionDepartment);
+        visit.QueueNumber = await NextQueueNumberAsync(queueDate, visit.QueueLetter);
         db.Visits.Add(visit);
         await db.SaveChangesAsync();
         return visit;
     }
 
     /// <summary>
-    /// Atomically reserves the next per-day running queue number. A single
-    /// INSERT…ON CONFLICT…RETURNING avoids races; on the day's first insert it
-    /// seeds from visits already recorded that day. Resets to 1 each new day.
-    /// (Run via raw ADO.NET because INSERT…RETURNING is not composable for
-    /// EF's SqlQuery wrapper.)
+    /// Moves a visit into the special ("S") priority queue, assigning it the next running
+    /// number in that queue for its queue-day. Used by a shift manager to advance a patient
+    /// ahead of the per-department queues. No-op if the visit is already in the special queue.
     /// </summary>
-    private async Task<int> NextQueueNumberAsync(DateOnly today)
+    public async Task<Visit> MoveToSpecialQueueAsync(Guid id)
+    {
+        var visit = await db.Visits
+            .Include(v => v.Patient)
+            .FirstOrDefaultAsync(v => v.Id == id)
+            ?? throw new KeyNotFoundException($"Visit {id} not found");
+
+        if (visit.QueueLetter == Departments.SpecialQueueLetter) return visit;
+
+        visit.QueueLetter = Departments.SpecialQueueLetter;
+        visit.QueueNumber = await NextQueueNumberAsync(visit.AdmissionDate, Departments.SpecialQueueLetter);
+        visit.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return visit;
+    }
+
+    /// <summary>
+    /// Overrides the routed department with a clinical professional's determination. Marks the
+    /// visit as no longer AI-assigned and stamps who decided (name + role + time), so the UI can
+    /// show it distinctly from an AI recommendation. The issued queue ticket (letter + number) is
+    /// intentionally kept — the patient's printed sticker stays valid; only the clinical routing
+    /// (and the doctor who sees them) changes. Caller authorization (clinical, non-reception) is
+    /// enforced at the controller.
+    /// </summary>
+    public async Task<Visit> ReassignDepartmentAsync(
+        Guid id, string department, Guid userId, string userName, UserRole role)
+    {
+        var visit = await db.Visits
+            .Include(v => v.Patient)
+            .FirstOrDefaultAsync(v => v.Id == id)
+            ?? throw new KeyNotFoundException($"Visit {id} not found");
+
+        visit.ReceptionDepartment = department;
+        visit.DepartmentAssignedByAi = false;
+        visit.DepartmentConfidence = null;
+        visit.DepartmentCandidatesJson = null;
+        visit.DepartmentChangedByUserId = userId;
+        visit.DepartmentChangedByName = userName;
+        visit.DepartmentChangedByRole = role;
+        visit.DepartmentChangedAt = DateTime.UtcNow;
+        visit.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return visit;
+    }
+
+    /// <summary>
+    /// Atomically reserves the next per-(day, letter) running queue number. A single
+    /// INSERT…ON CONFLICT…RETURNING avoids races; on that letter's first insert for the day
+    /// it seeds from visits already recorded that day for the same letter. Resets to 1 each
+    /// new day (per letter). (Run via raw ADO.NET because INSERT…RETURNING is not composable
+    /// for EF's SqlQuery wrapper.)
+    /// </summary>
+    private async Task<int> NextQueueNumberAsync(DateOnly today, string letter)
     {
         var conn = db.Database.GetDbConnection();
         var wasClosed = conn.State != ConnectionState.Open;
@@ -222,16 +275,20 @@ public class VisitService(AppDbContext db, SettingsService settings)
             await using var cmd = conn.CreateCommand();
             cmd.CommandText =
                 """
-                INSERT INTO "QueueCounters" ("DateKey", "LastNumber")
-                VALUES (@d, (SELECT COALESCE(MAX("QueueNumber"), 0) + 1 FROM "Visits" WHERE "AdmissionDate" = @d))
-                ON CONFLICT ("DateKey")
+                INSERT INTO "QueueCounters" ("DateKey", "QueueLetter", "LastNumber")
+                VALUES (@d, @l, (SELECT COALESCE(MAX("QueueNumber"), 0) + 1 FROM "Visits" WHERE "AdmissionDate" = @d AND "QueueLetter" = @l))
+                ON CONFLICT ("DateKey", "QueueLetter")
                 DO UPDATE SET "LastNumber" = "QueueCounters"."LastNumber" + 1
                 RETURNING "LastNumber";
                 """;
-            var p = cmd.CreateParameter();
-            p.ParameterName = "d";
-            p.Value = today;
-            cmd.Parameters.Add(p);
+            var pd = cmd.CreateParameter();
+            pd.ParameterName = "d";
+            pd.Value = today;
+            cmd.Parameters.Add(pd);
+            var pl = cmd.CreateParameter();
+            pl.ParameterName = "l";
+            pl.Value = letter;
+            cmd.Parameters.Add(pl);
 
             var result = await cmd.ExecuteScalarAsync();
             return Convert.ToInt32(result);
@@ -250,6 +307,12 @@ public class VisitService(AppDbContext db, SettingsService settings)
             ?? throw new KeyNotFoundException($"Visit {id} not found");
         visit.Status = status;
         visit.UpdatedAt = DateTime.UtcNow;
+
+        // Stamp the departure instant on the first transition to Discharged (the basis for the
+        // analytics census chart). Re-entry into the queue from a discharged state is not a flow
+        // we support, so a single stamp is enough; don't overwrite an existing one.
+        if (status == VisitStatus.Discharged && visit.DepartedAt is null)
+            visit.DepartedAt = DateTime.UtcNow;
 
         // Moving into treatment stamps the single owner (whoever took the patient) and
         // the room of the workstation they acted from — the basis for the shift board's

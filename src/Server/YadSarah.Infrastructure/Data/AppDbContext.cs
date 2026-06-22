@@ -47,7 +47,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(v => v.TreatingUserRole).HasConversion<string>();
             e.Property(v => v.AdmissionReason).HasMaxLength(200);
             e.Property(v => v.ReceptionDepartment).HasMaxLength(100);
+            e.Property(v => v.QueueLetter).HasMaxLength(4);
             e.Property(v => v.DepartmentCandidatesJson).HasMaxLength(500);
+            e.Property(v => v.DepartmentChangedByName).HasMaxLength(200);
+            e.Property(v => v.DepartmentChangedByRole).HasConversion<string>();
             e.Property(v => v.Notes).HasMaxLength(2000);
             e.Property(v => v.ExemptionReason).HasMaxLength(200);
             e.Property(v => v.DiscountReason).HasMaxLength(500);
@@ -105,10 +108,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(l => l.ExpiresAt);
         });
 
-        // QueueCounter — one row per day (PK = date)
+        // QueueCounter — one row per (queue-day, queue-letter): per-department numbering
         b.Entity<QueueCounter>(e =>
         {
-            e.HasKey(c => c.DateKey);
+            e.HasKey(c => new { c.DateKey, c.QueueLetter });
+            e.Property(c => c.QueueLetter).HasMaxLength(4);
         });
 
         // SystemSetting — key/value config (PK = key)
