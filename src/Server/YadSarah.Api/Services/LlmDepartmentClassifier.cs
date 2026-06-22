@@ -40,11 +40,23 @@ public class LlmDepartmentClassifier(
                 generationConfig = new
                 {
                     temperature = 0,
-                    maxOutputTokens = 256,
+                    // Headroom so a stray "thinking" burst can't starve the JSON output (which would
+                    // come back as MAX_TOKENS with empty parts → an unwanted fallback). The model still
+                    // stops as soon as the short JSON is complete.
+                    maxOutputTokens = 1024,
                     responseMimeType = "application/json",
-                    // Disable "thinking" so the short classification stays fast and within the token cap
-                    // (supported by 2.5 models; harmless intent for the reception latency budget).
+                    // Disable "thinking" so the short classification stays fast (supported by 2.5 models).
                     thinkingConfig = new { thinkingBudget = 0 },
+                },
+                // Clinical free text (symptoms, injuries, paediatric cases) must not be dropped by the
+                // default safety filters — that produced intermittent empty responses. BLOCK_NONE on the
+                // configurable categories; this is a routing aid over non-identifying reason text.
+                safetySettings = new[]
+                {
+                    new { category = "HARM_CATEGORY_HARASSMENT", threshold = "BLOCK_NONE" },
+                    new { category = "HARM_CATEGORY_HATE_SPEECH", threshold = "BLOCK_NONE" },
+                    new { category = "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold = "BLOCK_NONE" },
+                    new { category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold = "BLOCK_NONE" },
                 },
             };
             var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent";
@@ -57,12 +69,17 @@ public class LlmDepartmentClassifier(
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(8));
 
             using var res = await http.SendAsync(msg, timeoutCts.Token);
+            var bodyText = await res.Content.ReadAsStringAsync(timeoutCts.Token);
             if (!res.IsSuccessStatusCode)
             {
-                log.LogWarning("Department-routing Gemini call failed: {Status}", res.StatusCode);
+                log.LogWarning("Department-routing Gemini call failed: {Status} {Body}", res.StatusCode, Trunc(bodyText));
                 return null;
             }
-            return ParseResponse(await res.Content.ReadAsStringAsync(timeoutCts.Token), candidates);
+            var parsed = ParseResponse(bodyText, candidates);
+            // Log the raw body when we fall back despite a 200 — surfaces finishReason / blockReason.
+            if (parsed is null)
+                log.LogWarning("Department-routing Gemini returned no usable verdict: {Body}", Trunc(bodyText));
+            return parsed;
         }
         catch (Exception ex)
         {
@@ -133,6 +150,9 @@ public class LlmDepartmentClassifier(
             return null;
         }
     }
+
+    private static string Trunc(string? s) =>
+        string.IsNullOrEmpty(s) ? "" : s.Length <= 600 ? s : s[..600];
 
     private record LlmVerdict(List<string>? Departments, double Confidence);
 }
