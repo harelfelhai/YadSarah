@@ -5,8 +5,9 @@ import type { CareStepStatus } from '../types';
 export const DOCTOR_LABEL = 'רופא';
 export const NURSE_LABEL = 'אחות';
 
-// Stations a clinician can refer a patient to during treatment.
-export const STATIONS = ['US', 'בדיקת דם', 'צילום', 'CT', 'אקג', 'ייעוץ'] as const;
+// Stations a clinician can refer a patient to during treatment (and that pregnant women's intake
+// pre-assigns: US + מעבדה, plus מוניטור from gestational week 28).
+export const STATIONS = ['US', 'בדיקת דם', 'מעבדה', 'צילום', 'CT', 'אקג', 'מוניטור', 'ייעוץ'] as const;
 
 // Per-step status labels + colors (same muted palette as visitStatus.ts).
 export const STEP_STATUS_LABEL: Record<CareStepStatus, string> = {

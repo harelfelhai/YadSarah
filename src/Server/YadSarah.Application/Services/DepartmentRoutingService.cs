@@ -89,9 +89,9 @@ public class DepartmentRoutingService(IDepartmentClassifier classifier)
     private static readonly IReadOnlyList<string> AmbiguityPriority =
         new[] { Departments.Womens, Departments.Emergency, Departments.Orthopedics };
 
-    // Rule 6 — pregnancy / "שבוע <n>" (gestational week). Rule 1 fallback — "ביקורת" or the
-    // follow-up doctor "מתי" as a standalone word ("מתי" also means "when", so require a word boundary).
-    private static readonly Regex PregnancyRx = new(@"הריון|היריון|שבוע\s*\d+", RegexOptions.Compiled);
+    // Rule 1 fallback — "ביקורת" or the follow-up doctor "מתי" as a standalone word ("מתי" also means
+    // "when", so require a word boundary). (Pregnancy detection — rule 6 — lives in PregnancyInfo, shared
+    // with the obstetric intake care-steps so the two never diverge.)
     private static readonly Regex ReviewRx = new(@"ביקורת|(?<!\p{L})מתי(?!\p{L})", RegexOptions.Compiled);
 
     public async Task<DepartmentRoutingResult> RouteAsync(
@@ -101,7 +101,7 @@ public class DepartmentRoutingService(IDepartmentClassifier classifier)
 
         // (2) Hard policy override (rule 6): pregnancy + not explicitly male ⇒ women's. Guaranteed
         // regardless of the AI (and saves a call). The AI prompt reinforces the same for robustness.
-        if (PregnancyRx.IsMatch(admissionReason ?? "") && !IsMale(ctx.Gender))
+        if (PregnancyInfo.IsPregnant(admissionReason) && !IsMale(ctx.Gender))
             return new DepartmentRoutingResult(new[] { Departments.Womens }, 1.0, "rule");
 
         // (3) AI classifier — ranked list, always collapsed to ONE.
@@ -160,7 +160,7 @@ public class DepartmentRoutingService(IDepartmentClassifier classifier)
     {
         var text = reason ?? "";
         if (ReviewRx.IsMatch(text)) return Departments.Review;
-        if (PregnancyRx.IsMatch(text) && !IsMale(ctx.Gender)) return Departments.Womens;
+        if (PregnancyInfo.IsPregnant(text) && !IsMale(ctx.Gender)) return Departments.Womens;
         if (ctx.Age is <= 17) return Departments.Pediatrics;
         return Departments.Emergency;
     }
