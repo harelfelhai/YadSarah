@@ -24,6 +24,30 @@ public static class CareStepCatalog
         Ultrasound, "בדיקת דם", Lab, "צילום", "CT", "אקג", Monitor, "ייעוץ",
     };
 
+    /// <summary>Referral targets that are really a DEPARTMENT move (label → department): selecting one
+    /// (e.g. "רופא נשים") reassigns the visit to that department's care rather than creating a parallel
+    /// station step. PLACEHOLDER mapping — the full list is pending from the client. Mirrored on the
+    /// client in constants/careSteps.ts — keep in sync.</summary>
+    public static readonly IReadOnlyDictionary<string, string> DepartmentStations = new Dictionary<string, string>
+    {
+        ["רופא ילדים"] = Departments.Pediatrics,
+        ["רופא נשים"] = Departments.Womens,
+    };
+
+    /// <summary>True if the label is a valid referral target — a regular station or a department-station.</summary>
+    public static bool IsKnownReferral(string label) =>
+        Stations.Contains(label) || DepartmentStations.ContainsKey(label);
+
+    /// <summary>The clinician roles a department's patient waits for by default — the same mapping
+    /// <see cref="CareStepService.InitialSteps"/> uses (אורטופדיה → doctor only; עירוי → nurse only;
+    /// otherwise nurse + doctor). Drives both intake and a mid-treatment department move (referral).</summary>
+    public static IReadOnlyList<UserRole> DefaultClinicianRoles(string? department) => department switch
+    {
+        Departments.Orthopedics => new[] { UserRole.Doctor },
+        Departments.Infusion => new[] { UserRole.Nurse },
+        _ => new[] { UserRole.Nurse, UserRole.Doctor },
+    };
+
     /// <summary>The role label for a clinician step. A patient waits for "a doctor" or "a nurse";
     /// a manager/admin acting as a clinician still targets the doctor track.</summary>
     public static string ClinicianLabel(UserRole role) => role == UserRole.Nurse ? NurseLabel : DoctorLabel;
@@ -50,19 +74,8 @@ public class CareStepService(AppDbContext db)
     /// Pregnancy/week are read from the admission reason (same signal as routing — see PregnancyInfo).</summary>
     public static IEnumerable<CareStep> InitialSteps(string? department, string? admissionReason = null)
     {
-        if (department == Departments.Orthopedics)
-        {
-            yield return ClinicianStep(UserRole.Doctor, department, trackOrder: 0);
-            yield break;
-        }
-        if (department == Departments.Infusion)
-        {
-            yield return ClinicianStep(UserRole.Nurse, department, trackOrder: 0);
-            yield break;
-        }
-
-        yield return ClinicianStep(UserRole.Nurse, department, trackOrder: 0);
-        yield return ClinicianStep(UserRole.Doctor, department, trackOrder: 0);
+        foreach (var role in CareStepCatalog.DefaultClinicianRoles(department))
+            yield return ClinicianStep(role, department, trackOrder: 0);
 
         // Pregnant women's department gets obstetric stations pre-assigned from intake.
         if (department == Departments.Womens && PregnancyInfo.IsPregnant(admissionReason))
@@ -169,31 +182,150 @@ public class CareStepService(AppDbContext db)
         return step;
     }
 
-    /// <summary>Refer the patient to a station (a test/consult). Creates a waiting station step that
-    /// remembers the referrer so completing it returns the patient to them.</summary>
-    public async Task<CareStep> ReferToStationAsync(
-        Guid visitId, string stationLabel, Guid userId, string userName, UserRole role, string? department)
+    /// <summary>The result of a (possibly multi-target) referral: the station steps created, plus the
+    /// department the patient was moved to if any target was a department-station (else null).</summary>
+    public record ReferralResult(IReadOnlyList<CareStep> StationSteps, string? ReassignedDepartment);
+
+    /// <summary>Refer the patient to one or more targets in a single action. A regular station creates a
+    /// "waiting for [station]" step (remembering the referrer for auto-return). A department-station
+    /// (<see cref="CareStepCatalog.DepartmentStations"/>, e.g. "רופא נשים") instead MOVES the patient to
+    /// that department — reassigns the visit's department (referral provenance, queue ticket kept) and
+    /// adds that department's default clinician waiting-steps that aren't already active. Kinds may mix.</summary>
+    public async Task<ReferralResult> ReferToStationsAsync(
+        Guid visitId, IReadOnlyList<string> labels, Guid userId, string userName, UserRole role, string? department)
     {
-        var label = (stationLabel ?? string.Empty).Trim();
-        if (!CareStepCatalog.Stations.Contains(label))
-            throw new ArgumentException($"תחנה לא מוכרת: {label}");
+        var clean = (labels ?? Array.Empty<string>())
+            .Select(l => (l ?? string.Empty).Trim())
+            .Where(l => l.Length > 0)
+            .Distinct()
+            .ToList();
+        if (clean.Count == 0) throw new ArgumentException("לא נבחרו תחנות.");
+        foreach (var l in clean)
+            if (!CareStepCatalog.IsKnownReferral(l))
+                throw new ArgumentException($"תחנה לא מוכרת: {l}");
 
-        var step = new CareStep
+        var visit = await db.Visits.Include(v => v.CareSteps).Include(v => v.Forms)
+            .FirstOrDefaultAsync(v => v.Id == visitId)
+            ?? throw new KeyNotFoundException($"Visit {visitId} not found");
+
+        var stationSteps = new List<CareStep>();
+        string? reassignedTo = null;
+
+        foreach (var label in clean)
         {
-            VisitId = visitId,
-            Category = CareStepCategory.Station,
-            Label = label,
-            Status = CareStepStatus.Waiting,
-            ReferredByUserId = userId,
-            ReferredByName = userName,
-            ReferredByRole = role,
-            ReferredByDepartment = department,
-        };
-        db.CareSteps.Add(step);
+            if (CareStepCatalog.DepartmentStations.TryGetValue(label, out var targetDept))
+            {
+                ReassignByReferral(visit, targetDept, userId, userName, role);
+                reassignedTo = targetDept;
+            }
+            else
+            {
+                var step = new CareStep
+                {
+                    VisitId = visitId,
+                    Category = CareStepCategory.Station,
+                    Label = label,
+                    Status = CareStepStatus.Waiting,
+                    ReferredByUserId = userId,
+                    ReferredByName = userName,
+                    ReferredByRole = role,
+                    ReferredByDepartment = visit.ReceptionDepartment,
+                };
+                db.CareSteps.Add(step);
+                visit.CareSteps.Add(step);
+                stationSteps.Add(step);
+            }
+        }
 
-        await RecomputeVisitStatusAsync(visitId, enterActor: null);
+        if (visit.Status != VisitStatus.Discharged)
+        {
+            var allFormsSigned = visit.Forms.Count > 0 && visit.Forms.All(f => f.IsSigned);
+            visit.Status = DeriveStatus(visit.CareSteps, allFormsSigned);
+            visit.UpdatedAt = DateTime.UtcNow;
+        }
+
         await db.SaveChangesAsync();
-        return step;
+        return new ReferralResult(stationSteps, reassignedTo);
+    }
+
+    /// <summary>Move the visit to a department because of a clinician's referral (e.g. "רופא נשים"):
+    /// stamp the department + referring professional (not AI), KEEP the queue ticket, and RECONCILE the
+    /// patient's clinician waits to the new department's defaults — cancel active clinician steps whose
+    /// role the new department doesn't use (the previous department's no-longer-relevant defaults),
+    /// KEEP a role both departments share (e.g. "ממתין לרופא"), and add any missing default role. Explicit
+    /// station referrals are untouched; the visit's department supplies the "which doctor" context.</summary>
+    private void ReassignByReferral(Visit visit, string targetDept, Guid userId, string userName, UserRole role)
+    {
+        if (visit.ReceptionDepartment != targetDept)
+        {
+            visit.ReceptionDepartment = targetDept;
+            visit.DepartmentAssignedByAi = false;
+            visit.DepartmentConfidence = null;
+            visit.DepartmentCandidatesJson = null;
+            visit.DepartmentChangedByUserId = userId;
+            visit.DepartmentChangedByName = userName;
+            visit.DepartmentChangedByRole = role;
+            visit.DepartmentChangedAt = DateTime.UtcNow;
+            visit.UpdatedAt = DateTime.UtcNow;
+        }
+
+        var newRoles = CareStepCatalog.DefaultClinicianRoles(targetDept);
+
+        // Remove the previous department's defaults that the new one doesn't need (a shared role stays).
+        foreach (var s in visit.CareSteps.Where(s =>
+            s.Category == CareStepCategory.Clinician &&
+            s.ClinicianRole is UserRole r && !newRoles.Contains(r) &&
+            s.Status is CareStepStatus.Waiting or CareStepStatus.Called or CareStepStatus.InProgress))
+        {
+            s.Status = CareStepStatus.Canceled;
+            s.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Add the new department's default clinician waits that aren't already active.
+        foreach (var defaultRole in newRoles)
+        {
+            var hasActive = visit.CareSteps.Any(s =>
+                s.Category == CareStepCategory.Clinician &&
+                s.ClinicianRole == defaultRole &&
+                s.Status is CareStepStatus.Waiting or CareStepStatus.Called or CareStepStatus.InProgress);
+            if (hasActive) continue;
+
+            var step = ClinicianStep(defaultRole, targetDept, trackOrder: 0);
+            step.VisitId = visit.Id;
+            db.CareSteps.Add(step);
+            visit.CareSteps.Add(step);
+        }
+    }
+
+    /// <summary>A non-doctor professional finished their part (clicked "סיים" or left the medical form):
+    /// complete the active NURSE clinician step(s) for the visit — WITHOUT discharging. The patient keeps
+    /// waiting for the doctor (and any stations). Only a doctor's signature discharges, so this never
+    /// touches a doctor step (the only non-doctor clinician track is the nurse's).</summary>
+    public async Task<Visit> FinishNonDoctorAsync(Guid visitId, Guid userId, string userName, UserRole role)
+    {
+        var visit = await db.Visits.Include(v => v.CareSteps).Include(v => v.Forms)
+            .FirstOrDefaultAsync(v => v.Id == visitId)
+            ?? throw new KeyNotFoundException($"Visit {visitId} not found");
+
+        foreach (var s in visit.CareSteps.Where(s =>
+            s.Category == CareStepCategory.Clinician &&
+            s.ClinicianRole == UserRole.Nurse &&
+            s.Status != CareStepStatus.Done && s.Status != CareStepStatus.Canceled))
+        {
+            s.Status = CareStepStatus.Done;
+            s.CompletedAt = DateTime.UtcNow;
+            s.UpdatedAt = DateTime.UtcNow;
+        }
+
+        if (visit.Status != VisitStatus.Discharged)
+        {
+            var allFormsSigned = visit.Forms.Count > 0 && visit.Forms.All(f => f.IsSigned);
+            visit.Status = DeriveStatus(visit.CareSteps, allFormsSigned);
+            visit.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync();
+        return visit;
     }
 
     // ── Dual department (women's + other) ───────────────────────────────────────

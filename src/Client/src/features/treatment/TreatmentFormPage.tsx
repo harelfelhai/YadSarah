@@ -21,7 +21,7 @@ import TreatmentActions from './TreatmentActions';
 import { useAuthStore } from '../../store/auth';
 import { newId } from '../../utils/id';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
-import { hasAnyRole } from '../../constants/roles';
+import { hasAnyRole, isClinicalStaff } from '../../constants/roles';
 import { queueLabel, WOMENS_DEPARTMENT } from '../../constants/departments';
 import {
   joinForm, leaveForm, onLockAcquired, onLockReleased,
@@ -229,6 +229,19 @@ export default function TreatmentFormPage() {
     return () => { leaveForm(activeForm.id); offs.forEach((off) => off()); };
   }, [activeForm?.id, queryClient, visitId, user?.id]);
 
+  // Exit = finish for a NON-doctor: leaving the medical form completes their (nurse) part — the patient
+  // stays waiting for the doctor. Doctors finish only by signing. Guarded to an InProgress nurse step so
+  // a mere peek doesn't finish. The ref holds the latest decision for the unmount-only cleanup below.
+  const finishOnExitRef = useRef(false);
+  useEffect(() => {
+    const nonDoctorClinical = !hasAnyRole(user?.roles, 'Doctor') && isClinicalStaff(user?.roles);
+    finishOnExitRef.current = nonDoctorClinical && !activeForm?.isSigned && !!visit?.careSteps?.some(
+      (s) => s.category === 'Clinician' && s.clinicianRole === 'Nurse' && s.status === 'InProgress');
+  });
+  useEffect(() => () => {
+    if (finishOnExitRef.current && visitId) visitsApi.finishTreatment(visitId).catch(() => {});
+  }, [visitId]);
+
   // ── Derived edit-permission state ──────────────────────────────────────────
   const formSigned = !!activeForm?.isSigned;
   const canEditSigned = canEditSignedForm(
@@ -341,7 +354,23 @@ export default function TreatmentFormPage() {
     }
   };
 
+  // A non-doctor (nurse etc.) explicitly finishes their part — completes their step without discharging;
+  // the patient stays waiting for the doctor. Clears the exit-guard so the unmount effect doesn't re-fire.
+  const handleFinish = async () => {
+    if (!visitId) return;
+    finishOnExitRef.current = false;
+    try {
+      await visitsApi.finishTreatment(visitId);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      notifications.show({ color: 'green', message: 'סיימת את הטיפול; המטופל ממתין לרופא' });
+    } catch {
+      notifications.show({ color: 'brick', message: 'הסיום נכשל' });
+    }
+    navigate('/queue');
+  };
+
   const isDoctor = hasAnyRole(user?.roles, 'Doctor');
+  const isNonDoctorClinical = !isDoctor && isClinicalStaff(user?.roles);
 
   if (visitLoading || formsLoading) return <Box ta="center" py="xl"><Loader /></Box>;
 
@@ -492,6 +521,11 @@ export default function TreatmentFormPage() {
               onClick={() => printForm(activeForm, visit)}
             >
               הדפסה
+            </Button>
+          )}
+          {!formSigned && isNonDoctorClinical && (
+            <Button color="teal" onClick={handleFinish}>
+              סיים
             </Button>
           )}
           {!formSigned && isDoctor && (
