@@ -258,9 +258,9 @@ public class VisitsController(
         {
             var result = await steps.ReferToStationsAsync(
                 id, req.Labels, UserId, UserName, CallerRole, req.Department);
-            if (result.StationSteps.Count > 0)
+            if (result.ReferredLabels.Count > 0)
                 await audit.LogAsync("CareStepReferred", "Visit", id, "careStep",
-                    newValue: string.Join(", ", result.StationSteps.Select(s => s.Label)));
+                    newValue: string.Join(", ", result.ReferredLabels));
             if (result.ReassignedDepartment is not null)
                 await audit.LogAsync("DepartmentReassignedByReferral", "Visit", id, "ReceptionDepartment",
                     newValue: result.ReassignedDepartment);
