@@ -381,8 +381,15 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
   (`POST /visits/{id}/finish`, `CareStepNonDoctorFinished`) פתוח לצוות **שאינו רופא** בלבד
   (`Nurse,ShiftManager,Admin,NursingStudent,LabStaff` — Doctor חסום) ומסיים אך-ורק צעדי-**אחות**;
   לעולם אינו משחרר ואינו נוגע בצעד-רופא — **שחרור נשאר בלעדי לחתימת רופא** (§9).
+- **שיוך-רופא ("קח תחתיי", ללא תחילת טיפול):** רופא משייך אליו מטופל הממתין לרופא דרך
+  `PATCH /visits/{id}/steps/{stepId}` (action `claim`/`release`), **מוגבל לרופא/מנהל-משמרת/אדמין**
+  (נבדק ב-`User.IsInRole`; אחות/סטודנט/מעבדה → 403). הצעד נשאר Waiting/Called — **אין שינוי סטטוס, אין
+  שחרור, ו-analytics אינו מושפע**. עקיפה (re-claim) מותרת ומתועדת; **שחרור** מוגבל למשייך עצמו או למנהל
+  (נאכף בשרת). השדות (`ClaimedBy*`) הם מטא-דאטה תפעולי (שם הרופא המשייך) ולא PHI; הקלט DTO ייעודי
+  (`StepActionRequest`), EF פרמטרי — אין over-posting ואין SQLi.
 - **תיעוד (audit):** כל פעולה נרשמת — הפניה (`CareStepReferred`), קרא/הכנס/סיים
-  (`CareStepCall`/`CareStepEnter`/`CareStepComplete`), שיוך כפול (`DualDepartmentSet`), סיום-לא-רופא
+  (`CareStepCall`/`CareStepEnter`/`CareStepComplete`), שיוך/שחרור-רופא (`CareStepClaim`/`CareStepRelease`),
+  שיוך כפול (`DualDepartmentSet`), סיום-לא-רופא
   (`CareStepNonDoctorFinished`), והעברת-מחלקה-בהפניה (`DepartmentReassignedByReferral`), כולן על
   `EntityType="Visit"` עם IP.
 - **SQLi:** כל גישת-הנתונים EF (LINQ פרמטרי); אין SQL גולמי. **XSS:** הצגת הצעדים בלקוח

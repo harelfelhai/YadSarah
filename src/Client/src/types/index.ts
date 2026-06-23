@@ -32,9 +32,14 @@ export interface CareStep {
   completedAt?: string | null;
   referredByName?: string | null;
   referredByDepartment?: string | null;
+  // Doctor "claim" (soft assignment without starting treatment). Set only on a Doctor step that is
+  // still Waiting/Called; rendered as "ממתין לד״ר {name}" and sinks the patient in the queue.
+  claimedByUserId?: string | null;
+  claimedByName?: string | null;
+  claimedAt?: string | null;
 }
 
-export type CareStepAction = 'call' | 'enter' | 'complete';
+export type CareStepAction = 'call' | 'enter' | 'complete' | 'claim' | 'release';
 
 export type UserRole =
   | 'Reception' | 'Nurse' | 'Doctor' | 'Admin' | 'ShiftManager'

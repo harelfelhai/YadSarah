@@ -310,6 +310,17 @@ public class VisitsController(
                 case "complete":
                     step = await steps.CompleteAsync(stepId, UserId, UserName, CallerRole);
                     break;
+                case "claim":
+                case "release":
+                    // Claiming a patient ("take under my care") is a doctor decision — restrict to
+                    // doctor-capable roles regardless of the broader step-action authorization above.
+                    if (!(User.IsInRole(nameof(UserRole.Doctor)) || User.IsInRole(nameof(UserRole.ShiftManager)) || User.IsInRole(nameof(UserRole.Admin))))
+                        return StatusCode(403, new { message = "רק רופא או מנהל משמרת יכולים לשייך/לשחרר מטופל." });
+                    step = action == "claim"
+                        ? await steps.ClaimDoctorStepAsync(stepId, UserId, UserName)
+                        : await steps.ReleaseDoctorClaimAsync(stepId, UserId,
+                            User.IsInRole(nameof(UserRole.ShiftManager)) || User.IsInRole(nameof(UserRole.Admin)));
+                    break;
                 default:
                     return BadRequest(new { message = "פעולה לא חוקית." });
             }

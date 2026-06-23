@@ -321,6 +321,48 @@ public class CareStepService(AppDbContext db)
         visit.CareSteps.Add(step);
     }
 
+    // ── Doctor claim (take a patient under your care without starting treatment) ──
+
+    /// <summary>A doctor "takes a patient under their care" without starting treatment: marks the visit's
+    /// active Doctor clinician step as claimed by this doctor. The step stays Waiting/Called (no status
+    /// change, so the coarse visit status / analytics are untouched), but other doctors now see it is taken
+    /// ("ממתין לד״ר X") and the patient sinks below unclaimed ones in the queue. Override is allowed —
+    /// re-claiming a step already claimed by another doctor just reassigns it (audited by the caller).</summary>
+    public async Task<CareStep> ClaimDoctorStepAsync(Guid stepId, Guid userId, string userName)
+    {
+        var step = await LoadActiveStepAsync(stepId);
+        if (step.Category != CareStepCategory.Clinician || step.ClinicianRole != UserRole.Doctor)
+            throw new ArgumentException("ניתן לשייך לרופא רק צעד של רופא.");
+        if (step.Status is not (CareStepStatus.Waiting or CareStepStatus.Called))
+            throw new ArgumentException("ניתן לשייך רק מטופל הממתין לרופא (לפני תחילת טיפול).");
+
+        step.ClaimedByUserId = userId;
+        step.ClaimedByName = userName;
+        step.ClaimedAt = DateTime.UtcNow;
+        step.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        return step;
+    }
+
+    /// <summary>Release a doctor's claim (clear the soft assignment), returning the patient to the
+    /// unassigned "ממתין לרופא" pool. Allowed only for the claiming doctor or a shift-manager/admin
+    /// (<paramref name="isManager"/>) — a different doctor who wants the patient re-claims instead.</summary>
+    public async Task<CareStep> ReleaseDoctorClaimAsync(Guid stepId, Guid userId, bool isManager)
+    {
+        var step = await LoadActiveStepAsync(stepId);
+        if (step.ClaimedByUserId is Guid claimer && claimer != userId && !isManager)
+            throw new ArgumentException("רק הרופא המשייך או מנהל משמרת יכולים לשחרר את השיוך.");
+
+        step.ClaimedByUserId = null;
+        step.ClaimedByName = null;
+        step.ClaimedAt = null;
+        step.UpdatedAt = DateTime.UtcNow;
+
+        await db.SaveChangesAsync();
+        return step;
+    }
+
     /// <summary>A non-doctor professional finished their part (clicked "סיים" or left the medical form):
     /// complete the active NURSE clinician step(s) for the visit — WITHOUT discharging. The patient keeps
     /// waiting for the doctor (and any stations). Only a doctor's signature discharges, so this never

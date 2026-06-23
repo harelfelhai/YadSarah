@@ -66,6 +66,15 @@ public class CareStep
     public UserRole? ReferredByRole { get; set; }
     public string? ReferredByDepartment { get; set; }
 
+    // ── Doctor claim (soft assignment, no treatment yet) ──────────────────────
+    // A doctor can "take a patient under their care" from the queue without starting treatment:
+    // the doctor step stays Waiting/Called but is marked as claimed, so other doctors see it is
+    // already taken (rendered "ממתין לד״ר X") and the patient sinks below unclaimed ones in the
+    // department queue. Only meaningful on a Doctor clinician step; cleared on release.
+    public Guid? ClaimedByUserId { get; set; }
+    public string? ClaimedByName { get; set; }
+    public DateTime? ClaimedAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

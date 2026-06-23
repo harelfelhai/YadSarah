@@ -59,6 +59,24 @@ export default function QueuePage() {
   // that track's form. The cache is updated optimistically so the status flips instantly (instead
   // of waiting for the refetch / SignalR round-trip), then reconciled with the server.
   const handleStepAction = async (visit: Visit, step: CareStep, action: CareStepAction) => {
+    // Claim / release: a soft doctor assignment — no status change, just stamp/clear the claiming doctor.
+    if (action === 'claim' || action === 'release') {
+      const claimedByName = action === 'claim' ? (user?.fullName ?? '') : null;
+      const claimedByUserId = action === 'claim' ? (user?.id ?? null) : null;
+      queryClient.setQueriesData<Visit[]>({ queryKey: ['queue'] }, (old) =>
+        old?.map((v) => v.id !== visit.id ? v : {
+          ...v,
+          careSteps: v.careSteps?.map((s) => s.id === step.id ? { ...s, claimedByName, claimedByUserId } : s),
+        }));
+      try {
+        await visitsApi.updateStep(visit.id, step.id, action);
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
+      } catch {
+        queryClient.invalidateQueries({ queryKey: ['queue'] }); // roll back to server truth
+        notifications.show({ color: 'brick', message: 'הפעולה נכשלה' });
+      }
+      return;
+    }
     const optimistic: CareStepStatus = action === 'call' ? 'Called' : action === 'enter' ? 'InProgress' : 'Done';
     queryClient.setQueriesData<Visit[]>({ queryKey: ['queue'] }, (old) =>
       old?.map((v) => v.id !== visit.id ? v : {
@@ -77,6 +95,8 @@ export default function QueuePage() {
 
   const isReception = isReceptionStaff(user?.roles);
   const isClinical = isClinicalStaff(user?.roles);
+  // Who may "take a patient under their care": doctors (and shift-managers/admins acting clinically).
+  const canClaim = hasAnyRole(user?.roles, 'Doctor', 'ShiftManager', 'Admin');
 
   const active = showAll ? visits : visits.filter((v) => {
     if (v.status === 'Discharged') return false;
@@ -88,20 +108,26 @@ export default function QueuePage() {
   const showDeptHighlight = !!userDept && hasAnyRole(user?.roles, 'Doctor', 'Nurse', 'MedStudent', 'NursingStudent');
 
   const isSpecial = (v: Visit) => v.queueLetter === SPECIAL_QUEUE_LETTER;
+  // A patient already "taken" by a doctor (claimed, still pre-treatment) sinks BELOW unclaimed ones
+  // within the same tier/department, so unassigned patients surface first for the next free doctor.
+  const isClaimed = (v: Visit) => !!v.careSteps?.some((s) =>
+    s.category === 'Clinician' && s.clinicianRole === 'Doctor' && !!s.claimedByUserId &&
+    (s.status === 'Waiting' || s.status === 'Called'));
 
   // Ordering: priority tiers are preserved — the special/priority queue floats to the very top,
   // then (when highlighting) the viewer's own department, then everyone else. WITHIN each tier
-  // patients are ordered by WAIT TIME (longest-waiting first), not by queue number: now that
-  // numbers run per-department (A-1, B-1, …) they're no longer comparable across departments.
-  const byWaitDesc = (a: Visit, b: Visit) => waitMinutes(b) - waitMinutes(a);
-  const special = active.filter(isSpecial).sort(byWaitDesc);
+  // unclaimed patients come before claimed ones, and otherwise by WAIT TIME (longest-waiting first) —
+  // not queue number: now that numbers run per-department (A-1, B-1, …) they're not comparable across.
+  const byClaimThenWait = (a: Visit, b: Visit) =>
+    (isClaimed(a) ? 1 : 0) - (isClaimed(b) ? 1 : 0) || waitMinutes(b) - waitMinutes(a);
+  const special = active.filter(isSpecial).sort(byClaimThenWait);
   const rest = active.filter((v) => !isSpecial(v));
   const ordered = showDeptHighlight
     ? [
-        ...rest.filter((v) => v.receptionDepartment === userDept).sort(byWaitDesc),
-        ...rest.filter((v) => v.receptionDepartment !== userDept).sort(byWaitDesc),
+        ...rest.filter((v) => v.receptionDepartment === userDept).sort(byClaimThenWait),
+        ...rest.filter((v) => v.receptionDepartment !== userDept).sort(byClaimThenWait),
       ]
-    : [...rest].sort(byWaitDesc);
+    : [...rest].sort(byClaimThenWait);
   const sorted = [...special, ...ordered];
 
   // Find a patient quickly by name / ID (e.g. to open their form).
@@ -267,6 +293,8 @@ export default function QueuePage() {
                       <CareStepList
                         steps={visit.careSteps}
                         isClinical={isClinical}
+                        canClaim={canClaim}
+                        currentUserId={user?.id}
                         onAction={(step, action) => handleStepAction(visit, step, action)}
                         fallback={
                           <Badge color={STATUS_COLOR[visit.status]} variant="light">
