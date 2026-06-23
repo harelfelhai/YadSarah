@@ -108,18 +108,20 @@ export default function QueuePage() {
   const showDeptHighlight = !!userDept && hasAnyRole(user?.roles, 'Doctor', 'Nurse', 'MedStudent', 'NursingStudent');
 
   const isSpecial = (v: Visit) => v.queueLetter === SPECIAL_QUEUE_LETTER;
-  // A patient already "taken" by a doctor (claimed, still pre-treatment) sinks BELOW unclaimed ones
-  // within the same tier/department, so unassigned patients surface first for the next free doctor.
-  const isClaimed = (v: Visit) => !!v.careSteps?.some((s) =>
-    s.category === 'Clinician' && s.clinicianRole === 'Doctor' && !!s.claimedByUserId &&
+  // A patient taken by a doctor sinks BELOW unclaimed ones — but ONLY for the OTHER doctors (so they
+  // skip an already-taken patient). NOT for the claiming doctor (it's their patient → stays in place)
+  // and NOT for nurses/other staff (who don't pick up doctor patients). Hence it depends on the viewer.
+  const isClaimedByOther = (v: Visit) => canClaim && !!v.careSteps?.some((s) =>
+    s.category === 'Clinician' && s.clinicianRole === 'Doctor' &&
+    !!s.claimedByUserId && s.claimedByUserId !== user?.id &&
     (s.status === 'Waiting' || s.status === 'Called'));
 
   // Ordering: priority tiers are preserved — the special/priority queue floats to the very top,
   // then (when highlighting) the viewer's own department, then everyone else. WITHIN each tier
-  // unclaimed patients come before claimed ones, and otherwise by WAIT TIME (longest-waiting first) —
-  // not queue number: now that numbers run per-department (A-1, B-1, …) they're not comparable across.
+  // patients claimed by ANOTHER doctor sink to the bottom, and otherwise by WAIT TIME (longest-waiting
+  // first) — not queue number: now that numbers run per-department (A-1, B-1, …) they're not comparable.
   const byClaimThenWait = (a: Visit, b: Visit) =>
-    (isClaimed(a) ? 1 : 0) - (isClaimed(b) ? 1 : 0) || waitMinutes(b) - waitMinutes(a);
+    (isClaimedByOther(a) ? 1 : 0) - (isClaimedByOther(b) ? 1 : 0) || waitMinutes(b) - waitMinutes(a);
   const special = active.filter(isSpecial).sort(byClaimThenWait);
   const rest = active.filter((v) => !isSpecial(v));
   const ordered = showDeptHighlight

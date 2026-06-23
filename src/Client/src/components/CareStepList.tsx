@@ -37,7 +37,9 @@ export default function CareStepList({ steps, isClinical, onAction, canClaim, cu
         const claimableDoctor = s.category === 'Clinician' && s.clinicianRole === 'Doctor'
           && (s.status === 'Waiting' || s.status === 'Called');
         const claimedByMe = !!s.claimedByUserId && s.claimedByUserId === currentUserId;
-        const label = claimableDoctor && s.claimedByName ? `ד״ר ${s.claimedByName}` : s.label;
+        // The claimer's full name already carries their title (e.g. "ד״ר רון כהן") — show it as-is so the
+        // line reads "ממתין ל…/נקרא ל…" + the name, with no doubled "ד״ר".
+        const label = claimableDoctor && s.claimedByName ? s.claimedByName : s.label;
         return (
           <Group key={s.id} gap={6} wrap="nowrap" align="center">
             <Badge color={STEP_STATUS_COLOR[s.status]} variant="light" size="sm" style={{ whiteSpace: 'nowrap' }}>
