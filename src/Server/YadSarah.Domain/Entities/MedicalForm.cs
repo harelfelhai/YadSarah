@@ -43,6 +43,8 @@ public class MedicalForm
     public string DiagnosesJson { get; set; } = "[]";
     // DischargeMedications: [{drugName, dosage, notes}]
     public string DischargeMedicationsJson { get; set; } = "[]";
+    // HomeMedications: [{drugName, dosage, notes}] — meds the patient reported taking before arrival
+    public string HomeMedicationsJson { get; set; } = "[]";
     // Routing: [{station, status, arrivalDate}]
     public string RoutingJson { get; set; } = "[]";
 

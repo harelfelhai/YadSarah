@@ -17,6 +17,7 @@ public class FormService(AppDbContext db, MedicationCatalogService medCatalog, D
         ["treatments"] = "drugName",
         ["administrationOrders"] = "drugName",
         ["dischargeMedications"] = "drugName",
+        ["homeMedications"] = "drugName",
         ["diagnoses"] = "diagnosis",
     };
 
@@ -29,7 +30,7 @@ public class FormService(AppDbContext db, MedicationCatalogService medCatalog, D
     // Sections shared across all of a visit's forms (a dual women's + other-dept visit has two).
     // They are objective / patient-level data captured once, so an edit on one form mirrors to the
     // siblings. Matches the client decision (vitals + allergies + past medical history).
-    private static readonly HashSet<string> SharedSections = new() { "vitalSigns", "allergies", "pastMedicalHistory" };
+    private static readonly HashSet<string> SharedSections = new() { "vitalSigns", "allergies", "pastMedicalHistory", "homeMedications" };
 
     public async Task<List<MedicalForm>> GetByVisitAsync(Guid visitId) =>
         await db.MedicalForms.Where(f => f.VisitId == visitId).ToListAsync();
@@ -318,6 +319,7 @@ public class FormService(AppDbContext db, MedicationCatalogService medCatalog, D
         "treatments" => form.TreatmentsJson,
         "administrationOrders" => form.AdministrationOrdersJson,
         "dischargeMedications" => form.DischargeMedicationsJson,
+        "homeMedications" => form.HomeMedicationsJson,
         "diagnoses" => form.DiagnosesJson,
         _ => "[]",
     };
@@ -365,6 +367,7 @@ public class FormService(AppDbContext db, MedicationCatalogService medCatalog, D
             case "administrationOrders": form.AdministrationOrdersJson = value; break;
             case "diagnoses": form.DiagnosesJson = value; break;
             case "dischargeMedications": form.DischargeMedicationsJson = value; break;
+            case "homeMedications": form.HomeMedicationsJson = value; break;
             case "routing": form.RoutingJson = value; break;
             default: throw new ArgumentException($"Unknown section: {section}");
         }

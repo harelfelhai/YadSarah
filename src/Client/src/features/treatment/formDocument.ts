@@ -9,6 +9,7 @@ export const SECTIONS: { key: string; label: string }[] = [
   { key: 'presentIllness', label: 'מחלה נוכחית (HPI)' },
   { key: 'pastMedicalHistory', label: 'רקע רפואי' },
   { key: 'allergies', label: 'רגישויות' },
+  { key: 'homeMedications', label: 'בימים האחרונים נטל תרופות' },
   { key: 'vitalSigns', label: 'סימנים חיוניים' },
   { key: 'triage', label: 'טריאז׳' },
   { key: 'treatments', label: 'טיפולים ותרופות' },
@@ -41,6 +42,7 @@ const PRINT_COLUMNS: Record<string, { key: string; label: string }[]> = {
   administrationOrders: [{ key: 'drugName', label: 'תרופה' }, { key: 'dosage', label: 'מינון' }, { key: 'startDate', label: 'התחלה' }, { key: 'duration', label: 'משך' }, { key: 'notes', label: 'הערות' }],
   diagnoses: [{ key: 'diagnosis', label: 'אבחנה' }, { key: 'status', label: 'סטטוס' }, { key: 'severity', label: 'חומרה' }, { key: 'isPrimary', label: 'עיקרית' }],
   dischargeMedications: [{ key: 'drugName', label: 'תרופה' }, { key: 'dosage', label: 'מינון' }, { key: 'notes', label: 'הערות' }],
+  homeMedications: [{ key: 'drugName', label: 'תרופה' }, { key: 'dosage', label: 'מינון' }, { key: 'notes', label: 'הערות' }],
   routing: [{ key: 'station', label: 'תחנה' }, { key: 'status', label: 'סטטוס' }, { key: 'arrivalDate', label: 'ת.הגעה' }],
 };
 

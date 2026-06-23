@@ -146,6 +146,24 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 `Client/src/api/medications.ts`, `features/treatment/TreatmentFormPage.tsx` (DrugAutocomplete),
 `features/admin/SettingsPage.tsx`.
 
+### 10.1 שדה-טופס נוסף — "בימים האחרונים נטל תרופות" (תרופות-בית)
+
+נוסף לטופס הרפואי section חדש `homeMedications` (תווית "בימים האחרונים נטל תרופות") — טבלה
+מגובת-קטלוג של תרופות שהמטופל דיווח שנטל **לפני** ההגעה, במראה לסקשן `dischargeMedications`
+הקיים. השינוי **אינו מוסיף נתיב-גישה, endpoint או DTO חדש** ולכן **יורש את כל בקרות הטופס**:
+
+- **הרשאות (need-to-know):** הסקשן נכנס למפתח-ההרשאות של `FormSectionPolicy` — ברירת-מחדל
+  רופא/מנהל/אדמין, ו**אחות** (נוסף ל-`NurseEditable` כי תרופות-בית נאספות באנמנזה). **קבלה
+  חסומה** (כל הטופס מאחורי `FormsController` המוגן). המראה בצד-לקוח (`formPolicy.ts`) זהה.
+- **רשימה סגורה (closed-list):** `homeMedications` הוא הסקשן הרביעי ב-`CatalogSectionProperty`
+  (`FormService`), כך ששמות-תרופה נאכפים מול קטלוג ה-MoH הסגור — עם אותו grandfathering
+  (ערכים קיימים אינם חוסמים) ודילוג כשהקטלוג ריק; הוא גם משותף בין טפסי שיוך-כפול (`SharedSections`).
+- **מניעת over-posting:** השמירה עוברת ב-`UpdateSectionAsync` הקיים (PATCH גנרי לפי section-key),
+  וה-`SetSection` הוא allowlist (מפתח לא-מוכר → חריגה) — אין mass-assignment.
+- **תיעוד ושלמות:** אותו נתיב מתועד (`Updated`), אותה בקרת-גרסה/נעילת-חתימה. **אי-חשיפת PHI חדשה** —
+  אותו טופס, אותה הרשאה, ללא logging חדש של נתוני-מטופל. מיגרציה `AddHomeMedications` מוסיפה עמודת
+  `text` בודדת (`HomeMedicationsJson`), במראה לעמודות ה-`*Json` הקיימות.
+
 ## 11. דיווחי משתמשים (Feedback)
 
 כפתור צף בכל מסך מאפשר לכל משתמש מחובר לדווח על תקלה/תיקון/שיפור. הדיווחים נשמרים ב-DB

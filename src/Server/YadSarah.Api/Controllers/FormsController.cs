@@ -68,6 +68,7 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         administrationOrders = ParseJson(f.AdministrationOrdersJson, "[]"),
         diagnoses = ParseJson(f.DiagnosesJson, "[]"),
         dischargeMedications = ParseJson(f.DischargeMedicationsJson, "[]"),
+        homeMedications = ParseJson(f.HomeMedicationsJson, "[]"),
         routing = ParseJson(f.RoutingJson, "[]"),
         isSigned = f.IsSigned,
         signedByUserId = f.SignedByUserId,

@@ -5,7 +5,7 @@ import type { UserRole } from '../types';
 
 const NURSE_EDITABLE = new Set<string>([
   'chiefComplaint', 'presentIllness', 'pastMedicalHistory',
-  'allergies', 'vitalSigns', 'triage', 'treatments',
+  'allergies', 'homeMedications', 'vitalSigns', 'triage', 'treatments',
   'administrationOrders', 'routing',
 ]);
 

@@ -17,7 +17,7 @@ public static class FormSectionPolicy
     public static readonly IReadOnlyList<string> AllSections = new[]
     {
         "chiefComplaint", "presentIllness", "pastMedicalHistory", "allergies",
-        "vitalSigns", "triage", "treatments", "physicalExam",
+        "homeMedications", "vitalSigns", "triage", "treatments", "physicalExam",
         "administrationOrders", "diagnoses", "discussionAndPlan",
         "dischargeRecommendations", "dischargeMedications", "orderedUnits", "routing",
     };
@@ -26,7 +26,7 @@ public static class FormSectionPolicy
     private static readonly HashSet<string> NurseEditable = new()
     {
         "chiefComplaint", "presentIllness", "pastMedicalHistory",
-        "allergies", "vitalSigns", "triage", "treatments",
+        "allergies", "homeMedications", "vitalSigns", "triage", "treatments",
         "administrationOrders", "routing",
     };
 

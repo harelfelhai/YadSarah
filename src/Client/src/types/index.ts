@@ -228,6 +228,14 @@ export interface DischargeMedication {
   notes?: string;
 }
 
+// תרופות שהמטופל דיווח שנטל לפני ההגעה ("בימים האחרונים נטל תרופות")
+export interface HomeMedication {
+  id: string;
+  drugName: string;
+  dosage?: string;
+  notes?: string;
+}
+
 export interface Routing {
   id: string;
   station: StationType;
@@ -277,6 +285,7 @@ export interface MedicalForm {
   presentIllness?: string;
   pastMedicalHistory?: string;
   allergies: Allergy[];
+  homeMedications: HomeMedication[];
   vitalSigns: VitalSign[];
   triage?: string;
   treatments: Treatment[];
