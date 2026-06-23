@@ -161,6 +161,11 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         {
             return Conflict(new { message = ex.Message });
         }
+        catch (ArgumentException ex)
+        {
+            // Closed-list (catalog) rejection or unknown section.
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     // ── Signing ───────────────────────────────────────────────────────────

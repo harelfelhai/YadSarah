@@ -87,7 +87,7 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   the client mirror is [src/Client/src/constants/formPolicy.ts](src/Client/src/constants/formPolicy.ts).
   Section keys must match exactly across both. The nurse-editable mapping is a client-pending TODO.
 
-- **Four more server↔client "keep-in-sync" mirrors (same discipline as the RBAC mirror above).** Change
+- **Five more server↔client "keep-in-sync" mirrors (same discipline as the RBAC mirror above).** Change
   one side, change the other: (1) ED-charge pricing —
   [PricingService.cs](src/Server/YadSarah.Application/Services/PricingService.cs) ↔
   [constants/pricing.ts](src/Client/src/constants/pricing.ts) (the client mirror only feeds the live
@@ -97,7 +97,11 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   the server permission checks ↔ [constants/roles.ts](src/Client/src/constants/roles.ts) (`canDischarge`,
   `canReassignDepartment`, `canPrioritizeQueue`, `isClinicalStaff`, …). (4) Care-step labels + station
   catalog — `CareStepCatalog` in [CareStepService.cs](src/Server/YadSarah.Application/Services/CareStepService.cs)
-  ↔ [constants/careSteps.ts](src/Client/src/constants/careSteps.ts).
+  ↔ [constants/careSteps.ts](src/Client/src/constants/careSteps.ts). (5) Catalog **label format** —
+  `MedicationCatalogService.Label` / `DiagnosisCatalogService.Label` ↔ client `medicationLabel` /
+  `diagnosisLabel` in [TreatmentFormPage.tsx](src/Client/src/features/treatment/TreatmentFormPage.tsx).
+  The `" — "` (U+2014) separator must match **byte-for-byte** — the stored form value IS this label, and
+  the closed-list check compares labels.
 
 - **Roles are multi-valued; the `UserRole` enum order is load-bearing.** A user holds a
   **`List<UserRole>`** (`User.Roles`) and receives the **union** of those roles' permissions;
@@ -175,6 +179,21 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   it records status and leaves the last good snapshot serving autocomplete. `MedicationSyncBackgroundService`
   re-syncs on the `MedSyncIntervalDays` cadence (default 7d). `GET /api/medications/frequent` pre-populates
   the picker with the signed-in doctor's most-used drugs before any search.
+
+- **Diagnosis catalog = closed list (English ICD-10-CM); both it and drugs are catalog-only.** Parallels
+  the drug catalog: `Diagnosis` entity (`Code` unique = ICD key, `EnglishName` primary, `HebrewName`
+  optional/`""`), [DiagnosisCatalogService.cs](src/Server/YadSarah.Application/Services/DiagnosisCatalogService.cs)
+  (ILIKE search + derive-on-read `GetFrequentForDoctorAsync` from signed forms' `DiagnosesJson` — no counter
+  table, same pattern as drugs), `DiagnosesController` (`/api/diagnoses` search/frequent/status/import),
+  [DiagnosisImportService.cs](src/Server/YadSarah.Application/Services/DiagnosisImportService.cs) (CDC
+  ICD-10-CM `.txt` + CSV/XLSX; `NormalizeCode` dots codes). No open Hebrew ICD source → English by design; a
+  curated ~96-row ED subset (`StarterCatalog`) seeds **only an empty catalog** (admin replaces via import;
+  the full ~75k CDC file is loaded in dev). Large catalog → **GIN `pg_trgm` indexes** on
+  `EnglishName`/`HebrewName`/`Code` (`HasPostgresExtension("pg_trgm")` in `AppDbContext`); EVERY OR'd search
+  column needs one or the query seq-scans. **Closed-list enforcement:** `diagnoses` + the three drug
+  sections (`treatments`, `administrationOrders`, `dischargeMedications`) reject off-catalog values in
+  `FormService.ValidateCatalogSectionAsync` → 400; existing stored values are **grandfathered** and the
+  check is **skipped when the catalog is empty**.
 
 - **MedicalForm storage is hybrid:** plain text sections are columns; table sections (allergies, vital
   signs, treatments, diagnoses, routing, etc.) are JSON string columns (`*Json`) whose shape is documented

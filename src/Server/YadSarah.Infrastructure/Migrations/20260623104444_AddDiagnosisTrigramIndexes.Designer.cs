@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using YadSarah.Infrastructure.Data;
@@ -11,9 +12,11 @@ using YadSarah.Infrastructure.Data;
 namespace YadSarah.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260623104444_AddDiagnosisTrigramIndexes")]
+    partial class AddDiagnosisTrigramIndexes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -99,15 +102,6 @@ namespace YadSarah.Infrastructure.Migrations
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<DateTime?>("ClaimedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ClaimedByName")
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("ClaimedByUserId")
-                        .HasColumnType("uuid");
 
                     b.Property<string>("ClinicianRole")
                         .HasColumnType("text");
@@ -218,11 +212,6 @@ namespace YadSarah.Infrastructure.Migrations
 
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("HebrewName"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("HebrewName"), new[] { "gin_trgm_ops" });
-
-                    b.HasIndex(new[] { "Code" }, "IX_Diagnoses_Code_Trgm");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex(new[] { "Code" }, "IX_Diagnoses_Code_Trgm"), "gin");
-                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex(new[] { "Code" }, "IX_Diagnoses_Code_Trgm"), new[] { "gin_trgm_ops" });
 
                     b.ToTable("Diagnoses");
                 });

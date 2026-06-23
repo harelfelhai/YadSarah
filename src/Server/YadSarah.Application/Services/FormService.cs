@@ -5,9 +5,20 @@ using YadSarah.Infrastructure.Data;
 
 namespace YadSarah.Application.Services;
 
-public class FormService(AppDbContext db)
+public class FormService(AppDbContext db, MedicationCatalogService medCatalog, DiagnosisCatalogService diagCatalog)
 {
     private static readonly TimeSpan LockTtl = TimeSpan.FromMinutes(5);
+
+    // Sections whose rows must reference a CLOSED catalog, and the row property that
+    // carries the catalog value. Diagnoses → diagnosis catalog; the three drug sections
+    // → medication catalog. Enforced in UpdateSectionAsync (with grandfathering).
+    private static readonly Dictionary<string, string> CatalogSectionProperty = new()
+    {
+        ["treatments"] = "drugName",
+        ["administrationOrders"] = "drugName",
+        ["dischargeMedications"] = "drugName",
+        ["diagnoses"] = "diagnosis",
+    };
 
     // Window after signing during which a shift manager / admin may still fix the form.
     // (Configurable — client said this may change later.)
@@ -57,6 +68,11 @@ public class FormService(AppDbContext db)
 
         if (form.Version != expectedVersion)
             throw new ConcurrencyException("הטופס עודכן ע\"י משתמש אחר. רענן ונסה שוב.");
+
+        // Closed-list enforcement: a diagnosis / drug must come from the catalog.
+        // Grandfathered: values already stored in this section are allowed (legacy/free-text
+        // data never blocks an edit); skipped entirely while the catalog is unpopulated.
+        await ValidateCatalogSectionAsync(form, section, jsonOrText);
 
         SetSection(form, section, jsonOrText);
         RecordFieldEdit(form, section, userId, userName);
@@ -272,6 +288,62 @@ public class FormService(AppDbContext db)
         await db.FormLocks
             .Where(l => l.FormId == formId && l.ExpiresAt > DateTime.UtcNow)
             .ToListAsync();
+
+    // ── Closed-list (catalog) enforcement ─────────────────────────────────
+
+    // Rejects a save that introduces a NEW catalog value not in the closed list. Values
+    // already persisted in the section are grandfathered (never block an edit), and the
+    // check is skipped when the catalog is empty (an empty list can't be enforced).
+    private async Task ValidateCatalogSectionAsync(MedicalForm form, string section, string newJson)
+    {
+        if (!CatalogSectionProperty.TryGetValue(section, out var prop)) return;
+
+        var isDiagnoses = section == "diagnoses";
+        var labels = isDiagnoses
+            ? await diagCatalog.GetActiveLabelsAsync()
+            : await medCatalog.GetActiveLabelsAsync();
+        if (labels.Count == 0) return; // no catalog loaded → cannot enforce a closed list
+
+        var existing = ExtractValues(GetSectionJson(form, section), prop); // grandfathered
+        foreach (var v in ExtractValues(newJson, prop))
+        {
+            if (labels.Contains(v) || existing.Contains(v)) continue;
+            var what = isDiagnoses ? "האבחנה" : "התרופה";
+            throw new ArgumentException($"{what} \"{v}\" אינה מופיעה בקטלוג. יש לבחור ערך מהרשימה הסגורה.");
+        }
+    }
+
+    private static string GetSectionJson(MedicalForm form, string section) => section switch
+    {
+        "treatments" => form.TreatmentsJson,
+        "administrationOrders" => form.AdministrationOrdersJson,
+        "dischargeMedications" => form.DischargeMedicationsJson,
+        "diagnoses" => form.DiagnosesJson,
+        _ => "[]",
+    };
+
+    // Non-empty, trimmed string values of `prop` across a JSON array of row objects.
+    private static HashSet<string> ExtractValues(string? json, string prop)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(json)) return set;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return set;
+            foreach (var el in doc.RootElement.EnumerateArray())
+            {
+                if (el.ValueKind != JsonValueKind.Object) continue;
+                if (el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String)
+                {
+                    var s = v.GetString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(s)) set.Add(s);
+                }
+            }
+        }
+        catch { /* malformed JSON → nothing to validate */ }
+        return set;
+    }
 
     // ── Section mapping ───────────────────────────────────────────────────
 

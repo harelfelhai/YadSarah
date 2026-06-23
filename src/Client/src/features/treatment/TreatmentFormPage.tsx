@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ActionIcon, Alert, Autocomplete, Badge, Box, Button, Card, Checkbox, Divider,
@@ -15,6 +15,7 @@ import {
 import { visitsApi } from '../../api/visits';
 import { formsApi } from '../../api/forms';
 import { medicationsApi } from '../../api/medications';
+import { diagnosesApi } from '../../api/diagnoses';
 import ReauthModal from '../../components/ReauthModal';
 import DateField from '../../components/DateField';
 import TreatmentActions from './TreatmentActions';
@@ -579,70 +580,152 @@ function TextSectionEditor({ value, readOnly, onFocus, onChange, onBlur }: TextE
   );
 }
 
-// ─── Drug autocomplete (official MoH catalog, server-backed) ───────────────────
-// Suggests medications from the internal catalog as "NAME (regNum)". Free text is
-// still allowed (a drug not yet in the catalog can be typed manually).
-interface DrugAutocompleteProps {
-  label?: string;
-  value?: string;
-  error?: React.ReactNode;
-  onChange?: (value: string) => void;
-  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
-  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
-}
+// ─── Closed-catalog pickers (server-backed) ────────────────────────────────────
+// Diagnoses and medications are CLOSED lists: the value must come from the internal
+// catalog. Implemented with a strict Mantine Select (searchable, no free text), which
+// opens with the doctor's most-frequent picks and switches to a server search on type.
+// Fallback: if the catalog is empty (e.g. the drug catalog before its first sync) an
+// empty list can't be enforced, so the field degrades to free text. The seeded
+// diagnosis catalog is never empty → always strict.
 
-// Label for a single medication option. Never exposes the Hebrew name:
-// `${englishName} — ${registrationNumber}`, or just the registration number when
-// there is no English name.
+// Label for a medication option: `${englishName} — ${registrationNumber}`, or just the
+// registration number when there is no English name. Never exposes the Hebrew name.
 function medicationLabel(m: import('../../api/medications').Medication): string {
   const eng = m.englishName?.trim();
   return eng ? `${eng} — ${m.registrationNumber}` : m.registrationNumber;
 }
 
-function DrugAutocomplete({ label = 'שם תרופה *', value, error, onChange, onBlur, onFocus }: DrugAutocompleteProps) {
+// Label for a diagnosis option: `${englishName} — ${code}` (English-first, official
+// ICD-10-CM), falling back to the Hebrew name, then the bare code. The server builds the
+// identical string for the closed-list check — keep the separator (U+2014) in sync.
+function diagnosisLabel(d: import('../../api/diagnoses').Diagnosis): string {
+  const en = d.englishName?.trim();
+  if (en) return `${en} — ${d.code}`;
+  const he = d.hebrewName?.trim();
+  return he ? `${he} — ${d.code}` : d.code;
+}
+
+interface CatalogSelectProps {
+  label?: string;
+  value?: string;
+  error?: React.ReactNode;
+  placeholder?: string;
+  onChange?: (value: string) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  fetchFrequent: (take: number) => Promise<string[]>;
+  fetchSearch: (q: string, take: number) => Promise<string[]>;
+}
+
+function CatalogSelect({
+  label, value, error, placeholder, onChange, onBlur, onFocus, fetchFrequent, fetchSearch,
+}: CatalogSelectProps) {
   const [data, setData] = useState<string[]>([]);
+  const [strict, setStrict] = useState(true);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // Fetch medications for a query (empty query → top results, so the dropdown
-  // opens with a populated list on focus). Debounced ~250ms.
+  // Probe once whether the catalog has any entries; an empty catalog can't be a closed
+  // list, so fall back to free text until one is loaded.
+  useEffect(() => {
+    let alive = true;
+    fetchSearch('', 1).then((r) => { if (alive && r.length === 0) setStrict(false); }).catch(() => {});
+    return () => { alive = false; };
+  }, [fetchSearch]);
+
+  // Fetch catalog matches for a query (empty query → top results). Debounced ~250ms.
   const runSearch = useCallback((q: string) => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
-      try {
-        const res = await medicationsApi.search(q.trim(), 20);
-        setData(res.map(medicationLabel));
-      } catch { setData([]); }
+      try { setData(await fetchSearch(q.trim(), 20)); } catch { setData([]); }
     }, 250);
-  }, []);
+  }, [fetchSearch]);
 
-  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    // Open with the doctor's most-frequent medications; fall back to a catalog list.
-    if (data.length === 0) {
-      if (timer.current) clearTimeout(timer.current);
-      medicationsApi.frequent(10)
-        .then((names) => { if (names.length > 0) setData(names); else runSearch(value ?? ''); })
-        .catch(() => runSearch(value ?? ''));
-    }
-    onFocus?.(e);
+  // Open with the doctor's most-frequent picks; fall back to a catalog list.
+  const loadFrequent = () => {
+    if (data.length > 0) return;
+    fetchFrequent(10)
+      .then((names) => { if (names.length > 0) setData(names); else runSearch(''); })
+      .catch(() => runSearch(''));
   };
 
-  const handleChange = (v: string) => {
-    onChange?.(v);
-    runSearch(v);
-  };
+  // The selected value is always present so it renders even before results load.
+  const options = useMemo(() => {
+    const set = new Set<string>();
+    if (value) set.add(value);
+    for (const d of data) set.add(d);
+    return [...set];
+  }, [value, data]);
+
+  if (!strict) {
+    // Empty catalog → permissive free-text fallback.
+    return (
+      <Autocomplete
+        label={label}
+        value={value ?? ''}
+        data={options}
+        error={error}
+        onChange={(v) => { onChange?.(v); runSearch(v); }}
+        onFocus={(e) => { loadFrequent(); onFocus?.(e); }}
+        onBlur={onBlur}
+        limit={20}
+        placeholder={placeholder}
+        comboboxProps={{ withinPortal: true }}
+      />
+    );
+  }
 
   return (
-    <Autocomplete
+    <Select
       label={label}
-      value={value ?? ''}
-      data={data}
+      value={value ?? null}
+      data={options}
+      searchable
+      clearable
       error={error}
-      onChange={handleChange}
+      nothingFoundMessage="לא נמצא בקטלוג"
+      filter={(input) => input.options}
+      onChange={(v) => onChange?.(v ?? '')}
+      onSearchChange={runSearch}
+      onDropdownOpen={loadFrequent}
+      onFocus={onFocus}
       onBlur={onBlur}
-      onFocus={handleFocus}
       limit={20}
-      placeholder="הקלד שם תרופה — מהמאגר הרשמי"
+      placeholder={placeholder}
       comboboxProps={{ withinPortal: true }}
+    />
+  );
+}
+
+// Medication picker (closed MoH drug catalog). Name kept for existing call sites.
+function DrugAutocomplete({ label = 'שם תרופה *', value, error, onChange, onBlur, onFocus }: {
+  label?: string; value?: string; error?: React.ReactNode;
+  onChange?: (value: string) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <CatalogSelect
+      label={label} value={value} error={error} onChange={onChange} onBlur={onBlur} onFocus={onFocus}
+      placeholder="בחר תרופה מהמאגר הרשמי"
+      fetchFrequent={(take) => medicationsApi.frequent(take)}
+      fetchSearch={async (q, take) => (await medicationsApi.search(q, take)).map(medicationLabel)}
+    />
+  );
+}
+
+// Diagnosis picker (closed diagnosis catalog).
+function DiagnosisSelect({ label = 'אבחנה *', value, error, onChange, onBlur, onFocus }: {
+  label?: string; value?: string; error?: React.ReactNode;
+  onChange?: (value: string) => void;
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <CatalogSelect
+      label={label} value={value} error={error} onChange={onChange} onBlur={onBlur} onFocus={onFocus}
+      placeholder="בחר אבחנה מהרשימה הסגורה"
+      fetchFrequent={(take) => diagnosesApi.frequent(take)}
+      fetchSearch={async (q, take) => (await diagnosesApi.search(q, take)).map(diagnosisLabel)}
     />
   );
 }
@@ -1378,7 +1461,7 @@ function DiagnosesEditor({ rows, locked, saving, onFocus, onSave }: DiagnosesEdi
       <Modal opened={open} onClose={() => setOpen(false)} title={editingId ? 'עריכת אבחנה' : 'הוספת אבחנה'} size="md">
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="xs">
-            <TextInput label="אבחנה *" {...form.getInputProps('diagnosis')} />
+            <DiagnosisSelect label="אבחנה *" {...form.getInputProps('diagnosis')} />
             <Group grow>
               <DateField label="ת.התחלה" {...form.getInputProps('startDate')} />
               <DateField label="ת.סיום" {...form.getInputProps('endDate')} />

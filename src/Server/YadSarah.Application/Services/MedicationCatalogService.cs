@@ -97,6 +97,40 @@ public class MedicationCatalogService(AppDbContext db)
 
     public Task<int> CountActiveAsync() => db.Medications.CountAsync(m => m.IsActive);
 
+    // Separator used to build a drug's label string. MUST match the client
+    // (medicationLabel in the picker) exactly — the stored form value IS this label,
+    // and the closed-list check compares labels.
+    public const string LabelSep = " — ";
+
+    /// <summary>
+    /// Canonical label for one drug: "EnglishName — RegistrationNumber" (or just the
+    /// registration number when there is no English name). Never exposes the Hebrew name —
+    /// matches the client medicationLabel helper.
+    /// </summary>
+    public static string Label(Medication m)
+    {
+        var eng = m.EnglishName?.Trim();
+        return string.IsNullOrWhiteSpace(eng) ? m.RegistrationNumber : $"{eng}{LabelSep}{m.RegistrationNumber}";
+    }
+
+    /// <summary>
+    /// The set of canonical labels for the active catalog — used by the server-side
+    /// closed-list check (a saved drug must be one of these). Empty when the catalog is
+    /// unpopulated (e.g. before the first sync), in which case the check is skipped.
+    /// </summary>
+    public async Task<HashSet<string>> GetActiveLabelsAsync()
+    {
+        var rows = await db.Medications.AsNoTracking()
+            .Where(m => m.IsActive)
+            .Select(m => new { m.EnglishName, m.RegistrationNumber })
+            .ToListAsync();
+        return rows
+            .Select(r => string.IsNullOrWhiteSpace(r.EnglishName)
+                ? r.RegistrationNumber
+                : $"{r.EnglishName.Trim()}{LabelSep}{r.RegistrationNumber}")
+            .ToHashSet(StringComparer.Ordinal);
+    }
+
     /// <summary>
     /// Applies a full snapshot: upserts every incoming record (by registration number),
     /// and marks any medication NOT present in the snapshot as inactive (delisted).
