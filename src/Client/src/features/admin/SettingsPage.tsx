@@ -7,10 +7,11 @@ import { notifications } from '@mantine/notifications';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   IconClock, IconDeviceFloppy, IconInfoCircle, IconLock, IconPill, IconRefresh, IconUpload,
-  IconDatabase, IconUsersGroup, IconPlayerPlay, IconTrash, IconAlertTriangle,
+  IconDatabase, IconUsersGroup, IconPlayerPlay, IconTrash, IconAlertTriangle, IconStethoscope,
 } from '@tabler/icons-react';
 import { settingsApi } from '../../api/settings';
 import { medicationsApi } from '../../api/medications';
+import { diagnosesApi } from '../../api/diagnoses';
 import { demoApi, type SeedResult } from '../../api/demo';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { useAuthStore } from '../../store/auth';
@@ -80,6 +81,23 @@ export default function SettingsPage() {
 
   const formatSync = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : 'מעולם לא';
+
+  // ── Diagnosis catalog (closed list) ──
+  const diagFileRef = useRef<HTMLInputElement>(null);
+  const { data: diagStatus } = useQuery({
+    queryKey: ['diagStatus'],
+    queryFn: () => diagnosesApi.getStatus(),
+    enabled: isAdmin,
+  });
+
+  const diagImportMut = useMutation({
+    mutationFn: (file: File) => diagnosesApi.importFile(file),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['diagStatus'] });
+      notifications.show({ color: 'green', message: r.message });
+    },
+    onError: (e) => notifications.show({ color: 'red', message: apiErrorMessage(e, 'ייבוא קובץ האבחנות נכשל') }),
+  });
 
   // ── Demo mode (presentations) ──
   const clearAuth = useAuthStore((s) => s.clearAuth);
@@ -234,6 +252,60 @@ export default function SettingsPage() {
             ייבוא רשמי: הורד את "פנקס התרופות הרשומות" (קובץ Excel) מאתר משרד הבריאות / חופש המידע,
             והעלה אותו כאן. המערכת מזהה אוטומטית את עמודות מספר הרישום והשם (עברי/אנגלי).
             הייבוא מחליף את כל המאגר בתמונת-המצב החדשה.
+          </Text>
+        </Alert>
+      </Card>
+
+      {/* ── Diagnosis catalog (closed list) ── */}
+      <Card withBorder p="md" radius="md">
+        <Group gap="xs" mb="sm">
+          <IconStethoscope size={18} />
+          <Text fw={600}>מסד האבחנות</Text>
+          <Badge variant="light" color="teal">{diagStatus?.count ?? 0} אבחנות</Badge>
+        </Group>
+
+        <Text size="sm" c="dimmed" mb="xs">
+          האבחנות נלקחות מרשימה סגורה לפי תקן <b>ICD-10-CM</b> (תיאור באנגלית + קוד). הזנת אבחנה
+          בטופס נשלפת מהמאגר הפנימי בלבד — ללא טקסט חופשי. המערכת נזרעת בתת-קבוצה מאוצרת של אבחנות
+          מיון נפוצות; ניתן להחליפה כאן בקובץ ICD-10-CM המלא (CDC) או בקובץ של בית החולים.
+        </Text>
+
+        <Group gap="lg" mb="sm">
+          <Text size="sm">עדכון אחרון: <b>{formatSync(diagStatus?.lastSyncAt)}</b></Text>
+          {diagStatus?.lastSyncStatus && (
+            <Text size="xs" c="dimmed">({diagStatus.lastSyncStatus})</Text>
+          )}
+        </Group>
+
+        <Group gap="md">
+          <Button
+            variant="outline"
+            color="teal"
+            leftSection={<IconUpload size={16} />}
+            loading={diagImportMut.isPending}
+            onClick={() => diagFileRef.current?.click()}
+          >
+            ייבוא מקובץ (Excel / CSV)
+          </Button>
+          <input
+            ref={diagFileRef}
+            type="file"
+            accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.currentTarget.files?.[0];
+              if (f) diagImportMut.mutate(f);
+              e.currentTarget.value = '';
+            }}
+          />
+        </Group>
+
+        <Alert icon={<IconInfoCircle size={15} />} color="teal" variant="light" mt="sm" p="xs">
+          <Text size="xs">
+            ייבוא רשמי: הורד את קובץ <b>ICD-10-CM</b> החינמי של ה-CDC
+            (<i>icd10cm-codes</i>, קובץ <b>.txt</b> של קוד + תיאור) והעלה אותו כאן — אין צורך ב-API,
+            מפתח או הרשמה. נתמך גם CSV/XLSX עם עמודות <b>code / description</b> (או
+            <b> קוד / שם_בעברית / שם_באנגלית</b>). הייבוא מחליף את כל המאגר בתמונת-המצב החדשה.
           </Text>
         </Alert>
       </Card>

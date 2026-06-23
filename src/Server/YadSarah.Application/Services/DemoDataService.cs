@@ -72,11 +72,18 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         "כאב חזה לוחץ", "סחרחורת וחולשה כללית", "חבלה ביד ימין לאחר נפילה", "שיעול מתמשך וכיח",
         "כאב גרון וקושי בבליעה", "כאב גב תחתון מקרין לרגל", "פריחה מגרדת בכל הגוף", "הקאות ושלשולים",
     ];
+    // Catalog labels ("English description — ICD-10-CM code") drawn from the seeded
+    // diagnosis catalog, so demo signed-form diagnoses are closed-list-valid and the
+    // "frequent diagnoses" demo shows real codes. Must match
+    // DiagnosisCatalogService.StarterCatalog entries exactly.
     private static readonly string[] Diagnoses =
     [
-        "דלקת גרון חיידקית", "זיהום בדרכי השתן", "גסטרואנטריטיס חריפה", "מיגרנה",
-        "שבר באמה (radius)", "ברונכיטיס חריפה", "התייבשות קלה", "יתר לחץ דם לא מאוזן",
-        "דלקת אוזן תיכונה", "תגובה אלרגית", "כאב גב מכני", "חבלת ראש קלה",
+        "Acute pharyngitis — J02.9", "Urinary tract infection, site not specified — N39.0",
+        "Infectious gastroenteritis and colitis — A09", "Migraine, unspecified, not intractable — G43.909",
+        "Fracture of lower end of radius — S52.509", "Acute bronchitis — J20.9", "Dehydration — E86.0",
+        "Essential (primary) hypertension — I10", "Otitis media, unspecified — H66.90",
+        "Allergy, unspecified, initial encounter — T78.40XA", "Low back pain, unspecified — M54.50",
+        "Unspecified injury of head (minor head injury) — S09.90",
     ];
     private static readonly string[] Triages = ["1 — דחוף ביותר", "2 — דחוף", "3 — בינוני", "4 — לא דחוף"];
 
@@ -709,8 +716,13 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
 
     private async Task<string[]> LoadDrugNamesAsync()
     {
-        var names = await db.Medications.Where(m => m.IsActive)
-            .OrderBy(m => m.Id).Select(m => m.HebrewName).Take(400).ToArrayAsync();
+        // Use canonical catalog LABELS ("english — regNo"), not the Hebrew name, so demo
+        // treatment rows are closed-list-valid and the medication picker (now strict) +
+        // server validation accept the seeded + "frequent" values. FallbackDrugs (plain
+        // Hebrew) are only used when the catalog is empty — where enforcement is skipped.
+        var meds = await db.Medications.Where(m => m.IsActive)
+            .OrderBy(m => m.Id).Take(400).ToListAsync();
+        var names = meds.Select(MedicationCatalogService.Label).ToArray();
         return names.Length > 0 ? names : FallbackDrugs;
     }
 

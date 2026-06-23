@@ -14,6 +14,11 @@ public class SettingsService(AppDbContext db)
     public const string MedLastSyncAtKey = "medications.lastSyncAt";
     public const string MedCountKey = "medications.count";
     public const string MedLastSyncStatusKey = "medications.lastSyncStatus";
+    // Diagnosis catalog (closed list). Import-only (no live Hebrew ICD source), so no
+    // apiUrl/interval keys — just the snapshot metadata for the admin screen.
+    public const string DiagLastSyncAtKey = "diagnoses.lastSyncAt";
+    public const string DiagCountKey = "diagnoses.count";
+    public const string DiagLastSyncStatusKey = "diagnoses.lastSyncStatus";
     public const string StreetsSyncIntervalDaysKey = "streets.syncIntervalDays";
     public const string StreetsApiUrlKey = "streets.apiUrl";
     public const string StreetsResourceIdKey = "streets.resourceId";
@@ -43,6 +48,9 @@ public class SettingsService(AppDbContext db)
         (MedLastSyncAtKey, "", "מועד הסנכרון האחרון של מסד התרופות (UTC)"),
         (MedCountKey, "0", "מספר התרופות במאגר הפנימי"),
         (MedLastSyncStatusKey, "", "סטטוס הסנכרון האחרון"),
+        (DiagLastSyncAtKey, "", "מועד העדכון האחרון של מסד האבחנות (UTC)"),
+        (DiagCountKey, "0", "מספר האבחנות במאגר הפנימי"),
+        (DiagLastSyncStatusKey, "", "סטטוס העדכון האחרון של מסד האבחנות"),
         (StreetsSyncIntervalDaysKey, "30", "תדירות סנכרון מאגר הרחובות (בימים)"),
         (StreetsApiUrlKey, StreetsApiUrlDefault, "כתובת ה-API למשיכת מאגר הרחובות (data.gov.il)"),
         (StreetsResourceIdKey, StreetsResourceIdDefault, "מזהה המשאב של מאגר הרחובות ב-data.gov.il"),

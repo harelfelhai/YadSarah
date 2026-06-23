@@ -24,6 +24,8 @@ builder.Services.AddScoped<FormService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<MedicationCatalogService>();
+builder.Services.AddScoped<DiagnosisCatalogService>();
+builder.Services.AddScoped<DiagnosisImportService>();
 builder.Services.AddScoped<FeedbackService>();
 builder.Services.AddScoped<DemoDataService>();
 builder.Services.AddScoped<WorkstationService>();
@@ -153,6 +155,9 @@ using (var scope = app.Services.CreateScope())
     var dbCtx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbCtx.Database.Migrate();
     await scope.ServiceProvider.GetRequiredService<SettingsService>().EnsureDefaultsAsync();
+    // Seed the curated Hebrew ED diagnosis catalog on first run (closed picker needs a
+    // catalog to be usable; no live Hebrew ICD source exists). No-op once populated.
+    await scope.ServiceProvider.GetRequiredService<DiagnosisCatalogService>().SeedDefaultsAsync();
 }
 
 if (app.Environment.IsDevelopment())

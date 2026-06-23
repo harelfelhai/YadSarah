@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<QueueCounter> QueueCounters => Set<QueueCounter>();
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<Medication> Medications => Set<Medication>();
+    public DbSet<Diagnosis> Diagnoses => Set<Diagnosis>();
     public DbSet<Street> Streets => Set<Street>();
     public DbSet<FeedbackReport> FeedbackReports => Set<FeedbackReport>();
     public DbSet<Workstation> Workstations => Set<Workstation>();
@@ -24,6 +25,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder b)
     {
+        // Trigram extension — backs fast substring (ILIKE '%term%') search on the large
+        // diagnosis catalog (~75k ICD-10-CM rows). Without it the OR'd ILIKE is a seq scan.
+        b.HasPostgresExtension("pg_trgm");
+
         // Patient
         b.Entity<Patient>(e =>
         {
@@ -136,6 +141,23 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // Search indexes for autocomplete (prefix/ILIKE on names)
             e.HasIndex(m => m.HebrewName);
             e.HasIndex(m => m.EnglishName);
+        });
+
+        // Diagnosis — official diagnosis catalog (closed list; ICD code = unique key)
+        b.Entity<Diagnosis>(e =>
+        {
+            e.HasKey(d => d.Id);
+            e.Property(d => d.Code).HasMaxLength(20).IsRequired();
+            e.Property(d => d.HebrewName).HasMaxLength(300).IsRequired();
+            e.Property(d => d.EnglishName).HasMaxLength(300);
+            e.HasIndex(d => d.Code).IsUnique();   // uniqueness + exact code lookup
+            // GIN trigram indexes → fast ILIKE '%term%' autocomplete over ~75k rows. ALL
+            // three OR'd search columns need one, else a single un-indexed branch forces a
+            // full seq scan (Code gets a second, non-unique trigram index alongside its
+            // unique btree).
+            e.HasIndex(d => d.HebrewName).HasMethod("gin").HasOperators("gin_trgm_ops");
+            e.HasIndex(d => d.EnglishName).HasMethod("gin").HasOperators("gin_trgm_ops");
+            e.HasIndex(d => d.Code, "IX_Diagnoses_Code_Trgm").HasMethod("gin").HasOperators("gin_trgm_ops");
         });
 
         // Street — national streets reference data (internal copy of data.gov.il "רחובות בישראל")
