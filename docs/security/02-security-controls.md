@@ -386,7 +386,9 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
   (נבדק ב-`User.IsInRole`; אחות/סטודנט/מעבדה → 403). הצעד נשאר Waiting/Called — **אין שינוי סטטוס, אין
   שחרור, ו-analytics אינו מושפע**. עקיפה (re-claim) מותרת ומתועדת; **שחרור** מוגבל למשייך עצמו או למנהל
   (נאכף בשרת). השדות (`ClaimedBy*`) הם מטא-דאטה תפעולי (שם הרופא המשייך) ולא PHI; הקלט DTO ייעודי
-  (`StepActionRequest`), EF פרמטרי — אין over-posting ואין SQLi.
+  (`StepActionRequest`), EF פרמטרי — אין over-posting ואין SQLi. התצוגה (התווית `ממתין ל…` עם השם המלא
+  של המשייך — שכבר כולל תואר — והשקעת-המטופל בתור **רק עבור רופאים אחרים**, לא המשייך ולא אחיות) היא
+  רינדור קליינט בלבד (`QueuePage`/`CareStepList`), ללא השפעה על הרשאות או נתוני-שרת.
 - **תיעוד (audit):** כל פעולה נרשמת — הפניה (`CareStepReferred`), קרא/הכנס/סיים
   (`CareStepCall`/`CareStepEnter`/`CareStepComplete`), שיוך/שחרור-רופא (`CareStepClaim`/`CareStepRelease`),
   שיוך כפול (`DualDepartmentSet`), סיום-לא-רופא

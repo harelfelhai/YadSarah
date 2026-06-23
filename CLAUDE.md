@@ -125,8 +125,11 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   dept + `אחות עירוי`→עירוי) that reassign the visit's department);
   completing a station **auto-creates a waiting step back to the referrer** so they review the result. A
   doctor can also **claim** a waiting patient (`claim`/`release` on the step-action endpoint, doctor/SM/admin
-  only) — a soft assignment that leaves the doctor step Waiting but renders it `ממתין לד״ר X`, so other
-  doctors skip it and the patient sinks below unclaimed ones in the department queue (no status change). The
+  only) — a soft assignment that leaves the doctor step Waiting but stamps the claiming doctor, so the line
+  shows the claimer's **full name** (which already carries the title — e.g. `ממתין לד״ר רון כהן`; don't re-add
+  a `ד״ר`). The claimed patient sinks below unclaimed ones in the queue **only for OTHER doctors** — not the
+  claimer (it's their patient) and not nurses/other staff; the sink is viewer-aware (`QueuePage`). No status
+  change. The
   coarse `Visit.Status` (`Waiting/Called/InTreatment/FinishedTreatment/Discharged`) used by analytics + the
   shift board is **derived** from the steps by `DeriveStatus` — never set it directly except for sign-all /
   manual discharge (which is terminal). `EnterAsync` on a clinician step also stamps the visit's treating
