@@ -387,6 +387,16 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
   שחרור, ו-analytics אינו מושפע**. עקיפה (re-claim) מותרת ומתועדת; **שחרור** מוגבל למשייך עצמו או למנהל
   (נאכף בשרת). השדות (`ClaimedBy*`) הם מטא-דאטה תפעולי (שם הרופא המשייך) ולא PHI; הקלט DTO ייעודי
   (`StepActionRequest`), EF פרמטרי — אין over-posting ואין SQLi.
+- **הרשאת "הכנס" לפי מסלול + בלעדיות נוכחות (`CareStepService.EnterAsync`):** הכנסת מטופל ל"אצל"
+  נאכפת בשרת בנקודה אחת — `EnsureMayEnter` מתיר לכל בעל-תפקיד להכניס **רק להמתנה התואמת למסלולו**
+  (Doctor/MedStudent → צעד רופא; Nurse/NursingStudent → צעד אחות; **ShiftManager/Admin** — לכל
+  המתנה; תחנות פתוחות לכל קלינאי), אחרת `ForbiddenException`→403. התפקידים נלקחים מ-claims של ה-JWT
+  בצד-שרת (`CallerRoles` ב-`VisitsController`, `User.IsInRole`) — לא מקלט הלקוח; הלקוח רק **מסתיר**
+  את הכפתור (`canEnterStep` ב-`constants/roles.ts`, מראה לכלל-השרת). בנוסף, כל הכנסה אוכפת **בלעדיות**:
+  מטופל יכול להיות "אצל" גורם אחד בלבד וגורם מחזיק מטופל אחד בלבד — צעדי-`InProgress` אחרים של אותו
+  ביקור/אותו מכניס מפונים. אלו **בקרות מהדקות** (least-privilege ו-state-integrity), הקלט הוא `stepId`
+  מסוג Guid בנתיב ללא שדות-לקוח חדשים, וה-vacating הוא תופעת-לוואי דטרמיניסטית של פעולת ה-`enter`
+  המתועדת (`CareStepEnter`) — ללא נתיב-גישה חדש ל-PHI.
 - **תיעוד (audit):** כל פעולה נרשמת — הפניה (`CareStepReferred`), קרא/הכנס/סיים
   (`CareStepCall`/`CareStepEnter`/`CareStepComplete`), שיוך/שחרור-רופא (`CareStepClaim`/`CareStepRelease`),
   שיוך כפול (`DualDepartmentSet`), סיום-לא-רופא

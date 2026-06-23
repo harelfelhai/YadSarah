@@ -22,6 +22,10 @@ public class VisitsController(
     private string UserName => User.FindFirstValue("fullName") ?? User.Identity?.Name ?? "";
     private UserRole CallerRole =>
         Enum.TryParse<UserRole>(User.FindFirstValue(ClaimTypes.Role), out var r) ? r : UserRole.Reception;
+    // The caller's full (multi-valued) role set — JWT carries one claim per role. Used where a
+    // permission depends on holding a specific role rather than the single "primary" one.
+    private IReadOnlyCollection<UserRole> CallerRoles =>
+        Enum.GetValues<UserRole>().Where(r => User.IsInRole(r.ToString())).ToList();
 
     [HttpGet("queue")]
     public async Task<IActionResult> GetQueue([FromQuery] bool all = false) =>
@@ -304,7 +308,7 @@ public class VisitsController(
                         await workstations.ResolveRoomAsync(req.DeviceId));
                     break;
                 case "enter":
-                    step = await steps.EnterAsync(stepId, UserId, UserName, CallerRole,
+                    step = await steps.EnterAsync(stepId, UserId, UserName, CallerRole, CallerRoles,
                         await workstations.ResolveRoomAsync(req.DeviceId));
                     break;
                 case "complete":
@@ -329,6 +333,7 @@ public class VisitsController(
             await BroadcastQueueUpdateAsync(id);
             return Ok(step);
         }
+        catch (ForbiddenException ex) { return StatusCode(403, new { message = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
         catch (KeyNotFoundException) { return NotFound(); }
     }

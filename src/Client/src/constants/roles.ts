@@ -55,3 +55,15 @@ export const canPrioritizeQueue = (roles?: UserRole[]) => hasAnyRole(roles, 'Shi
 // Overriding the AI/reception department routing is a clinical-professional call — any
 // non-reception clinical staff, never plain reception (mirrors the server's role gate).
 export const canReassignDepartment = (roles?: UserRole[]) => isClinicalStaff(roles);
+
+// "Enter" (admit) RBAC — mirror of CareStepService.EnsureMayEnter. A professional admits a patient
+// only to the wait that targets their own track: Doctor/MedStudent → doctor steps, Nurse/
+// NursingStudent → nurse steps. ShiftManager/Admin may admit to any wait; station steps (clinicianRole
+// null) carry no track restriction. Keep in sync with the server.
+export const canEnterStep = (roles: UserRole[] | undefined, clinicianRole: UserRole | null | undefined) => {
+  if (hasAnyRole(roles, 'ShiftManager', 'Admin')) return true;
+  if (clinicianRole == null) return true; // station — no track restriction
+  return clinicianRole === 'Nurse'
+    ? hasAnyRole(roles, 'Nurse', 'NursingStudent')
+    : hasAnyRole(roles, 'Doctor', 'MedStudent');
+};

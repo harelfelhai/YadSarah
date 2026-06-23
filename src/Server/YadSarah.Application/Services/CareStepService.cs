@@ -138,25 +138,95 @@ public class CareStepService(AppDbContext db)
     }
 
     /// <summary>Admit the patient / begin the step (with or without a prior call) — moves to
-    /// InProgress and, for a clinician step, stamps the visit's treating owner + room.</summary>
-    public async Task<CareStep> EnterAsync(Guid stepId, Guid userId, string userName, UserRole role, string? room)
+    /// InProgress and, for a clinician step, stamps the visit's treating owner + room. Enforces two
+    /// invariants at this single chokepoint (the only place a patient becomes "אצל"):
+    ///   • RBAC — a professional admits a patient only to the wait that targets their own track
+    ///     (Doctor/MedStudent → doctor steps; Nurse/NursingStudent → nurse steps); ShiftManager/Admin
+    ///     may admit to any wait; stations stay open to any clinical role.
+    ///   • Exclusivity — a patient can be "אצל" only ONE professional (vacate the patient's other
+    ///     in-progress steps), and a professional holds only ONE patient "אצלו" (vacate any in-progress
+    ///     step they began on another patient). See <see cref="VacateInProgress"/> for the per-kind rule.</summary>
+    public async Task<CareStep> EnterAsync(
+        Guid stepId, Guid userId, string userName, UserRole role,
+        IReadOnlyCollection<UserRole> roles, string? room)
     {
         var step = await LoadActiveStepAsync(stepId);
+        EnsureMayEnter(step, roles);
+
+        var now = DateTime.UtcNow;
         step.Status = CareStepStatus.InProgress;
         step.StartedByUserId = userId;
         step.StartedByName = userName;
         step.StartedByRole = role;
         step.StartedRoom = room;
-        step.StartedAt = DateTime.UtcNow;
-        step.UpdatedAt = DateTime.UtcNow;
+        step.StartedAt = now;
+        step.UpdatedAt = now;
 
+        // Exclusivity: vacate every OTHER in-progress step that belongs to this patient (rule 1 —
+        // one patient, one place) or was begun by this professional on another patient (rule 2 —
+        // one professional, one patient). The freshly-entered step is excluded by Id.
+        var toVacate = await db.CareSteps
+            .Where(s => s.Id != step.Id && s.Status == CareStepStatus.InProgress &&
+                        (s.VisitId == step.VisitId || s.StartedByUserId == userId))
+            .ToListAsync();
+        var affected = new HashSet<Guid> { step.VisitId };
+        foreach (var s in toVacate) { VacateInProgress(s, now); affected.Add(s.VisitId); }
+
+        // Recompute the entered visit (stamping the treating owner), then any OTHER visit whose step
+        // was vacated by rule 2 (its coarse status must be re-derived from the changed steps).
         await RecomputeVisitStatusAsync(
             step.VisitId,
             enterActor: step.Category == CareStepCategory.Clinician
                 ? new EnterActor(userId, userName, role, room)
                 : null);
+        foreach (var id in affected)
+            if (id != step.VisitId)
+                await RecomputeVisitStatusAsync(id, enterActor: null);
+
         await db.SaveChangesAsync();
         return step;
+    }
+
+    /// <summary>Authorize an "enter" (admit): a professional may admit a patient only to a wait that
+    /// targets their own track. ShiftManager/Admin may admit to any wait; station steps are open to
+    /// any clinical role (the controller already gates the broad action set).</summary>
+    private static void EnsureMayEnter(CareStep step, IReadOnlyCollection<UserRole> roles)
+    {
+        if (roles.Contains(UserRole.ShiftManager) || roles.Contains(UserRole.Admin)) return;
+        if (step.Category != CareStepCategory.Clinician) return; // station — no track restriction
+
+        var ok = step.ClinicianRole == UserRole.Nurse
+            ? roles.Contains(UserRole.Nurse) || roles.Contains(UserRole.NursingStudent)
+            : roles.Contains(UserRole.Doctor) || roles.Contains(UserRole.MedStudent);
+        if (!ok)
+            throw new ForbiddenException("ניתן להכניס מטופל רק להמתנה התואמת לתפקידך.");
+    }
+
+    /// <summary>Take a step out of the live "אצל"/"בבדיקת" (InProgress) state because the patient moved
+    /// to someone else, or the professional moved to another patient. A DOCTOR step goes back to Waiting
+    /// (the doctor wait ends only at signing) and the interrupted treatment is converted to a soft claim,
+    /// so that doctor stays the responsible party and resumes. Everything else (a nurse / any non-doctor
+    /// clinician / a station) is considered finished → Done.</summary>
+    private static void VacateInProgress(CareStep s, DateTime now)
+    {
+        if (s.Category == CareStepCategory.Clinician && s.ClinicianRole == UserRole.Doctor)
+        {
+            s.ClaimedByUserId ??= s.StartedByUserId;
+            s.ClaimedByName ??= s.StartedByName;
+            s.ClaimedAt ??= now;
+            s.Status = CareStepStatus.Waiting;
+            s.StartedByUserId = null;
+            s.StartedByName = null;
+            s.StartedByRole = null;
+            s.StartedRoom = null;
+            s.StartedAt = null;
+        }
+        else
+        {
+            s.Status = CareStepStatus.Done;
+            s.CompletedAt = now;
+        }
+        s.UpdatedAt = now;
     }
 
     /// <summary>Mark a step done. A completed station the patient was referred to auto-creates a

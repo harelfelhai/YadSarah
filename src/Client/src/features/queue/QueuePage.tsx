@@ -209,7 +209,7 @@ export default function QueuePage() {
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1320} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1480} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
@@ -220,6 +220,7 @@ export default function QueuePage() {
                 <Table.Th style={{ minWidth: 210, whiteSpace: 'nowrap' }}>מחלקה</Table.Th>
                 <Table.Th>סיבת קבלה</Table.Th>
                 <Table.Th style={{ minWidth: 340 }}>סטטוס</Table.Th>
+                <Table.Th style={{ minWidth: 150 }}>גורם אחראי</Table.Th>
                 <Table.Th style={{ width: 170 }}>פעולות</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -295,14 +296,21 @@ export default function QueuePage() {
                       <CareStepList
                         steps={visit.careSteps}
                         isClinical={isClinical}
-                        canClaim={canClaim}
-                        currentUserId={user?.id}
+                        userRoles={user?.roles}
                         onAction={(step, action) => handleStepAction(visit, step, action)}
                         fallback={
                           <Badge color={STATUS_COLOR[visit.status]} variant="light">
                             {STATUS_LABEL[visit.status]}
                           </Badge>
                         }
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <ResponsibleParty
+                        visit={visit}
+                        canClaim={canClaim}
+                        currentUserId={user?.id}
+                        onAction={(step, action) => handleStepAction(visit, step, action)}
                       />
                     </Table.Td>
                     <Table.Td>
@@ -349,5 +357,52 @@ function waitChip(v: Visit, wait: number, overdue: boolean) {
     <Badge variant={overdue ? 'filled' : 'light'} color={overdue ? 'brick' : 'slate'} style={{ fontVariantNumeric: 'tabular-nums' }}>
       {label}
     </Badge>
+  );
+}
+
+// "גורם אחראי" — the doctor responsible for the visit: whoever claimed the doctor step ("קח תחתיי")
+// or began its treatment. When no doctor has taken it yet, a claim button lets a doctor take the
+// patient under their care without starting treatment (the soft assignment behavior of "קח תחתיי").
+// One entry per active doctor track (a dual women's visit has two); a department label disambiguates.
+function ResponsibleParty({
+  visit, canClaim, currentUserId, onAction,
+}: {
+  visit: Visit;
+  canClaim: boolean;
+  currentUserId?: string;
+  onAction: (step: CareStep, action: CareStepAction) => void;
+}) {
+  const doctorSteps = (visit.careSteps ?? []).filter(
+    (s) => s.category === 'Clinician' && s.clinicianRole === 'Doctor' &&
+      (s.status === 'Waiting' || s.status === 'Called' || s.status === 'InProgress'));
+  if (doctorSteps.length === 0) return <Text c="dimmed">—</Text>;
+  const showDept = doctorSteps.length > 1;
+
+  return (
+    <Stack gap={4}>
+      {doctorSteps.map((s) => {
+        const name = s.claimedByName ?? s.startedByName ?? null;
+        const claimedByMe = !!s.claimedByUserId && s.claimedByUserId === currentUserId;
+        // Claimable: nobody has it yet (no claim, not in treatment) and it's still a waiting/called step.
+        const claimable = (s.status === 'Waiting' || s.status === 'Called') && !s.claimedByUserId && !s.startedByName;
+        return (
+          <Group key={s.id} gap={6} wrap="nowrap" align="center">
+            {showDept && s.department && <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{s.department}:</Text>}
+            {name ? (
+              <>
+                <Badge variant="light" color="grape" size="sm" style={{ whiteSpace: 'nowrap' }}>{name}</Badge>
+                {claimedByMe && (
+                  <Button size="compact-xs" variant="subtle" color="grape" onClick={() => onAction(s, 'release')}>שחרר</Button>
+                )}
+              </>
+            ) : canClaim && claimable ? (
+              <Button size="compact-xs" variant="light" color="grape" onClick={() => onAction(s, 'claim')}>קח תחתיי</Button>
+            ) : (
+              <Text c="dimmed">—</Text>
+            )}
+          </Group>
+        );
+      })}
+    </Stack>
   );
 }
