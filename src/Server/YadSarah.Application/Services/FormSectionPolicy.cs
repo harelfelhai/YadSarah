@@ -5,36 +5,45 @@ namespace YadSarah.Application.Services;
 /// <summary>
 /// Field/section-level edit permissions for the medical form.
 ///
-/// ⚠ This is the single place to change which role may edit which section.
-/// The exact nurse mapping is still to be finalized by the client — adjust
-/// <see cref="NurseEditable"/> below when the final list is provided.
+/// ⚠ This is the single place to change which role may edit which section. Mirrored on the client
+/// in constants/formPolicy.ts — keep the two in sync.
 ///
-/// Doctor / ShiftManager / Admin may edit every section by default.
+/// The nurse edits exactly her own set (<see cref="NurseEditable"/>). Doctor / MedStudent may edit
+/// every section EXCEPT the nurse-only ones (<see cref="NurseOnly"/>, e.g. the nurse's reason-for-
+/// referral, which the doctor must not overwrite). ShiftManager / Admin may edit everything.
 /// </summary>
 public static class FormSectionPolicy
 {
     // All editable section keys (must match the client section keys).
     public static readonly IReadOnlyList<string> AllSections = new[]
     {
-        "chiefComplaint", "presentIllness", "pastMedicalHistory", "allergies",
+        "chiefComplaintNurse", "chiefComplaint", "presentIllness", "pastMedicalHistory", "allergies",
         "homeMedications", "vitalSigns", "triage", "treatments", "physicalExam",
         "administrationOrders", "diagnoses", "discussionAndPlan",
         "dischargeRecommendations", "dischargeMedications", "orderedUnits", "routing",
     };
 
-    // Sections a NURSE is allowed to edit. (Default — to be refined by client.)
+    // Sections a NURSE / nursing-student is allowed to edit — exactly these seven.
     private static readonly HashSet<string> NurseEditable = new()
     {
-        "chiefComplaint", "presentIllness", "pastMedicalHistory",
-        "allergies", "homeMedications", "vitalSigns", "triage", "treatments",
-        "administrationOrders", "routing",
+        "chiefComplaintNurse", "allergies", "vitalSigns", "treatments",
+        "administrationOrders", "orderedUnits", "diagnoses",
+    };
+
+    // Sections only the nurse track (and managers) may edit — the doctor/medstudent must NOT
+    // overwrite them. Currently just the nurse's own reason-for-referral.
+    private static readonly HashSet<string> NurseOnly = new()
+    {
+        "chiefComplaintNurse",
     };
 
     // Edit permission for a single role.
     private static bool CanEditSingle(UserRole role, string section) => role switch
     {
-        // Doctors, managers and medical students may edit any section.
-        UserRole.Doctor or UserRole.ShiftManager or UserRole.Admin or UserRole.MedStudent => true,
+        // Managers may edit any section (keeps the post-sign edit-window override consistent).
+        UserRole.ShiftManager or UserRole.Admin => true,
+        // Doctors and medical students may edit any section EXCEPT the nurse-only ones.
+        UserRole.Doctor or UserRole.MedStudent => !NurseOnly.Contains(section),
         // Nurses and nursing students are limited to the nurse-editable sections.
         UserRole.Nurse or UserRole.NursingStudent => NurseEditable.Contains(section),
         _ => false, // Reception, LabStaff (view-only) and others cannot edit clinical sections

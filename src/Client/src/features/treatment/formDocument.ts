@@ -5,7 +5,8 @@ import { queueLabel } from '../../constants/departments';
 // ─── Form schema (shared by the editor and the printable document) ─────────────
 
 export const SECTIONS: { key: string; label: string }[] = [
-  { key: 'chiefComplaint', label: 'סיבת הפנייה / תלונה עיקרית' },
+  { key: 'chiefComplaintNurse', label: 'סיבת הפנייה — אחות' },
+  { key: 'chiefComplaint', label: 'סיבת הפנייה — רופא' },
   { key: 'presentIllness', label: 'מחלה נוכחית (HPI)' },
   { key: 'pastMedicalHistory', label: 'רקע רפואי' },
   { key: 'allergies', label: 'רגישויות' },
@@ -24,7 +25,7 @@ export const SECTIONS: { key: string; label: string }[] = [
 ];
 
 export const TEXT_SECTION_KEYS = [
-  'chiefComplaint', 'presentIllness', 'pastMedicalHistory', 'triage',
+  'chiefComplaintNurse', 'chiefComplaint', 'presentIllness', 'pastMedicalHistory', 'triage',
   'physicalExam', 'discussionAndPlan', 'dischargeRecommendations', 'orderedUnits',
 ];
 

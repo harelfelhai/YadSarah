@@ -281,6 +281,7 @@ export interface MedicalForm {
   postSignEditWindowMinutes: number;
   fieldEdits: Record<string, FieldEdit>;
   addenda: Addendum[];
+  chiefComplaintNurse?: string;
   chiefComplaint?: string;
   presentIllness?: string;
   pastMedicalHistory?: string;

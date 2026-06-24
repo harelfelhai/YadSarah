@@ -54,6 +54,7 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
         department = f.Department,
         trackOrder = f.TrackOrder,
         version = f.Version,
+        chiefComplaintNurse = f.ChiefComplaintNurse,
         chiefComplaint = f.ChiefComplaint,
         presentIllness = f.PresentIllness,
         pastMedicalHistory = f.PastMedicalHistory,

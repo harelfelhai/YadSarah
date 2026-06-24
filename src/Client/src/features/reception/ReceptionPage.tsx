@@ -587,6 +587,9 @@ export default function ReceptionPage() {
 
               <Card withBorder p="md">
                 <Text fw={600} mb="sm">טלפונים ותקשורת</Text>
+                <Alert icon={<IconAlertCircle size={14} />} color="blue" variant="light" p="xs" radius="sm" mb="sm">
+                  חובה להזין <b>2 מספרי טלפון</b>: <b>טלפון 1</b> + <b>טלפון 2</b> או <b>נייד איש הקשר</b>.
+                </Alert>
                 <Grid>
                   <Grid.Col span={3}>
                     <TextInput label="טלפון 1" withAsterisk placeholder="050-1234567" {...phoneProps('phoneMobile')} />
@@ -595,7 +598,7 @@ export default function ReceptionPage() {
                     <TextInput
                       label="טלפון 2"
                       placeholder="02-1234567"
-                      description="או נייד איש הקשר — חובה 2 מספרים"
+                      description="חובה — אלא אם הוזן נייד איש הקשר"
                       inputWrapperOrder={['label', 'input', 'description', 'error']}
                       {...phoneProps('phoneHome')}
                     />
@@ -611,7 +614,13 @@ export default function ReceptionPage() {
                     <TextInput label="קרבה לאיש הקשר" placeholder="בן/בת זוג, הורה…" {...patientForm.getInputProps('digitalContactRelation')} />
                   </Grid.Col>
                   <Grid.Col span={3}>
-                    <TextInput label="נייד איש הקשר" placeholder="050-1234567" {...phoneProps('digitalContactPhone')} />
+                    <TextInput
+                      label="נייד איש הקשר"
+                      placeholder="050-1234567"
+                      description="נחשב כמספר השני (חלופה לטלפון 2)"
+                      inputWrapperOrder={['label', 'input', 'description', 'error']}
+                      {...phoneProps('digitalContactPhone')}
+                    />
                   </Grid.Col>
                   <Grid.Col span={12}>
                     <Checkbox

@@ -40,6 +40,15 @@
 
 - **הפרדת PHI קליני:** `FormsController` מוגן ב-`[Authorize(Roles="Doctor,Nurse,ShiftManager,Admin")]`
   — קבלה חסומה. חתימה/תוספות מוגבלות ל-Doctor בשכבת השירות (`FormService`).
+- **RBAC ברמת-סקשן בטופס הרפואי (`FormSectionPolicy`):** מקור-אמת יחיד בשרת (מראה-לקוח ב-`constants/formPolicy.ts`),
+  נאכף ב-`FormService.UpdateSectionAsync` → `ForbiddenException`→403 על PATCH לא-מורשה. **האחות עורכת
+  בדיוק 7 סקשנים** (`chiefComplaintNurse`, רגישויות, סימנים חיוניים, הוראות למתן, יחידות להזמנה, טיפולים,
+  אבחנות); הרופא/סטודנט-רפואה עורך את כל היתר. שדה "סיבת הפנייה" פוצל לשני סקשנים — `chiefComplaintNurse`
+  (אחות) ו-`chiefComplaint` (רופא) — וקבוצת **`NurseOnly`** מבטיחה שהרופא **אינו** רשאי לדרוס את סיבת-האחות
+  (least-privilege/הפרדת-אחריות); ShiftManager/Admin שומרים override (עקבי עם חלון-העריכה אחרי חתימה).
+  בלקוח הטופס מציג כברירת-מחדל רק את סקשני-התפקיד וכפתור "הצג שדות רופא" חושף את שדות הצוות-האחר שכבר
+  מולאו — **תצוגה בלבד**; כל גישת-כתיבה נאכפת בשרת (הלקוח אינו מקור-האמת). diagnoses נשאר בכפוף לוולידציית
+  הקטלוג הסגור גם לאחות.
 - **מניעת הסלמה:** `UsersController.Update` חוסם מנהל-משמרת מעריכת חשבון Admin או הענקת Admin.
 - **מניעת דליפת PHI דרך ביקור:** `VisitService.GetByIdAsync` אינו טוען טפסים; טפסים נשלפים רק
   דרך ה-controller המוגן. גם בצד הלקוח, כפתורי הפעולה הקליניים מוסתרים מקבלה (`QueuePage`).

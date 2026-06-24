@@ -353,6 +353,7 @@ public class FormService(AppDbContext db, MedicationCatalogService medCatalog, D
     {
         switch (section)
         {
+            case "chiefComplaintNurse": form.ChiefComplaintNurse = value; break;
             case "chiefComplaint": form.ChiefComplaint = value; break;
             case "presentIllness": form.PresentIllness = value; break;
             case "pastMedicalHistory": form.PastMedicalHistory = value; break;

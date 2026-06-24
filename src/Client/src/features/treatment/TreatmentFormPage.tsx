@@ -9,7 +9,7 @@ import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  IconCheck, IconClock, IconEdit, IconInfoCircle, IconLock, IconLockOpen,
+  IconCheck, IconClock, IconEdit, IconEye, IconEyeOff, IconInfoCircle, IconLock, IconLockOpen,
   IconPlus, IconPrinter, IconTrash, IconWriting,
 } from '@tabler/icons-react';
 import { visitsApi } from '../../api/visits';
@@ -43,12 +43,13 @@ const STATION_OPTIONS: StationType[] = [
 ];
 
 const TEXT_SECTION_KEYS = [
-  'chiefComplaint', 'presentIllness', 'pastMedicalHistory', 'triage',
+  'chiefComplaintNurse', 'chiefComplaint', 'presentIllness', 'pastMedicalHistory', 'triage',
   'physicalExam', 'discussionAndPlan', 'dischargeRecommendations', 'orderedUnits',
 ];
 
 const SECTIONS = [
-  { key: 'chiefComplaint', label: 'סיבת הפנייה / תלונה עיקרית' },
+  { key: 'chiefComplaintNurse', label: 'סיבת הפנייה — אחות' },
+  { key: 'chiefComplaint', label: 'סיבת הפנייה — רופא' },
   { key: 'presentIllness', label: 'מחלה נוכחית (HPI)' },
   { key: 'pastMedicalHistory', label: 'רקע רפואי' },
   { key: 'allergies', label: 'רגישויות' },
@@ -103,6 +104,9 @@ export default function TreatmentFormPage() {
   const [localTextValues, setLocalTextValues] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<Record<string, SaveState>>({});
   const [signConfirm, setSignConfirm] = useState(false);
+  // Default view shows only the sections the current user may edit; this reveals the
+  // (already-filled) sections owned by the other professional, read-only.
+  const [showOtherFields, setShowOtherFields] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
 
   // Refs for serialized auto-save (always uses the latest version)
@@ -450,9 +454,39 @@ export default function TreatmentFormPage() {
         </Alert>
       )}
 
-      {activeForm && (
+      {activeForm && (() => {
+        // True when the section has any content (text non-empty, or table has ≥1 row).
+        const sectionHasContent = (key: string): boolean => {
+          const f = activeForm as unknown as Record<string, unknown>;
+          if (TEXT_SECTION_KEYS.includes(key)) return !!f[key] && String(f[key]).trim().length > 0;
+          const rows = f[key];
+          return Array.isArray(rows) && rows.length > 0;
+        };
+        const canEdit = (key: string) => canEditSection(user?.roles, key);
+        // Default view = the user's own (editable) sections. The toggle additionally reveals the
+        // other professional's sections that are already filled (read-only). Empty non-editable
+        // sections are never shown.
+        const visibleSections = SECTIONS.filter(
+          ({ key }) => canEdit(key) || (showOtherFields && sectionHasContent(key)));
+        const otherFilledCount = SECTIONS.filter(({ key }) => !canEdit(key) && sectionHasContent(key)).length;
+        // A nurse can't edit the doctor's reason → her hidden fields are the doctor's (and vice versa).
+        const revealLabel = canEdit('chiefComplaint') ? 'הצג שדות אחות' : 'הצג שדות רופא';
+        return (
         <Stack gap="sm">
-          {SECTIONS.map(({ key, label }) => {
+          {otherFilledCount > 0 && (
+            <Group justify="flex-end">
+              <Button
+                variant="subtle"
+                size="xs"
+                color="slate"
+                leftSection={showOtherFields ? <IconEyeOff size={14} /> : <IconEye size={14} />}
+                onClick={() => setShowOtherFields((v) => !v)}
+              >
+                {showOtherFields ? 'הסתר שדות נוספים' : `${revealLabel} (${otherFilledCount})`}
+              </Button>
+            </Group>
+          )}
+          {visibleSections.map(({ key, label }) => {
             const readOnly = sectionReadOnly(key);
             const heldByOther = !!locks[key] && locks[key].lockedByUserId !== user?.id;
             const myLock = locks[key]?.lockedByUserId === user?.id;
@@ -503,7 +537,8 @@ export default function TreatmentFormPage() {
             );
           })}
         </Stack>
-      )}
+        );
+      })()}
 
       {/* Addenda (post-signature appendices) */}
       {formSigned && activeForm && (

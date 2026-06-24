@@ -1,21 +1,28 @@
 import type { UserRole } from '../types';
 
-// ⚠ Mirror of the server-side FormSectionPolicy (FormSectionPolicy.cs).
-// Keep these two in sync. Final nurse mapping TBD by client.
+// ⚠ Mirror of the server-side FormSectionPolicy (FormSectionPolicy.cs). Keep these two in sync.
 
+// Sections a NURSE / nursing-student may edit — exactly these seven.
 const NURSE_EDITABLE = new Set<string>([
-  'chiefComplaint', 'presentIllness', 'pastMedicalHistory',
-  'allergies', 'homeMedications', 'vitalSigns', 'triage', 'treatments',
-  'administrationOrders', 'routing',
+  'chiefComplaintNurse', 'allergies', 'vitalSigns', 'treatments',
+  'administrationOrders', 'orderedUnits', 'diagnoses',
 ]);
+
+// Sections only the nurse track (and managers) may edit — the doctor/medstudent must NOT
+// overwrite them. Currently just the nurse's own reason-for-referral.
+const NURSE_ONLY = new Set<string>(['chiefComplaintNurse']);
 
 function canEditSingle(role: UserRole, section: string): boolean {
   switch (role) {
-    case 'Doctor':
+    // Managers may edit any section.
     case 'ShiftManager':
     case 'Admin':
-    case 'MedStudent':
       return true;
+    // Doctors and medical students may edit any section EXCEPT the nurse-only ones.
+    case 'Doctor':
+    case 'MedStudent':
+      return !NURSE_ONLY.has(section);
+    // Nurses and nursing students are limited to the nurse-editable sections.
     case 'Nurse':
     case 'NursingStudent':
       return NURSE_EDITABLE.has(section);

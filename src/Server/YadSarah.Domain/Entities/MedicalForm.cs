@@ -21,6 +21,9 @@ public class MedicalForm
     public int Version { get; set; } = 1;
 
     // Text sections (stored as columns for query-ability)
+    // "Reason for referral" is split per professional: the nurse fills ChiefComplaintNurse, the
+    // doctor fills ChiefComplaint — each editable only by its own track (see FormSectionPolicy).
+    public string? ChiefComplaintNurse { get; set; }
     public string? ChiefComplaint { get; set; }
     public string? PresentIllness { get; set; }
     public string? PastMedicalHistory { get; set; }
