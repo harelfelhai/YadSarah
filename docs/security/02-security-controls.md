@@ -516,6 +516,12 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
   (`ManagerPresence` עם הפעולה), משודר ב-SignalR, והחדר נגזר בשרת מ-`deviceId` (כמו call/enter רגיל) — אין
   שדה-לקוח חדש, over-posting, או חשיפת-PHI. השדות (`ManagerPresence*`) הם מטא-דאטה תפעולי (שם המנהל + חדר).
 
+- **הידוקי-ולידציה בקבלה (אותה אצווה):** ולידציית-טלפון חזקה יותר בלקוח (`utils/phone.ts` — נייד/קווי
+  ישראלי/בינלאומי) ו**תאריך-לידה כשדה-חובה** — בלקוח (`patientForm.validate`) **וגם** בשרת **רק ב-`Create`**
+  (`PatientsController` — רשומות-מטופל קיימות ללא תאריך-לידה grandfathered, ה-`Update` המשותף לא נשבר).
+  ה-`PhoneRx` בשרת נשאר מתירני כשער-משני. אלו הידוקי-קלט בלבד — אין הרחבת over-posting/PHI/נתיב-גישה.
+  תגובת ה-login הורחבה ב-`Department`+`Station` (מטא-דאטה תפעולי, לא PHI) — שדות-תצוגה, לא הרשאה.
+
 קבצים: `Domain/Entities/{User,Visit}.cs` (+ מיגרציה `AddStationAndManagerPresence`),
-`Application/Services/{UserService,VisitService}.cs`, `Api/Controllers/{UsersController,AuthController,VisitsController}.cs`,
-`Client/src/{constants/roles.ts,features/queue/QueuePage.tsx,components/CareStepList.tsx,features/admin/AdminPage.tsx,api/{users,visits}.ts}`.
+`Application/Services/{UserService,VisitService}.cs`, `Api/Controllers/{UsersController,AuthController,VisitsController,PatientsController}.cs`,
+`Client/src/{constants/roles.ts,features/queue/QueuePage.tsx,components/CareStepList.tsx,features/admin/AdminPage.tsx,utils/phone.ts,features/reception/ReceptionPage.tsx,api/{users,visits}.ts}`.
