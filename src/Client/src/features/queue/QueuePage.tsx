@@ -35,6 +35,8 @@ export default function QueuePage() {
     queryKey: ['queue', showAll],
     queryFn: () => visitsApi.getQueue(showAll),
     refetchInterval: 30_000,
+    // Avoid an extra refetch/re-render on window refocus that could interrupt a row click.
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
@@ -281,7 +283,7 @@ export default function QueuePage() {
                       </Group>
                     </Table.Td>
                     <Table.Td>{visit.admissionReason ?? '—'}</Table.Td>
-                    <Table.Td onClick={(e) => e.stopPropagation()}>
+                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }}>
                       <CareStepList
                         steps={nurseSteps}
                         isClinical={isClinical}
@@ -290,7 +292,7 @@ export default function QueuePage() {
                         fallback={terminalBadge}
                       />
                     </Table.Td>
-                    <Table.Td onClick={(e) => e.stopPropagation()}>
+                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }}>
                       <CareStepList
                         steps={doctorSteps}
                         isClinical={isClinical}
@@ -298,7 +300,7 @@ export default function QueuePage() {
                         onAction={(step, action) => handleStepAction(visit, step, action)}
                       />
                     </Table.Td>
-                    <Table.Td onClick={(e) => e.stopPropagation()}>
+                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }}>
                       <CareStepList
                         steps={testSteps}
                         isClinical={isClinical}
@@ -306,7 +308,7 @@ export default function QueuePage() {
                         onAction={(step, action) => handleStepAction(visit, step, action)}
                       />
                     </Table.Td>
-                    <Table.Td onClick={(e) => e.stopPropagation()}>
+                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }}>
                       <ResponsibleParty
                         visit={visit}
                         canClaim={canClaim}

@@ -17,6 +17,7 @@ import { formsApi } from '../../api/forms';
 import { medicationsApi } from '../../api/medications';
 import { diagnosesApi } from '../../api/diagnoses';
 import ReauthModal from '../../components/ReauthModal';
+import ErrorBoundary from '../../components/ErrorBoundary';
 import DateField from '../../components/DateField';
 import TreatmentActions from './TreatmentActions';
 import { useAuthStore } from '../../store/auth';
@@ -454,6 +455,7 @@ export default function TreatmentFormPage() {
         </Alert>
       )}
 
+      <ErrorBoundary title="שגיאה בהצגת הטופס — הנתונים נשמרו בשרת">
       {activeForm && (() => {
         // True when the section has any content (text non-empty, or table has ≥1 row).
         const sectionHasContent = (key: string): boolean => {
@@ -539,6 +541,7 @@ export default function TreatmentFormPage() {
         </Stack>
         );
       })()}
+      </ErrorBoundary>
 
       {/* Addenda (post-signature appendices) */}
       {formSigned && activeForm && (
