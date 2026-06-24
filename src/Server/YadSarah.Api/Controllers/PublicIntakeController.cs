@@ -24,7 +24,8 @@ public partial class PublicIntakeController(
 
     // POST /api/public-intake — accept one patient-filled form.
     [HttpPost]
-    [EnableRateLimiting("publicIntake")]
+    [EnableRateLimiting("publicIntake")] // per-IP anti-flood (the absolute, identity-independent
+                                         // flood ceiling is chained into the GlobalLimiter in Program.cs)
     public async Task<IActionResult> Submit([FromBody] PublicIntakeRequest req, CancellationToken ct)
     {
         if (Validate(req) is { } error) return BadRequest(new { message = error });

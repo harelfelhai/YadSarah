@@ -56,9 +56,22 @@ builder.Services.AddSingleton<YadSarah.Api.Services.FormPresenceService>();
 // Sanitized error responses (no stack traces) in production
 builder.Services.AddProblemDetails();
 
+// In-memory store for the per-manager discount re-auth throttle (VisitsController.Create) —
+// keyed on the target manager username, independent of the (spoofable) client IP.
+builder.Services.AddMemoryCache();
+
 // ── JWT Auth ───────────────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("Jwt:Secret is required");
+
+// Fail loud rather than fail open: a deployment that ships the committed placeholder (or any
+// short/low-entropy key) would run with a publicly-known HS256 signing key → anyone could forge
+// an Admin token. Reject the known placeholder and enforce the >=32-byte HS256 minimum. The
+// placeholder check is gated to non-Development so local dev stays convenient.
+if (Encoding.UTF8.GetByteCount(jwtSecret) < 32 ||
+    (!builder.Environment.IsDevelopment() && jwtSecret.Contains("CHANGE_ME")))
+    throw new InvalidOperationException(
+        "Jwt:Secret must be overridden with a >=32-byte random value (the committed placeholder is not allowed in non-Development).");
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opt =>
@@ -84,6 +97,35 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     ctx.HttpContext.Request.Path.StartsWithSegments("/hubs"))
                     ctx.Token = token;
                 return Task.CompletedTask;
+            },
+            // Request-time account-state revocation: [Authorize] alone only checks the token's
+            // signature/lifetime, so a 12h JWT would otherwise outlive deactivation, lockout, a
+            // role change, or a password reset. Re-read the user on every authenticated request
+            // (cheap projected lookup) and reject the token if the account is no longer usable or
+            // its SecurityStamp has moved on (bumped on deactivate/lockout/role-change/pw-reset).
+            OnTokenValidated = async ctx =>
+            {
+                var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var sub = ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                          ?? ctx.Principal?.FindFirst("sub")?.Value;
+                if (!Guid.TryParse(sub, out var userId)) { ctx.Fail("invalid subject"); return; }
+
+                var account = await db.Users
+                    .Where(u => u.Id == userId)
+                    .Select(u => new { u.IsActive, u.LockoutEndAt, u.AccountExpiresAt, u.SecurityStamp })
+                    .FirstOrDefaultAsync();
+
+                if (account is null || !account.IsActive
+                    || (account.LockoutEndAt.HasValue && account.LockoutEndAt.Value > DateTime.UtcNow)
+                    || (account.AccountExpiresAt.HasValue && account.AccountExpiresAt.Value < DateTime.UtcNow))
+                {
+                    ctx.Fail("account is inactive, locked, or expired");
+                    return;
+                }
+
+                var stamp = ctx.Principal?.FindFirst("stamp")?.Value;
+                if (!string.Equals(stamp, account.SecurityStamp, StringComparison.Ordinal))
+                    ctx.Fail("token superseded by a security-state change");
             }
         };
     });
@@ -118,9 +160,11 @@ builder.Services.AddRateLimiter(opt =>
             QueueLimit = 0,
         }));
 
-    // Public self-service intake — per-IP anti-flood backstop (the per-device cap of 3 is the
-    // primary limit, enforced in IntakeSubmissionService). Kept loose enough for a shared
-    // waiting-room Wi-Fi where many patients submit from one NAT'd IP.
+    // Public self-service intake — per-IP anti-flood backstop. Both this and the per-device cap
+    // (IntakeSubmissionService) key on attacker-rotatable values (client deviceId / spoofable
+    // X-Forwarded-For), so the GlobalLimiter below adds an absolute, identity-independent flood
+    // ceiling for the intake POST. Kept loose enough for a shared waiting-room Wi-Fi where many
+    // patients submit from one NAT'd IP.
     opt.AddPolicy("publicIntake", ctx => RateLimitPartition.GetFixedWindowLimiter(
         partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         factory: _ => new FixedWindowRateLimiterOptions
@@ -130,16 +174,33 @@ builder.Services.AddRateLimiter(opt =>
             QueueLimit = 0,
         }));
 
-    // Lenient global limiter per IP (defense against API flooding)
-    opt.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 300,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-            }));
+    // Global limiter = two chained partitioners applied to every request:
+    //   (1) lenient per-IP cap (general API-flood defense);
+    //   (2) an absolute, IP-INDEPENDENT ceiling on the public-intake POST — ALL anonymous
+    //       submissions share one fixed window, so neither a rotated deviceId nor a spoofed
+    //       X-Forwarded-For can multiply the allowance and bury reception's review board.
+    opt.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+        PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 300,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                })),
+        PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+            HttpMethods.IsPost(ctx.Request.Method) &&
+            ctx.Request.Path.StartsWithSegments("/api/public-intake")
+                ? RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: "public-intake-global",
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = 60,
+                        Window = TimeSpan.FromMinutes(1),
+                        QueueLimit = 0,
+                    })
+                : RateLimitPartition.GetNoLimiter("none")));
 });
 
 // ── CORS (LAN only — no public origin needed) ─────────────────────────────
@@ -164,15 +225,38 @@ using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<DiagnosisCatalogService>().SeedDefaultsAsync();
 }
 
-// Behind a TLS-terminating proxy (Render) the app receives plain HTTP with the real
-// scheme in X-Forwarded-Proto. Honor it FIRST so HSTS/HttpsRedirection see https and
-// don't loop. KnownProxies/Networks are cleared because the proxy isn't on localhost.
+// Behind a TLS-terminating proxy (Render) the app receives plain HTTP with the real scheme in
+// X-Forwarded-Proto, and the real client IP in X-Forwarded-For. We MUST honor those so HSTS /
+// HttpsRedirection don't loop and so the per-IP rate limiters / audit SourceIp see the real
+// client rather than the proxy. The risk: trusting X-Forwarded-For from an UNTRUSTED peer lets a
+// caller spoof their IP and evade the per-IP rate limits. We bound that two ways:
+//   • ForwardLimit = 1 — only the single hop added by the immediate upstream is honored; any extra
+//     client-injected XFF entries to its left are ignored. Behind Render (the only network path to
+//     the container) the rightmost entry is the real client, so spoofing requires DIRECT access.
+//   • Optional ForwardedHeaders:KnownProxyNetworks config (CIDR list) — when set, forwarded headers
+//     are honored ONLY from those proxy networks and ignored on any direct connection, closing the
+//     "if ever directly reachable" gap. Leave it unset to trust the immediate upstream (current
+//     Render behavior); set it to the proxy/egress CIDR for defense in depth.
 var forwardedOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 1,
 };
 forwardedOptions.KnownIPNetworks.Clear();
 forwardedOptions.KnownProxies.Clear();
+var knownProxyCidrs = builder.Configuration
+    .GetSection("ForwardedHeaders:KnownProxyNetworks").Get<string[]>();
+if (knownProxyCidrs is { Length: > 0 })
+{
+    foreach (var cidr in knownProxyCidrs)
+    {
+        var parts = cidr.Split('/', 2);
+        if (parts.Length == 2 &&
+            System.Net.IPAddress.TryParse(parts[0], out var prefix) &&
+            int.TryParse(parts[1], out var len))
+            forwardedOptions.KnownIPNetworks.Add(new System.Net.IPNetwork(prefix, len));
+    }
+}
 app.UseForwardedHeaders(forwardedOptions);
 
 if (app.Environment.IsDevelopment())
@@ -221,6 +305,17 @@ static string? NormalizePostgresConnectionString(string? raw)
     var pass = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : "";
     var db = uri.AbsolutePath.Trim('/');
     var port = uri.Port > 0 ? uri.Port : 5432;
-    return $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};" +
-           "SSL Mode=Require;Trust Server Certificate=true";
+    // TLS to the DB. The connection is always ENCRYPTED (SSL Mode=Require). Certificate VERIFICATION
+    // is deployment-gated and configurable: Render's managed Postgres presents a cert from Render's
+    // PRIVATE CA over its internal network, so the public system trust store can't validate it and a
+    // hard "VerifyFull" would fail to connect. Default therefore trusts the server cert (encrypted,
+    // but MITM-detectable only at the network layer). To harden to full verification where the cert
+    // chain is available, set Database:SslMode=VerifyFull and mount the CA via Database:RootCert
+    // (e.g. Render's downloadable CA bundle) — see docs/security.
+    var sslMode = Environment.GetEnvironmentVariable("Database__SslMode");
+    var rootCert = Environment.GetEnvironmentVariable("Database__RootCert");
+    var sslClause = string.IsNullOrWhiteSpace(sslMode)
+        ? "SSL Mode=Require;Trust Server Certificate=true"
+        : $"SSL Mode={sslMode}" + (string.IsNullOrWhiteSpace(rootCert) ? "" : $";Root Certificate={rootCert}");
+    return $"Host={uri.Host};Port={port};Database={db};Username={user};Password={pass};" + sslClause;
 }

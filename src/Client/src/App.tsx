@@ -32,6 +32,9 @@ const queryClient = new QueryClient({
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token);
+  // Token presence gates the route; an expired-but-persisted token is handled inside the shell
+  // (AppShell logs out immediately on mount when expiresAt is past — see its idle/expiry effect)
+  // and by the global 401 handler, keeping this guard a pure, render-safe check.
   return token ? <>{children}</> : <Navigate to="/login" replace />;
 }
 

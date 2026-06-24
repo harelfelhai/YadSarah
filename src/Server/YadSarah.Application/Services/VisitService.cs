@@ -284,6 +284,14 @@ public class VisitService(AppDbContext db, SettingsService settings)
     {
         var visit = await db.Visits.FindAsync(id)
             ?? throw new KeyNotFoundException($"Visit {id} not found");
+
+        // Discharged is terminal (set by sign-all / manual discharge), mirroring the invariant in
+        // CareStepService.RecomputeVisitStatusAsync. Reopening it via a plain status PATCH would
+        // decouple the live status from the signed clinical record, so reject the transition. A real
+        // "reopen" workflow, if ever needed, must be an explicit, audited, RBAC-gated action.
+        if (visit.Status == VisitStatus.Discharged && status != VisitStatus.Discharged)
+            throw new InvalidOperationException("ביקור משוחרר אינו ניתן לפתיחה מחדש דרך שינוי-סטטוס.");
+
         visit.Status = status;
         visit.UpdatedAt = DateTime.UtcNow;
 

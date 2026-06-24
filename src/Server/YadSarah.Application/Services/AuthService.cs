@@ -117,6 +117,9 @@ public class AuthService(AppDbContext db, IConfiguration config)
             new(JwtRegisteredClaimNames.UniqueName, user.Username),
             new("fullName", user.DisplayName ?? user.FullName),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            // Token-invalidation stamp — re-checked on every request (Program.cs OnTokenValidated);
+            // a mismatch (after deactivate/lockout/role-change/pw-reset) rejects this token.
+            new("stamp", user.SecurityStamp),
         };
         claims.AddRange(ordered.Select(r => new Claim(ClaimTypes.Role, r.ToString())));
 

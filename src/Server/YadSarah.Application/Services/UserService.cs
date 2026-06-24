@@ -122,6 +122,11 @@ public class UserService(AppDbContext db, AuthService auth)
         ValidateNames(req.FirstName, req.LastName);
         ValidateRoles(req.Roles);
 
+        // Detect security-state changes that must invalidate the user's existing JWTs: a role
+        // change (permissions shift) or a deactivation. Compared BEFORE the new values are applied.
+        var rolesChanged = !user.Roles.OrderBy(r => r).SequenceEqual(req.Roles.OrderBy(r => r));
+        var deactivated = user.IsActive && !req.IsActive;
+
         user.FirstName = req.FirstName;
         user.LastName = req.LastName;
         user.FullName = $"{req.FirstName} {req.LastName}".Trim();
@@ -140,6 +145,7 @@ public class UserService(AppDbContext db, AuthService auth)
         user.Department = req.Department;
         user.UpdatedAt = DateTime.UtcNow;
 
+        var passwordReset = false;
         if (!string.IsNullOrWhiteSpace(req.NewPassword))
         {
             var (ok, error) = PasswordPolicy.Validate(req.NewPassword);
@@ -147,7 +153,13 @@ public class UserService(AppDbContext db, AuthService auth)
             user.PasswordHash = auth.HashPassword(req.NewPassword);
             user.LoginFailureCount = 0;
             user.LockoutEndAt = null;
+            passwordReset = true;
         }
+
+        // Rotate the security stamp so any JWTs issued before this change stop working immediately
+        // (Program.cs OnTokenValidated rejects a stale stamp). A plain profile edit does not revoke.
+        if (rolesChanged || deactivated || passwordReset)
+            user.SecurityStamp = Guid.NewGuid().ToString("N");
 
         await db.SaveChangesAsync();
         return user;

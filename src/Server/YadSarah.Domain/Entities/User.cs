@@ -88,6 +88,13 @@ public class User
     // When set and in the future, login is blocked (brute-force lockout)
     public DateTime? LockoutEndAt { get; set; }
 
+    // Token-invalidation stamp. Emitted as the "stamp" claim at token issuance and re-checked on
+    // every authenticated request (Program.cs OnTokenValidated). Rotating it (on deactivate,
+    // lockout, role change, or password reset) immediately invalidates all previously-issued JWTs
+    // for this user — the server-side revocation the bearer-token model otherwise lacks.
+    [JsonIgnore]
+    public string SecurityStamp { get; set; } = Guid.NewGuid().ToString("N");
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 }

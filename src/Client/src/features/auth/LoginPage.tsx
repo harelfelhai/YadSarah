@@ -5,6 +5,7 @@ import {
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconAlertCircle, IconActivityHeartbeat } from '@tabler/icons-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { authApi } from '../../api/auth';
 import { useAuthStore } from '../../store/auth';
 import { hasAnyRole, isClinicalStaff } from '../../constants/roles';
@@ -13,6 +14,7 @@ import Logo from '../../components/Logo';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const setAuth = useAuthStore((s) => s.setAuth);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,8 +31,11 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const { token, user } = await authApi.login(values.username, values.password);
-      setAuth(token, user);
+      const { token, user, expiresAt } = await authApi.login(values.username, values.password);
+      // Drop any cache left over from a previous session on this browser before loading the new
+      // user's data — defense in depth against cross-user PHI bleed on a shared workstation.
+      queryClient.clear();
+      setAuth(token, user, expiresAt);
       await startHub();
       // Reception-only staff land on their desk; clinical staff on the queue.
       const dest = hasAnyRole(user.roles, 'Reception') && !isClinicalStaff(user.roles) ? '/reception' : '/queue';

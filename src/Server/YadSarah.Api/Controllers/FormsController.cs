@@ -285,6 +285,9 @@ public class FormsController(FormService svc, IHubContext<MainHub> hub, AuditSer
     {
         var form = await svc.GetByIdAsync(id);
         if (form is null) return NotFound();
+        // Audit the full-record export — a bulk PHI read that otherwise left no trail, unlike the
+        // sibling GetById/GetByVisit reads.
+        await audit.LogAsync(AuditService.Viewed, "MedicalForm", id, "export");
         return Ok(MapForm(form));
     }
 

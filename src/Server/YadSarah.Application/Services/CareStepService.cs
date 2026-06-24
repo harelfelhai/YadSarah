@@ -120,10 +120,29 @@ public class CareStepService(AppDbContext db)
 
     // ── Step transitions ───────────────────────────────────────────────────────
 
+    /// <summary>Authorization for advancing a CLINICIAN step (call/enter/complete): a Doctor step may
+    /// be acted on only by a Doctor (or ShiftManager/Admin); a Nurse step only by a Nurse /
+    /// NursingStudent (or ShiftManager/Admin). Station steps are open to any clinical role. Prevents a
+    /// lower-privilege role (e.g. a nursing/medical student or lab staff) from marking a doctor's step
+    /// Done and stamping itself as the treating owner. MedStudent is intentionally NOT allowed on a
+    /// Doctor step (policy decision 2026-06).</summary>
+    private static void EnsureRoleMayActOnStep(CareStep step, UserRole role)
+    {
+        if (step.Category != CareStepCategory.Clinician) return;
+        if (role is UserRole.ShiftManager or UserRole.Admin) return;
+
+        var allowed = step.ClinicianRole == UserRole.Nurse
+            ? role is UserRole.Nurse or UserRole.NursingStudent
+            : role is UserRole.Doctor;
+        if (!allowed)
+            throw new ForbiddenException("אינך מורשה לעדכן צעד טיפול זה — אינו תואם לסיווג המקצועי שלך.");
+    }
+
     /// <summary>Call (page) the patient for a waiting step — stamps who called and from which room.</summary>
     public async Task<CareStep> CallAsync(Guid stepId, Guid userId, string userName, UserRole role, string? room)
     {
         var step = await LoadActiveStepAsync(stepId);
+        EnsureRoleMayActOnStep(step, role);
         step.Status = CareStepStatus.Called;
         step.CalledByUserId = userId;
         step.CalledByName = userName;
@@ -234,6 +253,7 @@ public class CareStepService(AppDbContext db)
     public async Task<CareStep> CompleteAsync(Guid stepId, Guid userId, string userName, UserRole role)
     {
         var step = await LoadActiveStepAsync(stepId);
+        EnsureRoleMayActOnStep(step, role);
         step.Status = CareStepStatus.Done;
         step.CompletedAt = DateTime.UtcNow;
         step.UpdatedAt = DateTime.UtcNow;

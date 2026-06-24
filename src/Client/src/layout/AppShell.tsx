@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AppShell as MantineAppShell, Burger, Group, NavLink, Text, Button, Avatar, Box,
@@ -54,7 +54,7 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const { user, clearAuth } = useAuthStore();
+  const { user, expiresAt, clearAuth } = useAuthStore();
 
   // Whether this computer has been pinned to a room yet. If not (new device), prompt
   // the first user to set it — authoritative across both login and page-refresh.
@@ -77,11 +77,45 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
     if (user) startHub().catch(() => {});
   }, [user]);
 
-  const handleLogout = async () => {
+  // Unified logout: stop the hub, clear auth, and CLEAR THE QUERY CACHE so the previous user's
+  // cached patient PHI can't leak to the next user on a shared workstation (the query cache is a
+  // module-level singleton that otherwise survives logout). Used by the header button and by the
+  // idle/expiry watchdog below.
+  const doLogout = useCallback(async () => {
     await stopHub();
     clearAuth();
+    queryClient.clear();
     navigate('/login');
-  };
+  }, [clearAuth, queryClient, navigate]);
+
+  // Proactively end an idle or expired session on a shared workstation, instead of leaving the UI
+  // authenticated until the next API call happens to 401. Resets on real user activity; also
+  // honors the access token's own expiry.
+  useEffect(() => {
+    if (!user) return;
+    // Reopened browser with an already-expired persisted token → log out immediately on mount.
+    if (expiresAt && Date.now() > new Date(expiresAt).getTime()) { void doLogout(); return; }
+
+    const IDLE_MS = 15 * 60_000;
+    let idleTimer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { void doLogout(); }, IDLE_MS);
+    };
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+
+    const expiryTimer = setInterval(() => {
+      if (expiresAt && Date.now() > new Date(expiresAt).getTime()) void doLogout();
+    }, 30_000);
+
+    return () => {
+      clearTimeout(idleTimer);
+      clearInterval(expiryTimer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [user, expiresAt, doLogout]);
 
   return (
     <MantineAppShell
@@ -129,7 +163,7 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
               size="xs"
               variant="subtle"
               leftSection={<IconLogout size={14} />}
-              onClick={handleLogout}
+              onClick={doLogout}
               style={{ color: '#fff' }}
             >
               יציאה

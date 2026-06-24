@@ -27,22 +27,44 @@ public record IntakeCreateResult(bool Accepted, PatientIntakeSubmission? Submiss
 public class IntakeSubmissionService(AppDbContext db)
 {
     /// <summary>
-    /// Persist a public submission, enforcing the "max N per device per window" cap. When the
-    /// device already has <paramref name="deviceLimit"/> submissions inside the window, returns
-    /// <c>Accepted=false</c> (the controller maps that to 429). A missing device token can't be
-    /// counted — those rely on the IP rate-limiter instead and are accepted here.
+    /// Persist a public submission behind three independent caps (any rejected → controller maps to
+    /// 429): a per-device cap, a (looser) per-source-IP cap, and an absolute ceiling on the pending
+    /// backlog. The client-supplied deviceId is advisory and rotatable, so it is no longer the sole
+    /// gate: a MISSING deviceId is now rejected (the public page always generates one, so a blank one
+    /// signals a scripted client), and the IP + global-backlog caps bound a flood that rotates the
+    /// deviceId. An absolute pending ceiling stops a determined flood from burying reception's board.
     /// </summary>
     public async Task<IntakeCreateResult> CreateAsync(
         PatientIntakeSubmission submission, int deviceLimit, TimeSpan window, CancellationToken ct = default)
     {
-        if (!string.IsNullOrWhiteSpace(submission.DeviceId))
+        // A blank device token used to be silently accepted (uncapped) — a trivial bypass. The
+        // public page always sends a generated deviceId, so reject a missing one.
+        if (string.IsNullOrWhiteSpace(submission.DeviceId))
+            return new IntakeCreateResult(false, null);
+
+        var since = DateTime.UtcNow - window;
+
+        var recentByDevice = await db.PatientIntakeSubmissions.CountAsync(
+            s => s.DeviceId == submission.DeviceId && s.SubmittedAt >= since, ct);
+        if (recentByDevice >= deviceLimit)
+            return new IntakeCreateResult(false, null);
+
+        // Per-source-IP cap. The IP is harder to rotate than the client deviceId; kept looser than
+        // the device cap because a shared waiting-room NAT means many legitimate patients share one IP.
+        if (!string.IsNullOrWhiteSpace(submission.SourceIp))
         {
-            var since = DateTime.UtcNow - window;
-            var recent = await db.PatientIntakeSubmissions.CountAsync(
-                s => s.DeviceId == submission.DeviceId && s.SubmittedAt >= since, ct);
-            if (recent >= deviceLimit)
+            var recentByIp = await db.PatientIntakeSubmissions.CountAsync(
+                s => s.SourceIp == submission.SourceIp && s.SubmittedAt >= since, ct);
+            if (recentByIp >= deviceLimit * 5)
                 return new IntakeCreateResult(false, null);
         }
+
+        // Absolute backlog ceiling — an identity-independent hard stop on a flood that rotates both
+        // deviceId and IP, so reception's pending-review board cannot be buried.
+        const int maxPending = 200;
+        var pending = await db.PatientIntakeSubmissions.CountAsync(s => s.Status == IntakeStatus.Pending, ct);
+        if (pending >= maxPending)
+            return new IntakeCreateResult(false, null);
 
         submission.Id = Guid.NewGuid();
         submission.Status = IntakeStatus.Pending;

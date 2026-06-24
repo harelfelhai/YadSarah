@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Caching.Memory;
 using YadSarah.Application.Services;
 using YadSarah.Domain.Entities;
 using YadSarah.Api.Dtos;
@@ -15,7 +16,7 @@ namespace YadSarah.Api.Controllers;
 [Authorize]
 public class VisitsController(
     VisitService svc, IHubContext<MainHub> hub, AuditService audit, WorkstationService workstations,
-    AuthService auth, PricingService pricing, CareStepService steps) : ControllerBase
+    AuthService auth, PricingService pricing, CareStepService steps, IMemoryCache cache) : ControllerBase
 {
     private Guid UserId =>
         Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
@@ -71,19 +72,43 @@ public class VisitsController(
 
         var entity = req.ToEntity();
 
+        // Closed-list enforcement: only an accepted statutory exemption reason (or none) may reach
+        // pricing — free text can no longer silently zero the ED charge (the client uses the same
+        // closed <Select>; this is the server trust boundary).
+        if (!PricingService.IsAcceptedExemption(entity.ExemptionReason))
+            return BadRequest(new { message = "סיבת פטור אינה ברשימה המאושרת." });
+
         // Discount/exemption is manager-gated: it persists ONLY with valid shift-manager step-up
         // credentials (a manager may authorize while reception is logged in). Re-verified here even
         // though the client also calls /reception/authorize-discount, so the gate isn't client-trusted.
         var discountAuthorized = false;
         if (!string.IsNullOrWhiteSpace(req.DiscountReason))
         {
-            var manager = await auth.VerifyCredentialsAsync(
-                req.DiscountApprovalUsername ?? "", req.DiscountApprovalPassword ?? "");
+            // Throttle manager-credential guesses per TARGET username (not per IP, which is
+            // spoofable). VerifyCredentialsAsync deliberately doesn't trip the account lockout, so
+            // without this the create path is a brute-force oracle on manager passwords: max 5
+            // attempts / 5 min / username → 429.
+            var uname = (req.DiscountApprovalUsername ?? "").Trim();
+            var throttleKey = $"discount-auth:{uname.ToLowerInvariant()}";
+            var attempts = cache.GetOrCreate(throttleKey, e =>
+            {
+                e.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+                return 0;
+            });
+            if (attempts >= 5)
+                return StatusCode(429, new { message = "יותר מדי ניסיונות אישור מנהל. נסו שוב בעוד מספר דקות." });
+
+            var manager = await auth.VerifyCredentialsAsync(uname, req.DiscountApprovalPassword ?? "");
             var isManager = manager is not null &&
                 (manager.Roles.Contains(UserRole.ShiftManager) || manager.Roles.Contains(UserRole.Admin));
             if (!isManager)
+            {
+                cache.Set(throttleKey, attempts + 1, TimeSpan.FromMinutes(5));
+                await audit.LogAsync("DiscountAuthFailed", "Visit", default, "discount", newValue: uname);
                 return StatusCode(403, new { message = "החלת הנחה/פטור מחייבת אישור מנהל משמרת." });
+            }
 
+            cache.Remove(throttleKey); // success — clear the per-manager throttle
             entity.DiscountApprovedByUserId = manager!.Id;
             entity.DiscountApprovedByName = manager.DisplayName ?? manager.FullName;
             discountAuthorized = true;
@@ -102,6 +127,12 @@ public class VisitsController(
 
         var created = await svc.CreateAsync(entity);
         await audit.LogAsync(AuditService.Created, "Visit", created.Id);
+
+        // A full exemption (any accepted reason other than the referral price-column modifier) zeroes
+        // the charge — record it for revenue-integrity review, distinct from the ordinary create.
+        var exemption = entity.ExemptionReason?.Trim();
+        if (!string.IsNullOrEmpty(exemption) && exemption != PricingService.ReferralReason)
+            await audit.LogAsync("ExemptionApplied", "Visit", created.Id, "exemption", newValue: exemption);
         await hub.Clients.All.SendAsync("QueueUpdate", new
         {
             visitId = created.Id,
@@ -116,9 +147,12 @@ public class VisitsController(
     [Authorize(Roles = "Reception,ShiftManager,Admin")]
     public async Task<IActionResult> Update(Guid id, [FromBody] VisitRequest req)
     {
+        var incoming = req.ToEntity();
+        if (!PricingService.IsAcceptedExemption(incoming.ExemptionReason))
+            return BadRequest(new { message = "סיבת פטור אינה ברשימה המאושרת." });
         try
         {
-            var updated = await svc.UpdateAsync(id, req.ToEntity());
+            var updated = await svc.UpdateAsync(id, incoming);
             await audit.LogAsync(AuditService.Updated, "Visit", id);
             return Ok(updated);
         }
@@ -154,12 +188,18 @@ public class VisitsController(
         if (status == VisitStatus.InTreatment)
             room = await workstations.ResolveRoomAsync(req.DeviceId);
 
-        var updated = await svc.UpdateStatusAsync(
-            id, status,
-            actingUserId: status == VisitStatus.InTreatment ? UserId : null,
-            actingUserName: status == VisitStatus.InTreatment ? UserName : null,
-            actingRole: status == VisitStatus.InTreatment ? CallerRole : null,
-            room: room);
+        Visit updated;
+        try
+        {
+            updated = await svc.UpdateStatusAsync(
+                id, status,
+                actingUserId: status == VisitStatus.InTreatment ? UserId : null,
+                actingUserName: status == VisitStatus.InTreatment ? UserName : null,
+                actingRole: status == VisitStatus.InTreatment ? CallerRole : null,
+                room: room);
+        }
+        catch (InvalidOperationException ex) { return Conflict(new { message = ex.Message }); }
+        catch (KeyNotFoundException) { return NotFound(); }
 
         await audit.LogAsync(AuditService.StatusChanged, "Visit", id, "Status", newValue: status.ToString());
         await hub.Clients.All.SendAsync("QueueUpdate", new
