@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Button, Card, Grid, Group, Select, Stack, Stepper, Text,
+  Box, Button, Card, Grid, Group, Input, Select, Stack, Stepper, Text,
   TextInput, Checkbox, Textarea, NumberInput, Badge,
   Alert, ActionIcon, Tooltip, Autocomplete,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useQuery } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconX, IconAlertCircle, IconSparkles, IconLock } from '@tabler/icons-react';
+import { IconSearch, IconX, IconAlertCircle, IconLock } from '@tabler/icons-react';
 import { DEFAULT_CITY, orderCitiesByFrequency } from '../../constants/israeliCities';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { patientsApi } from '../../api/patients';
 import { visitsApi } from '../../api/visits';
 import { streetsApi } from '../../api/streets';
-import { receptionApi, type RouteDepartmentResult } from '../../api/reception';
+import { receptionApi } from '../../api/reception';
 import { referenceApi } from '../../api/reference';
 import { intakeApi, type IntakeSubmission } from '../../api/intake';
 import { formatPhone, phoneValidationError, digitsOnly } from '../../utils/phone';
@@ -35,10 +35,6 @@ const IDENTITY_TYPES: { value: IdentityType; label: string }[] = [
   { value: 'זמני', label: 'זמני (אוטומטי)' },
 ];
 const HEALTH_FUNDS = ['מכבי', 'מאוחדת', 'כללית', 'לאומית', 'הראל', 'AIM', 'ללא'];
-const ADMISSION_REASONS = [
-  'כאב', 'פציעה / חבלה', 'חום', 'קוצר נשימה', 'בחילה / הקאות',
-  'חולשה / עילפון', 'בדיקה רפואית', 'ייעוץ', 'המשך טיפול', 'תאונת דרכים', 'אחר',
-];
 const GENDERS = [
   { value: 'ז', label: 'זכר' },
   { value: 'נ', label: 'נקבה' },
@@ -155,7 +151,6 @@ export default function ReceptionPage() {
     setIdNumber('');
     setIdError('');
     setStreetOptions([]);
-    setRouteResult(null);
     setDiscountUnlocked(false);
     setDiscountApprovedBy('');
     managerCreds.current = null;
@@ -303,9 +298,8 @@ export default function ReceptionPage() {
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // ── Department AI routing (decides; low confidence → multiple options to pick) ──
+  // ── Department AI routing (decides exactly one department, behind the scenes) ──
   const [routing, setRouting] = useState(false);
-  const [routeResult, setRouteResult] = useState<RouteDepartmentResult | null>(null);
 
   const ageFromBirth = (iso?: string): number | undefined => {
     if (!iso) return undefined;
@@ -319,7 +313,7 @@ export default function ReceptionPage() {
 
   const runRouting = async (reason: string) => {
     visitForm.setFieldValue('admissionReason', reason);
-    if (!reason.trim()) { setRouteResult(null); return; }
+    if (!reason.trim()) { return; }
     setRouting(true);
     try {
       const res = await receptionApi.routeDepartment({
@@ -327,15 +321,14 @@ export default function ReceptionPage() {
         age: ageFromBirth(patientForm.values.birthDate),
         gender: patientForm.values.gender || undefined,
       });
-      setRouteResult(res);
       // Routing always commits to exactly ONE department (rule/ai/fallback). Reception never picks
-      // (the field is read-only); a clinician finalizes the department during treatment.
+      // (the field is display-only); a clinician finalizes the department during treatment. The
+      // rule/AI provenance is still persisted (behind-the-scenes) but NOT surfaced at reception.
       visitForm.setFieldValue('receptionDepartment', res.departments[0] ?? '');
       visitForm.setFieldValue('departmentAssignedByAi', res.source === 'ai');
       visitForm.setFieldValue('departmentConfidence', res.confidence);
       visitForm.setFieldValue('departmentCandidatesJson', '');
     } catch {
-      setRouteResult(null);
       notifications.show({ message: 'קביעת מחלקה נכשלה — בחר ידנית', color: 'orange' });
     } finally {
       setRouting(false);
@@ -670,44 +663,32 @@ export default function ReceptionPage() {
           <Stack gap="md" mt="md">
             <Card withBorder p="md">
               <Grid>
-                {/* סיבת קבלה — entered first; drives the AI department routing */}
+                {/* סיבת קבלה — free text (entered first; drives the AI department routing on blur) */}
                 <Grid.Col span={6}>
-                  {/* Free text — the common reasons are only suggestions. AI routing runs on blur. */}
-                  <Autocomplete
+                  <TextInput
                     label="סיבת קבלה"
                     withAsterisk
-                    data={ADMISSION_REASONS}
                     value={visitForm.values.admissionReason}
-                    onChange={(val) => visitForm.setFieldValue('admissionReason', val)}
+                    onChange={(e) => visitForm.setFieldValue('admissionReason', e.currentTarget.value)}
                     onBlur={() => runRouting(visitForm.values.admissionReason)}
                     error={visitForm.errors.admissionReason}
                   />
                 </Grid.Col>
 
-                {/* מחלקה — נקבעת אוטומטית (AI/כלל/ברירת מחדל) ונעולה בקבלה; שינוי ע"י צוות קליני בטיפול */}
+                {/* מחלקה — נקבעת אוטומטית מאחורי-הקלעים (כלל/AI/ברירת-מחדל) לפי סיבת הקבלה. תצוגה בלבד,
+                    לא שדה-קלט, ובלי חשיפת אופן-הקביעה; שינוי ע"י צוות קליני בשלב הטיפול */}
                 <Grid.Col span={6}>
-                  <TextInput
-                    label="מחלקה"
-                    readOnly
-                    withAsterisk
-                    value={visitForm.values.receptionDepartment}
-                    placeholder={routing ? 'קובע מחלקה…' : 'תיקבע אוטומטית לפי סיבת הקבלה'}
-                    error={visitForm.errors.receptionDepartment}
-                    rightSectionWidth={routeResult?.source === 'ai' ? 70 : undefined}
-                    rightSection={
-                      routeResult?.source === 'ai'
-                        ? <Badge color="grape" size="sm" leftSection={<IconSparkles size={11} />}>AI</Badge>
-                        : undefined
-                    }
-                    description={
-                      routing ? 'קובע מחלקה…'
-                        : routeResult?.source === 'ai' ? `נקבע ע"י AI · ודאות ${Math.round((routeResult.confidence ?? 0) * 100)}%`
-                          : routeResult?.source === 'rule' ? 'נקבע לפי כלל ניתוב'
-                            : routeResult?.source === 'fallback' ? 'נקבע אוטומטית (AI לא זמין)'
-                              : 'תיקבע אוטומטית לפי סיבת הקבלה'
-                    }
-                    inputWrapperOrder={['label', 'input', 'description', 'error']}
-                  />
+                  <Input.Wrapper label="מחלקה" withAsterisk error={visitForm.errors.receptionDepartment}>
+                    <Box style={{ minHeight: 36, display: 'flex', alignItems: 'center' }}>
+                      {routing ? (
+                        <Text size="sm" c="dimmed">קובע מחלקה…</Text>
+                      ) : visitForm.values.receptionDepartment ? (
+                        <Badge size="lg" variant="light" radius="sm">{visitForm.values.receptionDepartment}</Badge>
+                      ) : (
+                        <Text size="sm" c="dimmed">תיקבע אוטומטית לפי סיבת הקבלה</Text>
+                      )}
+                    </Box>
+                  </Input.Wrapper>
                 </Grid.Col>
 
                 <Grid.Col span={12}>

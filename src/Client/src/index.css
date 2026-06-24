@@ -62,12 +62,7 @@ body { background: var(--paper); color: var(--ink); }
   from { opacity: 0; transform: translateY(-6px); }
   to   { opacity: 1; transform: none; }
 }
-@keyframes ys-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.4; }
-}
 .ys-row-in { animation: ys-row-in 0.32s ease-out both; }
-.ys-overdue { animation: ys-pulse 1.6s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

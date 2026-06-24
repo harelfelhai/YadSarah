@@ -64,3 +64,17 @@ export const canEnterStep = (roles: UserRole[] | undefined, clinicianRole: UserR
     ? hasAnyRole(roles, 'Nurse', 'NursingStudent')
     : hasAnyRole(roles, 'Doctor', 'MedStudent');
 };
+
+// "Call / complete" (קרא / סיים) RBAC — mirror of CareStepService.EnsureRoleMayActOnStep. Like
+// canEnterStep, a professional may act only on the wait that targets their own track, but it is
+// STRICTER on the doctor track: a Doctor step requires the Doctor role itself — a MedStudent may
+// admit ("הכנס") but may NOT call/complete a doctor step (policy decision 2026-06). Nurse step →
+// Nurse/NursingStudent; ShiftManager/Admin may act on any wait; station steps (clinicianRole null)
+// carry no track restriction. Keep in sync with the server.
+export const canActOnStep = (roles: UserRole[] | undefined, clinicianRole: UserRole | null | undefined) => {
+  if (hasAnyRole(roles, 'ShiftManager', 'Admin')) return true;
+  if (clinicianRole == null) return true; // station — no track restriction
+  return clinicianRole === 'Nurse'
+    ? hasAnyRole(roles, 'Nurse', 'NursingStudent')
+    : hasAnyRole(roles, 'Doctor');
+};

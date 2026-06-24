@@ -120,29 +120,33 @@ public class CareStepService(AppDbContext db)
 
     // ── Step transitions ───────────────────────────────────────────────────────
 
-    /// <summary>Authorization for advancing a CLINICIAN step (call/enter/complete): a Doctor step may
+    /// <summary>Authorization for advancing a CLINICIAN step (call/complete): a Doctor step may
     /// be acted on only by a Doctor (or ShiftManager/Admin); a Nurse step only by a Nurse /
     /// NursingStudent (or ShiftManager/Admin). Station steps are open to any clinical role. Prevents a
     /// lower-privilege role (e.g. a nursing/medical student or lab staff) from marking a doctor's step
     /// Done and stamping itself as the treating owner. MedStudent is intentionally NOT allowed on a
-    /// Doctor step (policy decision 2026-06).</summary>
-    private static void EnsureRoleMayActOnStep(CareStep step, UserRole role)
+    /// Doctor step (policy decision 2026-06). Checks the caller's FULL role set (like
+    /// <see cref="EnsureMayEnter"/>) so a multi-role user — e.g. רופא+אחות — is authorized on either
+    /// track; the client mirror is <c>canActOnStep</c> in constants/roles.ts.</summary>
+    private static void EnsureRoleMayActOnStep(CareStep step, IReadOnlyCollection<UserRole> roles)
     {
         if (step.Category != CareStepCategory.Clinician) return;
-        if (role is UserRole.ShiftManager or UserRole.Admin) return;
+        if (roles.Contains(UserRole.ShiftManager) || roles.Contains(UserRole.Admin)) return;
 
         var allowed = step.ClinicianRole == UserRole.Nurse
-            ? role is UserRole.Nurse or UserRole.NursingStudent
-            : role is UserRole.Doctor;
+            ? roles.Contains(UserRole.Nurse) || roles.Contains(UserRole.NursingStudent)
+            : roles.Contains(UserRole.Doctor);
         if (!allowed)
             throw new ForbiddenException("אינך מורשה לעדכן צעד טיפול זה — אינו תואם לסיווג המקצועי שלך.");
     }
 
     /// <summary>Call (page) the patient for a waiting step — stamps who called and from which room.</summary>
-    public async Task<CareStep> CallAsync(Guid stepId, Guid userId, string userName, UserRole role, string? room)
+    public async Task<CareStep> CallAsync(
+        Guid stepId, Guid userId, string userName, UserRole role,
+        IReadOnlyCollection<UserRole> roles, string? room)
     {
         var step = await LoadActiveStepAsync(stepId);
-        EnsureRoleMayActOnStep(step, role);
+        EnsureRoleMayActOnStep(step, roles);
         step.Status = CareStepStatus.Called;
         step.CalledByUserId = userId;
         step.CalledByName = userName;
@@ -250,10 +254,10 @@ public class CareStepService(AppDbContext db)
 
     /// <summary>Mark a step done. A completed station the patient was referred to auto-creates a
     /// "waiting for [the referrer]" clinician step, so the patient returns to whoever sent them.</summary>
-    public async Task<CareStep> CompleteAsync(Guid stepId, Guid userId, string userName, UserRole role)
+    public async Task<CareStep> CompleteAsync(Guid stepId, Guid userId, string userName, IReadOnlyCollection<UserRole> roles)
     {
         var step = await LoadActiveStepAsync(stepId);
-        EnsureRoleMayActOnStep(step, role);
+        EnsureRoleMayActOnStep(step, roles);
         step.Status = CareStepStatus.Done;
         step.CompletedAt = DateTime.UtcNow;
         step.UpdatedAt = DateTime.UtcNow;

@@ -301,7 +301,7 @@ public class VisitsController(
             switch (action)
             {
                 case "call":
-                    step = await steps.CallAsync(stepId, UserId, UserName, CallerRole,
+                    step = await steps.CallAsync(stepId, UserId, UserName, CallerRole, CallerRoles,
                         await workstations.ResolveRoomAsync(req.DeviceId));
                     break;
                 case "enter":
@@ -309,7 +309,7 @@ public class VisitsController(
                         await workstations.ResolveRoomAsync(req.DeviceId));
                     break;
                 case "complete":
-                    step = await steps.CompleteAsync(stepId, UserId, UserName, CallerRole);
+                    step = await steps.CompleteAsync(stepId, UserId, UserName, CallerRoles);
                     break;
                 case "claim":
                 case "release":

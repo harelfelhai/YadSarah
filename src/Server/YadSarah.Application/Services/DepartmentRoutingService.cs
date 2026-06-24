@@ -115,6 +115,10 @@ public class DepartmentRoutingService(IDepartmentClassifier classifier)
                     var picked = c.Departments.Where(candidates.Contains).ToList();
                     if (picked.Count == 0) picked = c.Departments.ToList();
                     var one = c.Confidence >= ConfidenceThreshold ? picked[0] : CollapseAmbiguous(picked);
+                    // Hard gender guard: a male is NEVER routed to "נשים", whatever the AI returned —
+                    // e.g. an admission reason mentioning "שבוע N" must not send a male to obstetrics.
+                    // Fall to the deterministic, age-aware non-women's pick instead.
+                    if (one == Departments.Womens && IsMale(ctx.Gender)) one = FallbackDepartment(admissionReason, ctx);
                     return new DepartmentRoutingResult(new[] { one }, c.Confidence, "ai");
                 }
             }
@@ -139,6 +143,9 @@ public class DepartmentRoutingService(IDepartmentClassifier classifier)
         var set = Departments.All.ToList();
         if (ctx.Age is > 17) set.Remove(Departments.Pediatrics);
         if (ctx.Age is > 70 or <= 2) set.Remove(Departments.Orthopedics);
+        // A male is never an obstetric/gynaecological patient — drop "נשים" so it is not even offered
+        // to the AI (the hard guard in RouteAsync is the final backstop for any off-candidate result).
+        if (IsMale(ctx.Gender)) set.Remove(Departments.Womens);
         return set.Count > 0 ? set : Departments.All;
     }
 

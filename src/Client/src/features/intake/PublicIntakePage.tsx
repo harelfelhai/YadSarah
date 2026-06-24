@@ -25,10 +25,6 @@ const IDENTITY_TYPES: { value: IdentityType; label: string }[] = [
   { value: 'ללא', label: 'ללא תעודה' },
 ];
 const HEALTH_FUNDS = ['מכבי', 'מאוחדת', 'כללית', 'לאומית', 'הראל', 'AIM', 'ללא'];
-const ADMISSION_REASONS = [
-  'כאב', 'פציעה / חבלה', 'חום', 'קוצר נשימה', 'בחילה / הקאות',
-  'חולשה / עילפון', 'בדיקה רפואית', 'ייעוץ', 'המשך טיפול', 'תאונת דרכים', 'אחר',
-];
 const GENDERS = [
   { value: 'ז', label: 'זכר' },
   { value: 'נ', label: 'נקבה' },
@@ -321,11 +317,9 @@ export default function PublicIntakePage() {
               <Select label="קופת חולים" data={HEALTH_FUNDS} clearable {...form.getInputProps('healthFund')} />
             </Grid.Col>
             <Grid.Col span={{ base: 12, xs: 6 }}>
-              <Select
+              <TextInput
                 label="סיבת הפנייה"
                 withAsterisk
-                data={ADMISSION_REASONS}
-                searchable
                 {...form.getInputProps('admissionReason')}
               />
             </Grid.Col>

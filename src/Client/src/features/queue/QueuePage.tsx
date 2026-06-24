@@ -1,30 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
+  Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconUserPlus, IconStar, IconSparkles, IconStethoscope } from '@tabler/icons-react';
+import { IconSearch, IconUserPlus, IconStar, IconSparkles } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
-import { isReceptionStaff, isClinicalStaff, hasAnyRole, ROLE_LABELS } from '../../constants/roles';
-import { STATUS_COLOR, STATUS_LABEL } from '../../constants/visitStatus';
+import { isReceptionStaff, isClinicalStaff, hasAnyRole } from '../../constants/roles';
+import { STATUS_LABEL } from '../../constants/visitStatus';
 import { queueLabel, SPECIAL_QUEUE_LETTER } from '../../constants/departments';
 import CareStepList from '../../components/CareStepList';
 import type { CareStep, CareStepAction, CareStepStatus, Visit, VisitStatus } from '../../types';
 
-// Resolved hex for the leading status rail (var refs would need theme lookup)
-const RAIL_HEX: Record<VisitStatus, string> = {
-  Waiting: '#2e5a7d',
-  Called: '#a9761f',
-  InTreatment: '#2f6b4f',
-  FinishedTreatment: '#37706b',
-  Discharged: '#8a96a1',
-};
+// A single muted, neutral rail/divider tone — no loud per-status colors (kept subtle by request).
+const RAIL = 'var(--mantine-color-slate-3)';
 
-// A waiting patient past this many minutes is "overdue" → rail pulses in alert red.
+// A waiting patient past this many minutes is "overdue" → the wait chip gets a subtle emphasis.
 const OVERDUE_MIN = 30;
 
 
@@ -185,7 +179,7 @@ export default function QueuePage() {
             key={s}
             px="lg"
             py="xs"
-            style={{ flex: '1 1 0', minWidth: 110, borderInlineStart: `4px solid ${RAIL_HEX[s]}`, textAlign: 'center' }}
+            style={{ flex: '1 1 0', minWidth: 110, borderInlineStart: `4px solid ${RAIL}`, textAlign: 'center' }}
           >
             <Text fw={800} size="xl" style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--ink)' }}>
               {counts[s] ?? 0}
@@ -209,7 +203,7 @@ export default function QueuePage() {
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1320} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1480} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
@@ -219,7 +213,9 @@ export default function QueuePage() {
                 <Table.Th style={{ width: 120, whiteSpace: 'nowrap' }}>המתנה</Table.Th>
                 <Table.Th style={{ minWidth: 210, whiteSpace: 'nowrap' }}>מחלקה</Table.Th>
                 <Table.Th>סיבת קבלה</Table.Th>
-                <Table.Th style={{ minWidth: 340 }}>סטטוס</Table.Th>
+                <Table.Th style={{ minWidth: 150 }}>אחות</Table.Th>
+                <Table.Th style={{ minWidth: 150 }}>רופא</Table.Th>
+                <Table.Th style={{ minWidth: 170 }}>בדיקות ומעבדות</Table.Th>
                 <Table.Th style={{ minWidth: 150 }}>גורם אחראי</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -228,7 +224,16 @@ export default function QueuePage() {
                 const isOtherDept = showDeptHighlight && visit.receptionDepartment !== userDept;
                 const wait = waitMinutes(visit);
                 const overdue = visit.status === 'Waiting' && wait >= OVERDUE_MIN;
-                const railColor = overdue ? 'var(--alert)' : RAIL_HEX[visit.status];
+                // Status is split into three per-track columns: nurse / doctor / everything else
+                // (stations = "בדיקות ומעבדות"). Terminal visits have no active steps, so surface the
+                // overall status once (in the nurse column) instead of three empty cells.
+                const careSteps = visit.careSteps ?? [];
+                const nurseSteps = careSteps.filter((s) => s.category === 'Clinician' && s.clinicianRole === 'Nurse');
+                const doctorSteps = careSteps.filter((s) => s.category === 'Clinician' && s.clinicianRole === 'Doctor');
+                const testSteps = careSteps.filter((s) => !(s.category === 'Clinician' && (s.clinicianRole === 'Nurse' || s.clinicianRole === 'Doctor')));
+                const terminalBadge = (visit.status === 'Discharged' || visit.status === 'FinishedTreatment')
+                  ? <Badge color="slate" variant="light">{STATUS_LABEL[visit.status]}</Badge>
+                  : undefined;
                 return (
                   <Table.Tr
                     key={visit.id}
@@ -241,13 +246,12 @@ export default function QueuePage() {
                       cursor: isClinical ? 'pointer' : undefined,
                     }}
                   >
-                    <Table.Td style={{ borderInlineStart: `4px solid ${railColor}` }}>
+                    <Table.Td style={{ borderInlineStart: `4px solid ${RAIL}` }}>
                       <Group gap={4} wrap="nowrap" align="center">
                         {isSpecial(visit) && (
-                          <IconStar size={16} fill="var(--mantine-color-yellow-5)" color="var(--mantine-color-yellow-6)" />
+                          <IconStar size={16} fill="var(--mantine-color-slate-4)" color="var(--mantine-color-slate-5)" />
                         )}
                         <Text
-                          className={overdue ? 'ys-overdue' : undefined}
                           fw={800}
                           style={{ fontSize: 22, fontFamily: '"Frank Ruhl Libre", serif', fontVariantNumeric: 'tabular-nums', color: 'var(--ink)' }}
                         >
@@ -266,44 +270,46 @@ export default function QueuePage() {
                     <Table.Td>
                       <Group gap={6} wrap="nowrap" align="center">
                         {visit.receptionDepartment ? (
-                          <Badge variant={isOtherDept ? 'outline' : 'light'} color={isOtherDept ? 'slate' : 'steel'} size="sm">
+                          <Badge variant={isOtherDept ? 'outline' : 'light'} color="slate" size="sm">
                             {visit.receptionDepartment}
                           </Badge>
                         ) : <Text c="dimmed">—</Text>}
                         {/* Dual classification (women's + other) — shown as a second badge on the one row. */}
                         {visit.secondaryDepartment && (
-                          <Badge variant="light" color="grape" size="sm">+ {visit.secondaryDepartment}</Badge>
+                          <Badge variant="light" color="slate" size="sm">+ {visit.secondaryDepartment}</Badge>
                         )}
-                        {/* Provenance: a professional override is marked distinctly from an AI recommendation. */}
-                        {visit.departmentChangedByName ? (
-                          <Tooltip
-                            withArrow
-                            multiline
-                            label={`נקבע ע״י ${visit.departmentChangedByName}${visit.departmentChangedByRole ? ` · ${ROLE_LABELS[visit.departmentChangedByRole] ?? visit.departmentChangedByRole}` : ''}`}
-                          >
-                            <Badge size="xs" variant="light" color="teal" leftSection={<IconStethoscope size={11} />}>
-                              איש מקצוע
-                            </Badge>
-                          </Tooltip>
-                        ) : visit.departmentAssignedByAi ? (
-                          <Badge size="xs" variant="light" color="grape" leftSection={<IconSparkles size={11} />}>
+                        {/* Provenance: an AI recommendation is flagged (a clinician override is not). */}
+                        {!visit.departmentChangedByName && visit.departmentAssignedByAi && (
+                          <Badge size="xs" variant="light" color="slate" leftSection={<IconSparkles size={11} />}>
                             AI
                           </Badge>
-                        ) : null}
+                        )}
                       </Group>
                     </Table.Td>
                     <Table.Td>{visit.admissionReason ?? '—'}</Table.Td>
                     <Table.Td onClick={(e) => e.stopPropagation()}>
                       <CareStepList
-                        steps={visit.careSteps}
+                        steps={nurseSteps}
                         isClinical={isClinical}
                         userRoles={user?.roles}
                         onAction={(step, action) => handleStepAction(visit, step, action)}
-                        fallback={
-                          <Badge color={STATUS_COLOR[visit.status]} variant="light">
-                            {STATUS_LABEL[visit.status]}
-                          </Badge>
-                        }
+                        fallback={terminalBadge}
+                      />
+                    </Table.Td>
+                    <Table.Td onClick={(e) => e.stopPropagation()}>
+                      <CareStepList
+                        steps={doctorSteps}
+                        isClinical={isClinical}
+                        userRoles={user?.roles}
+                        onAction={(step, action) => handleStepAction(visit, step, action)}
+                      />
+                    </Table.Td>
+                    <Table.Td onClick={(e) => e.stopPropagation()}>
+                      <CareStepList
+                        steps={testSteps}
+                        isClinical={isClinical}
+                        userRoles={user?.roles}
+                        onAction={(step, action) => handleStepAction(visit, step, action)}
                       />
                     </Table.Td>
                     <Table.Td onClick={(e) => e.stopPropagation()}>
@@ -345,8 +351,9 @@ function waitMinutes(v: Visit): number {
 function waitChip(v: Visit, wait: number, overdue: boolean) {
   if (v.status === 'Discharged' || v.status === 'FinishedTreatment') return <Text c="dimmed">—</Text>;
   const label = wait < 60 ? `${wait} ד׳` : `${Math.floor(wait / 60)}ש ${wait % 60}ד׳`;
+  // Overdue gets a subtle emphasis (filled, same neutral tone) — no alert red, no blinking.
   return (
-    <Badge variant={overdue ? 'filled' : 'light'} color={overdue ? 'brick' : 'slate'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+    <Badge variant={overdue ? 'filled' : 'light'} color="slate" style={{ fontVariantNumeric: 'tabular-nums' }}>
       {label}
     </Badge>
   );
@@ -382,13 +389,13 @@ function ResponsibleParty({
             {showDept && s.department && <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{s.department}:</Text>}
             {name ? (
               <>
-                <Badge variant="light" color="grape" size="sm" style={{ whiteSpace: 'nowrap' }}>{name}</Badge>
+                <Badge variant="light" color="slate" size="sm" style={{ whiteSpace: 'nowrap' }}>{name}</Badge>
                 {claimedByMe && (
-                  <Button size="compact-xs" variant="subtle" color="grape" onClick={() => onAction(s, 'release')}>שחרר</Button>
+                  <Button size="compact-xs" variant="subtle" color="slate" onClick={() => onAction(s, 'release')}>שחרר</Button>
                 )}
               </>
             ) : canClaim && claimable ? (
-              <Button size="compact-xs" variant="light" color="grape" onClick={() => onAction(s, 'claim')}>שייך אליי</Button>
+              <Button size="compact-xs" variant="light" color="slate" onClick={() => onAction(s, 'claim')}>שייך אליי</Button>
             ) : (
               <Text c="dimmed">—</Text>
             )}
