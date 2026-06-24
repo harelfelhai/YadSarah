@@ -182,6 +182,7 @@ export default function ReceptionPage() {
       firstName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       lastName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       fatherName: (v) => (!v.trim() ? 'שדה חובה (אפשר "לא ידוע")' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
+      birthDate: (v) => (!v?.trim() ? 'שדה חובה' : null),
       // Need 2 numbers total: טלפון 1 is always required; the second may be either
       // טלפון 2 OR the digital-contact's mobile. Any number entered must be well-formed.
       phoneMobile: (v) => phoneValidationError(v ?? '', true),
@@ -548,8 +549,10 @@ export default function ReceptionPage() {
                   <Grid.Col span={4}>
                     <BirthDateField
                       label="תאריך לידה"
+                      withAsterisk
                       value={patientForm.values.birthDate}
                       onChange={(iso) => patientForm.setFieldValue('birthDate', iso)}
+                      error={patientForm.errors.birthDate}
                     />
                   </Grid.Col>
                 </Grid>
@@ -586,18 +589,17 @@ export default function ReceptionPage() {
               </Card>
 
               <Card withBorder p="md">
-                <Text fw={600} mb="sm">טלפונים ותקשורת</Text>
-                <Alert icon={<IconAlertCircle size={14} />} color="blue" variant="light" p="xs" radius="sm" mb="sm">
-                  חובה להזין <b>2 מספרי טלפון</b>: <b>טלפון 1</b> + <b>טלפון 2</b> או <b>נייד איש הקשר</b>.
-                </Alert>
+                <Group gap="xs" mb="sm" align="baseline" wrap="wrap">
+                  <Text fw={600}>טלפונים ותקשורת</Text>
+                  <Text size="xs" c="dimmed">(חובה: 2 מספרים — טלפון 1 + טלפון 2 או נייד איש הקשר)</Text>
+                </Group>
                 <Grid>
                   <Grid.Col span={3}>
-                    <TextInput label="טלפון 1" withAsterisk placeholder="050-1234567" {...phoneProps('phoneMobile')} />
+                    <TextInput label="טלפון 1" withAsterisk {...phoneProps('phoneMobile')} />
                   </Grid.Col>
                   <Grid.Col span={3}>
                     <TextInput
                       label="טלפון 2"
-                      placeholder="02-1234567"
                       description="חובה — אלא אם הוזן נייד איש הקשר"
                       inputWrapperOrder={['label', 'input', 'description', 'error']}
                       {...phoneProps('phoneHome')}
@@ -616,7 +618,6 @@ export default function ReceptionPage() {
                   <Grid.Col span={3}>
                     <TextInput
                       label="נייד איש הקשר"
-                      placeholder="050-1234567"
                       description="נחשב כמספר השני (חלופה לטלפון 2)"
                       inputWrapperOrder={['label', 'input', 'description', 'error']}
                       {...phoneProps('digitalContactPhone')}

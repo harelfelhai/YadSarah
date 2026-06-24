@@ -4,7 +4,7 @@ import {
   Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconUserPlus, IconStar, IconSparkles } from '@tabler/icons-react';
+import { IconSearch, IconUserPlus, IconStar } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
@@ -277,12 +277,6 @@ export default function QueuePage() {
                         {/* Dual classification (women's + other) — shown as a second badge on the one row. */}
                         {visit.secondaryDepartment && (
                           <Badge variant="light" color="slate" size="sm">+ {visit.secondaryDepartment}</Badge>
-                        )}
-                        {/* Provenance: an AI recommendation is flagged (a clinician override is not). */}
-                        {!visit.departmentChangedByName && visit.departmentAssignedByAi && (
-                          <Badge size="xs" variant="light" color="slate" leftSection={<IconSparkles size={11} />}>
-                            AI
-                          </Badge>
                         )}
                       </Group>
                     </Table.Td>

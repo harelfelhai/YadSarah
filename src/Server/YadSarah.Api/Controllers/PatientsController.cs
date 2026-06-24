@@ -87,6 +87,12 @@ public class PatientsController(AppDbContext db, AuditService audit) : Controlle
     {
         if (ValidatePatient(patient) is { } error) return BadRequest(new { message = error });
 
+        // Birth date is required when CREATING a new patient (reception capture). Existing
+        // records with a null birth date are grandfathered — the shared ValidatePatient (used
+        // by Update too) is intentionally NOT changed, so editing an old record still works.
+        if (patient.BirthDate is null)
+            return BadRequest(new { message = "תאריך לידה הוא שדה חובה." });
+
         // Block duplicate identities — a patient with the same identity type +
         // number may not be created twice (the existing record must be reused).
         if (await IdentityExistsAsync(patient.IdentityType, patient.IdentityNumber, excludeId: null))

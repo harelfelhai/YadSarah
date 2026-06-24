@@ -498,7 +498,7 @@ export default function TreatmentFormPage() {
             return (
               <Card key={key} withBorder p="sm" radius="md">
                 <Group gap="xs" mb="xs">
-                  <Text fw={600} size="sm">{label}</Text>
+                  <Text fw={600} size="md">{label}</Text>
                   {edit && (
                     <Tooltip label={`נערך לאחרונה ע"י ${edit.userName} — ${formatDateTime(edit.at)}`}>
                       <IconInfoCircle size={14} color="gray" />
@@ -1087,7 +1087,7 @@ function AllergiesEditor({ rows, locked, saving, onFocus, onSave }: AllergyEdito
       <Modal opened={open} onClose={() => setOpen(false)} title={editingId ? 'עריכת רגישות' : 'הוספת רגישות'} size="sm">
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="xs">
-            <TextInput label="שם תרופה *" {...form.getInputProps('drugName')} />
+            <DrugAutocomplete label="שם תרופה *" {...form.getInputProps('drugName')} />
             <TextInput label="סוג" {...form.getInputProps('type')} />
             <TextInput label="השפעה" {...form.getInputProps('effect')} />
             <DateField label="ת.קביעה" {...form.getInputProps('determinationDate')} />
@@ -1245,7 +1245,17 @@ function VitalSignsEditor({ rows, locked, saving, onFocus, onSave }: VitalSignsE
     },
   });
 
-  function openAdd() { onFocus(); form.setValues(emptyVital); setEditingId(null); setOpen(true); }
+  function openAdd() {
+    onFocus();
+    // Prefill the current LOCAL date + time (editable) — measurements are almost always "now".
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    form.setValues({ ...emptyVital, date, time });
+    setEditingId(null);
+    setOpen(true);
+  }
   function openEdit(row: VitalSign) {
     form.setValues({ date: row.date, time: row.time, bp: row.bp ?? '', pulse: row.pulse, respiration: row.respiration, o2Sat: row.o2Sat, temperature: row.temperature, glucose: row.glucose, weight: row.weight, notes: row.notes ?? '' });
     setEditingId(row.id); setOpen(true);
