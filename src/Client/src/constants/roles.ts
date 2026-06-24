@@ -52,9 +52,6 @@ export const canEditIdentity = (roles?: UserRole[]) => hasAnyRole(roles, 'Admin'
 export const canDischarge = (roles?: UserRole[]) => hasAnyRole(roles, 'ShiftManager', 'Admin');
 // Promoting a patient into the special ("S") queue is a shift-manager/admin override.
 export const canPrioritizeQueue = (roles?: UserRole[]) => hasAnyRole(roles, 'ShiftManager', 'Admin');
-// Overriding the AI/reception department routing is a clinical-professional call — any
-// non-reception clinical staff, never plain reception (mirrors the server's role gate).
-export const canReassignDepartment = (roles?: UserRole[]) => isClinicalStaff(roles);
 
 // "Enter" (admit) RBAC — mirror of CareStepService.EnsureMayEnter. A professional admits a patient
 // only to the wait that targets their own track: Doctor/MedStudent → doctor steps, Nurse/

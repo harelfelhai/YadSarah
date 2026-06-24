@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ActionIcon, Alert, Autocomplete, Badge, Box, Button, Card, Checkbox, Divider,
-  Group, Loader, Modal, NumberInput, Paper, Select, SegmentedControl, Stack, Table, Text, Textarea, TextInput,
+  Group, Loader, Modal, MultiSelect, NumberInput, Paper, Select, SegmentedControl, Stack, Table, Text, Textarea, TextInput,
   Tooltip,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
@@ -24,13 +24,14 @@ import { newId } from '../../utils/id';
 import { canEditSection, canEditSignedForm, apiErrorMessage } from '../../constants/formPolicy';
 import { hasAnyRole, isClinicalStaff } from '../../constants/roles';
 import { queueLabel, WOMENS_DEPARTMENT } from '../../constants/departments';
+import { REFERRAL_GROUPS, DEPARTMENT_STATIONS } from '../../constants/careSteps';
 import {
   joinForm, leaveForm, onLockAcquired, onLockReleased,
   onFormSectionUpdated, onPresenceUpdate, onFormSigned, onFormAddendaChanged,
 } from '../../realtime/hub';
 import type {
   Allergy, Diagnosis, DischargeMedication, FormLockInfo,
-  MedicalForm, PresenceUpdate, Routing, StationType, Treatment, VitalSign,
+  MedicalForm, PresenceUpdate, Routing, StationType, Treatment, Visit, VitalSign,
 } from '../../types';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -495,6 +496,7 @@ export default function TreatmentFormPage() {
                     saving={st === 'saving'}
                     onFocus={() => handleFocus(key)}
                     onSave={(rows) => handleTableSave(key, rows)}
+                    visit={visit}
                   />
                 )}
               </Card>
@@ -941,9 +943,10 @@ interface TableSectionProps {
   saving: boolean;
   onFocus: () => void;
   onSave: (rows: unknown[]) => void;
+  visit?: Visit | null;
 }
 
-function TableSectionRouter({ sectionKey, form, locked, saving, onFocus, onSave }: TableSectionProps) {
+function TableSectionRouter({ sectionKey, form, locked, saving, onFocus, onSave, visit }: TableSectionProps) {
   switch (sectionKey) {
     case 'allergies':
       return <AllergiesEditor rows={form.allergies ?? []} locked={locked} saving={saving} onFocus={onFocus} onSave={onSave} />;
@@ -960,7 +963,7 @@ function TableSectionRouter({ sectionKey, form, locked, saving, onFocus, onSave 
     case 'homeMedications':
       return <DischargeMedsEditor rows={(form.homeMedications ?? []) as DischargeMedication[]} locked={locked} saving={saving} onFocus={onFocus} onSave={onSave} />;
     case 'routing':
-      return <RoutingEditor rows={form.routing ?? []} locked={locked} saving={saving} onFocus={onFocus} onSave={onSave} />;
+      return <RoutingEditor rows={form.routing ?? []} locked={locked} saving={saving} onFocus={onFocus} onSave={onSave} visit={visit} />;
     default:
       return null;
   }
@@ -1556,17 +1559,52 @@ function DischargeMedsEditor({ rows, locked, saving, onFocus, onSave }: Discharg
 
 // ─── Routing editor ───────────────────────────────────────────────────────────
 
-interface RoutingEditorProps { rows: Routing[]; locked: boolean; saving: boolean; onFocus: () => void; onSave: (r: unknown[]) => void; }
+interface RoutingEditorProps { rows: Routing[]; locked: boolean; saving: boolean; onFocus: () => void; onSave: (r: unknown[]) => void; visit?: Visit | null; }
 
-function RoutingEditor({ rows, locked, saving, onFocus, onSave }: RoutingEditorProps) {
+function RoutingEditor({ rows, locked, saving, onFocus, onSave, visit }: RoutingEditorProps) {
+  const queryClient = useQueryClient();
   const [localRows, setLocalRows] = useState<Routing[]>(rows);
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [referSel, setReferSel] = useState<string[]>([]);
+  const [referring, setReferring] = useState(false);
 
   useEffect(() => { setLocalRows(rows); }, [rows]);
 
   // Auto-save: every mutation persists immediately (no manual save button)
   const commit = (next: typeof localRows) => { setLocalRows(next); onSave(next); };
+
+  // Refer to stations/departments — performs the REAL referral (care steps / department move / auto-dual)
+  // AND documents each target as a routing row. One "רופא X" moves the department; "רופא נשים" + "רופא X"
+  // auto-creates a dual track (handled server-side). Mirrors the "הפנה לתחנה" quick action.
+  const doRefer = async () => {
+    if (!visit || referSel.length === 0) return;
+    setReferring(true);
+    try {
+      await visitsApi.referToStations(visit.id, referSel, visit.receptionDepartment ?? null);
+      const today = new Date().toISOString().slice(0, 10);
+      const docRows: Routing[] = referSel.map((label) => ({
+        id: newId(), station: label as StationType, status: 'הופנה', arrivalDate: today,
+      }));
+      commit([...localRows, ...docRows]);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['visit', visit.id] });
+      const movedDepts = referSel.map((s) => DEPARTMENT_STATIONS[s]).filter(Boolean);
+      notifications.show({
+        color: 'green',
+        message: movedDepts.length >= 2
+          ? 'נקבע שיוך כפול (מחלקת נשים + מחלקה נוספת)'
+          : movedDepts.length === 1
+            ? `ההפניה בוצעה; המחלקה עודכנה ל${movedDepts[0]}`
+            : 'ההפניה לתחנות בוצעה',
+      });
+      setReferSel([]);
+    } catch (e) {
+      notifications.show({ color: 'red', message: apiErrorMessage(e, 'ההפניה לתחנה נכשלה') });
+    } finally {
+      setReferring(false);
+    }
+  };
 
   const form = useForm({
     initialValues: { station: '' as StationType | '', status: '', arrivalDate: '' },
@@ -1588,6 +1626,23 @@ function RoutingEditor({ rows, locked, saving, onFocus, onSave }: RoutingEditorP
 
   return (
     <Stack gap="xs">
+      {!locked && visit && (
+        <Group gap="xs" align="flex-end" wrap="nowrap">
+          <MultiSelect
+            label="הפניה לתחנות (מבצע הפניה ומתעד)"
+            placeholder="בחר תחנה/מחלקה"
+            data={REFERRAL_GROUPS}
+            value={referSel}
+            onChange={setReferSel}
+            onFocus={onFocus}
+            searchable
+            clearable
+            style={{ flex: 1 }}
+            comboboxProps={{ withinPortal: true }}
+          />
+          <Button size="sm" loading={referring} disabled={referSel.length === 0} onClick={doRefer}>הפנה</Button>
+        </Group>
+      )}
       <Table striped withTableBorder withColumnBorders fz="sm">
         <Table.Thead>
           <Table.Tr>

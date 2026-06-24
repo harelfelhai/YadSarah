@@ -69,15 +69,6 @@ export const visitsApi = {
   moveToSpecialQueue: (id: string) =>
     api.patch<Visit>(`/visits/${id}/special-queue`, {}),
 
-  // Clinical professional (not reception) overrides the AI/reception department routing.
-  reassignDepartment: (id: string, department: string) =>
-    api.patch<Visit>(`/visits/${id}/department`, { department }),
-
-  // Clinician classifies the patient into a SECOND department track (allowed only when one of the
-  // two departments is "נשים"). Opens a second medical process; the queue ticket is unchanged.
-  setDualDepartment: (id: string, secondaryDepartment: string) =>
-    api.patch<Visit>(`/visits/${id}/dual-department`, { secondaryDepartment }),
-
   // ── Care steps (live multi-dimensional status) ────────────────────────────
   // Advance a step: call (page) / enter (admit) / complete. deviceId stamps the room.
   updateStep: (visitId: string, stepId: string, action: CareStepAction) =>

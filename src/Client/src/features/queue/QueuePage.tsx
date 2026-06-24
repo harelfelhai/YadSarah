@@ -209,7 +209,7 @@ export default function QueuePage() {
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1480} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1320} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
@@ -221,7 +221,6 @@ export default function QueuePage() {
                 <Table.Th>סיבת קבלה</Table.Th>
                 <Table.Th style={{ minWidth: 340 }}>סטטוס</Table.Th>
                 <Table.Th style={{ minWidth: 150 }}>גורם אחראי</Table.Th>
-                <Table.Th style={{ width: 170 }}>פעולות</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -234,10 +233,12 @@ export default function QueuePage() {
                   <Table.Tr
                     key={visit.id}
                     className="ys-row-in"
+                    onClick={isClinical ? () => navigate(`/visits/${visit.id}`) : undefined}
                     style={{
                       animationDelay: `${Math.min(i, 12) * 25}ms`,
                       opacity: isOtherDept ? 0.5 : 1,
                       background: isOtherDept ? 'var(--mantine-color-slate-0)' : undefined,
+                      cursor: isClinical ? 'pointer' : undefined,
                     }}
                   >
                     <Table.Td style={{ borderInlineStart: `4px solid ${railColor}` }}>
@@ -292,7 +293,7 @@ export default function QueuePage() {
                       </Group>
                     </Table.Td>
                     <Table.Td>{visit.admissionReason ?? '—'}</Table.Td>
-                    <Table.Td>
+                    <Table.Td onClick={(e) => e.stopPropagation()}>
                       <CareStepList
                         steps={visit.careSteps}
                         isClinical={isClinical}
@@ -305,22 +306,13 @@ export default function QueuePage() {
                         }
                       />
                     </Table.Td>
-                    <Table.Td>
+                    <Table.Td onClick={(e) => e.stopPropagation()}>
                       <ResponsibleParty
                         visit={visit}
                         canClaim={canClaim}
                         currentUserId={user?.id}
                         onAction={(step, action) => handleStepAction(visit, step, action)}
                       />
-                    </Table.Td>
-                    <Table.Td>
-                      <Group gap="xs" justify="center" wrap="nowrap">
-                        {isClinical && (
-                          <Button size="xs" variant="outline" onClick={() => navigate(`/visits/${visit.id}`)}>
-                            טופס
-                          </Button>
-                        )}
-                      </Group>
                     </Table.Td>
                   </Table.Tr>
                 );
@@ -360,9 +352,9 @@ function waitChip(v: Visit, wait: number, overdue: boolean) {
   );
 }
 
-// "גורם אחראי" — the doctor responsible for the visit: whoever claimed the doctor step ("קח תחתיי")
+// "גורם אחראי" — the doctor responsible for the visit: whoever claimed the doctor step ("שייך אליי")
 // or began its treatment. When no doctor has taken it yet, a claim button lets a doctor take the
-// patient under their care without starting treatment (the soft assignment behavior of "קח תחתיי").
+// patient under their care without starting treatment (the soft assignment behavior of "שייך אליי").
 // One entry per active doctor track (a dual women's visit has two); a department label disambiguates.
 function ResponsibleParty({
   visit, canClaim, currentUserId, onAction,
@@ -396,7 +388,7 @@ function ResponsibleParty({
                 )}
               </>
             ) : canClaim && claimable ? (
-              <Button size="compact-xs" variant="light" color="grape" onClick={() => onAction(s, 'claim')}>קח תחתיי</Button>
+              <Button size="compact-xs" variant="light" color="grape" onClick={() => onAction(s, 'claim')}>שייך אליי</Button>
             ) : (
               <Text c="dimmed">—</Text>
             )}

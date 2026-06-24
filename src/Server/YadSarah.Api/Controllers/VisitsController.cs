@@ -200,60 +200,14 @@ public class VisitsController(
         }
     }
 
-    // PATCH /api/visits/{id}/department — a clinical professional overrides the AI/reception
-    // routing and assigns a different department. Reception is intentionally NOT allowed (the
-    // routing decision is theirs only at intake); the AI never reaches this path. The chosen
-    // department + the deciding professional are stamped so the UI marks it as a professional's
-    // call rather than an AI recommendation.
-    [HttpPatch("{id:guid}/department")]
-    [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent")]
-    public async Task<IActionResult> ReassignDepartment(Guid id, [FromBody] ReassignDepartmentRequest req)
-    {
-        if (string.IsNullOrWhiteSpace(req.Department) || !Departments.All.Contains(req.Department))
-            return BadRequest(new { message = "מחלקה לא חוקית." });
-        try
-        {
-            var updated = await svc.ReassignDepartmentAsync(id, req.Department, UserId, UserName, CallerRole);
-            await audit.LogAsync("DepartmentReassigned", "Visit", id, "ReceptionDepartment", newValue: req.Department);
-            await hub.Clients.All.SendAsync("QueueUpdate", new
-            {
-                visitId = updated.Id,
-                status = updated.Status.ToString(),
-                queueNumber = updated.QueueNumber,
-                queueLetter = updated.QueueLetter,
-            });
-            return Ok(updated);
-        }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
-    }
-
-    // PATCH /api/visits/{id}/dual-department — a clinician classifies the patient into a SECOND
-    // department track. Allowed only when one of the two departments is women's (enforced in the
-    // service). Opens a second medical process; the queue ticket is unchanged (single row).
-    [HttpPatch("{id:guid}/dual-department")]
-    [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent")]
-    public async Task<IActionResult> SetDualDepartment(Guid id, [FromBody] DualDepartmentRequest req)
-    {
-        try
-        {
-            var updated = await steps.SetDualDepartmentAsync(id, req.SecondaryDepartment, UserId, UserName, CallerRole);
-            await audit.LogAsync("DualDepartmentSet", "Visit", id, "SecondaryDepartment", newValue: req.SecondaryDepartment);
-            await BroadcastQueueUpdateAsync(id);
-            return Ok(updated);
-        }
-        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
-        catch (KeyNotFoundException) { return NotFound(); }
-    }
-
     // ── Care steps (live multi-dimensional status) ─────────────────────────────
 
-    // POST /api/visits/{id}/steps — a clinician refers the patient to one or more stations (test/consult)
-    // in a single action. A regular station creates a "waiting for [station]" step (auto-returns to the
-    // referrer on completion); a department-station (e.g. "רופא נשים") instead moves the patient to that
-    // department and seeds its default clinician waits.
+    // POST /api/visits/{id}/steps — a clinician refers the patient to one or more stations/departments in
+    // a single action. A regular station creates a "waiting for [station]" step (auto-returns to the
+    // referrer on completion); ONE department-station (e.g. "רופא נשים") moves the patient to that
+    // department; TWO department-stations where one is women's auto-create a dual (women's + other) track.
+    // This replaces the old explicit "change department" / "dual department" endpoints — it all happens
+    // off the referral now.
     [HttpPost("{id:guid}/steps")]
     [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent")]
     public async Task<IActionResult> ReferToStation(Guid id, [FromBody] ReferStationRequest req)
@@ -268,6 +222,9 @@ public class VisitsController(
             if (result.ReassignedDepartment is not null)
                 await audit.LogAsync("DepartmentReassignedByReferral", "Visit", id, "ReceptionDepartment",
                     newValue: result.ReassignedDepartment);
+            if (result.DualSecondaryDepartment is not null)
+                await audit.LogAsync("DualDepartmentSet", "Visit", id, "SecondaryDepartment",
+                    newValue: result.DualSecondaryDepartment);
             await BroadcastQueueUpdateAsync(id);
             return Ok(result.StationSteps);
         }
@@ -355,10 +312,6 @@ public class VisitsController(
     }
 
     public record UpdateStatusRequest(string Status, [param: StringLength(120)] string? DeviceId = null);
-
-    public record ReassignDepartmentRequest([param: Required, StringLength(100)] string Department);
-
-    public record DualDepartmentRequest([param: Required, StringLength(100)] string SecondaryDepartment);
 
     public record ReferStationRequest(
         [param: Required, MinLength(1)] List<string> Labels,

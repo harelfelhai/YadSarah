@@ -1,24 +1,24 @@
 import { useState } from 'react';
-import { Button, Group, Modal, MultiSelect, Select, Stack, Text } from '@mantine/core';
+import { Button, Group, Modal, MultiSelect, Stack, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconStar } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { useAuthStore } from '../../store/auth';
-import { isClinicalStaff, canPrioritizeQueue, canReassignDepartment } from '../../constants/roles';
-import { DEPARTMENTS, WOMENS_DEPARTMENT, SPECIAL_QUEUE_LETTER, queueLabel } from '../../constants/departments';
+import { isClinicalStaff, canPrioritizeQueue } from '../../constants/roles';
+import { SPECIAL_QUEUE_LETTER, queueLabel } from '../../constants/departments';
 import { REFERRAL_GROUPS, DEPARTMENT_STATIONS } from '../../constants/careSteps';
 import type { Visit } from '../../types';
 
 /**
- * Clinical actions that act on the whole visit (not a single care step): change department,
- * dual women's classification, refer to a station, and promote to the special queue. These were
- * moved off the queue board into the treatment context — a clinician decides them while treating.
+ * Clinical actions that act on the whole visit (not a single care step): refer to a station/department
+ * and promote to the special queue. Department changes and the women's dual-track happen AUTOMATICALLY
+ * off the referral — one "רופא X" moves the department; "רופא נשים" + "רופא X" auto-creates a dual track —
+ * so there are no separate "change department" / "dual department" buttons.
  */
 export default function TreatmentActions({ visit }: { visit: Visit }) {
   const user = useAuthStore((s) => s.user);
   const qc = useQueryClient();
-  const canReassign = canReassignDepartment(user?.roles);
   const canPrioritize = canPrioritizeQueue(user?.roles);
   const isClinical = isClinicalStaff(user?.roles);
   const discharged = visit.status === 'Discharged';
@@ -30,48 +30,7 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
     qc.invalidateQueries({ queryKey: ['forms', visit.id] });
   };
 
-  // ── Change department ──
-  const [reassignOpen, setReassignOpen] = useState(false);
-  const [reassignDept, setReassignDept] = useState<string | null>(visit.receptionDepartment ?? null);
-  const [reassigning, setReassigning] = useState(false);
-  const doReassign = async () => {
-    if (!reassignDept) return;
-    setReassigning(true);
-    try {
-      await visitsApi.reassignDepartment(visit.id, reassignDept);
-      refresh();
-      notifications.show({ color: 'pine', message: 'המחלקה עודכנה (קביעת איש מקצוע)' });
-      setReassignOpen(false);
-    } catch {
-      notifications.show({ color: 'brick', message: 'עדכון המחלקה נכשל' });
-    } finally {
-      setReassigning(false);
-    }
-  };
-
-  // ── Dual department (women's + other) ──
-  const dualOptions = visit.receptionDepartment === WOMENS_DEPARTMENT
-    ? DEPARTMENTS.filter((d) => d !== WOMENS_DEPARTMENT)
-    : [WOMENS_DEPARTMENT];
-  const [dualOpen, setDualOpen] = useState(false);
-  const [dualSecond, setDualSecond] = useState<string | null>(dualOptions.length === 1 ? dualOptions[0] : null);
-  const [dualing, setDualing] = useState(false);
-  const doDual = async () => {
-    if (!dualSecond) return;
-    setDualing(true);
-    try {
-      await visitsApi.setDualDepartment(visit.id, dualSecond);
-      refresh();
-      notifications.show({ color: 'pine', message: 'נקבע שיוך כפול (מחלקת נשים + מחלקה נוספת)' });
-      setDualOpen(false);
-    } catch {
-      notifications.show({ color: 'brick', message: 'קביעת שיוך כפול נכשלה' });
-    } finally {
-      setDualing(false);
-    }
-  };
-
-  // ── Refer to stations (multi-select; a department-station moves the patient's department) ──
+  // ── Refer to stations / departments (a department-station moves the patient; two — one women's — dual) ──
   const [referOpen, setReferOpen] = useState(false);
   const [referStations, setReferStations] = useState<string[]>([]);
   const [referring, setReferring] = useState(false);
@@ -81,11 +40,13 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
     try {
       await visitsApi.referToStations(visit.id, referStations, visit.receptionDepartment ?? null);
       refresh();
-      const movedTo = referStations.map((s) => DEPARTMENT_STATIONS[s]).find(Boolean);
-      notifications.show({
-        color: 'pine',
-        message: movedTo ? `ההפניה בוצעה; המחלקה עודכנה ל${movedTo}` : 'ההפניה לתחנות בוצעה',
-      });
+      const movedDepts = referStations.map((s) => DEPARTMENT_STATIONS[s]).filter(Boolean);
+      const message = movedDepts.length >= 2
+        ? 'נקבע שיוך כפול (מחלקת נשים + מחלקה נוספת)'
+        : movedDepts.length === 1
+          ? `ההפניה בוצעה; המחלקה עודכנה ל${movedDepts[0]}`
+          : 'ההפניה לתחנות בוצעה';
+      notifications.show({ color: 'pine', message });
       setReferOpen(false);
       setReferStations([]);
     } catch {
@@ -122,65 +83,12 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
             הפנה לתחנה
           </Button>
         )}
-        {canReassign && !discharged && visit.receptionDepartment && (
-          <Button size="xs" variant="light" onClick={() => { setReassignDept(visit.receptionDepartment ?? null); setReassignOpen(true); }}>
-            שינוי מחלקה
-          </Button>
-        )}
-        {canReassign && !discharged && !visit.secondaryDepartment && visit.receptionDepartment && (
-          <Button size="xs" variant="light" color="grape" onClick={() => { setDualSecond(dualOptions.length === 1 ? dualOptions[0] : null); setDualOpen(true); }}>
-            שיוך כפול
-          </Button>
-        )}
         {canPrioritize && !discharged && !isSpecial && (
           <Button size="xs" variant="light" color="yellow" leftSection={<IconStar size={14} />} onClick={() => setPromoteOpen(true)}>
             קדם לתור מיוחד
           </Button>
         )}
       </Group>
-
-      <Modal opened={reassignOpen} onClose={() => setReassignOpen(false)} title="שינוי מחלקה" centered>
-        <Stack gap="sm">
-          <Text size="sm">{patientName} — מחלקה נוכחית: {visit.receptionDepartment ?? '—'}</Text>
-          <Select
-            label="מחלקה חדשה"
-            data={[...DEPARTMENTS]}
-            value={reassignDept}
-            onChange={setReassignDept}
-            allowDeselect={false}
-            comboboxProps={{ withinPortal: true }}
-          />
-          <Text size="xs" c="dimmed">השינוי יסומן כקביעת איש מקצוע (לא המלצת AI). מספר התור נשמר.</Text>
-          <Group justify="flex-end">
-            <Button variant="subtle" color="slate" onClick={() => setReassignOpen(false)}>ביטול</Button>
-            <Button loading={reassigning} disabled={!reassignDept || reassignDept === visit.receptionDepartment} onClick={doReassign}>
-              שמור מחלקה
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      <Modal opened={dualOpen} onClose={() => setDualOpen(false)} title="שיוך כפול למחלקה" centered>
-        <Stack gap="sm">
-          <Text size="sm">{patientName} — מחלקה ראשית: {visit.receptionDepartment ?? '—'}</Text>
-          <Select
-            label="מחלקה שנייה"
-            data={dualOptions}
-            value={dualSecond}
-            onChange={setDualSecond}
-            allowDeselect={false}
-            comboboxProps={{ withinPortal: true }}
-          />
-          <Text size="xs" c="dimmed">
-            שיוך כפול אפשרי רק כאשר אחת המחלקות היא נשים. ייפתחו שני תהליכים רפואיים (טופס נפרד לכל מחלקה);
-            תהליך מחלקת הנשים מטופל ראשון. מספר התור נשמר.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="subtle" color="slate" onClick={() => setDualOpen(false)}>ביטול</Button>
-            <Button color="grape" loading={dualing} disabled={!dualSecond} onClick={doDual}>קבע שיוך כפול</Button>
-          </Group>
-        </Stack>
-      </Modal>
 
       <Modal opened={referOpen} onClose={() => setReferOpen(false)} title="הפניה לתחנות" centered>
         <Stack gap="sm">
@@ -195,8 +103,9 @@ export default function TreatmentActions({ visit }: { visit: Visit }) {
             comboboxProps={{ withinPortal: true }}
           />
           <Text size="xs" c="dimmed">
-            בסיום כל תחנה המטופל חוזר אוטומטית להמתין לאיש הצוות שהפנה אותו. "אחות כללית" מוסיפה
-            המתנה לאחות באותה מחלקה; הפניה להעברת-מחלקה (למשל "רופא נשים") מעבירה את המטופל לאותה מחלקה.
+            בסיום כל תחנה המטופל חוזר אוטומטית להמתין לאיש הצוות שהפנה אותו. "אחות כללית" מוסיפה המתנה
+            לאחות באותה מחלקה; הפניה ל"רופא X" מעבירה את המטופל לאותה מחלקה, והפניה גם ל"רופא נשים" וגם
+            ל"רופא X" יוצרת אוטומטית שיוך כפול (נשים + מחלקה נוספת).
           </Text>
           <Group justify="flex-end">
             <Button variant="subtle" color="slate" onClick={() => setReferOpen(false)}>ביטול</Button>

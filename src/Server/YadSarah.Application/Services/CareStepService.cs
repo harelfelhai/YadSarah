@@ -266,13 +266,15 @@ public class CareStepService(AppDbContext db)
     /// audit trail — covers stations, the general-nurse referral, and department-moves alike), the station
     /// steps created, and the department the patient was moved to if any target was a department-station.</summary>
     public record ReferralResult(
-        IReadOnlyList<string> ReferredLabels, IReadOnlyList<CareStep> StationSteps, string? ReassignedDepartment);
+        IReadOnlyList<string> ReferredLabels, IReadOnlyList<CareStep> StationSteps,
+        string? ReassignedDepartment, string? DualSecondaryDepartment);
 
     /// <summary>Refer the patient to one or more targets in a single action. A regular station creates a
     /// "waiting for [station]" step (remembering the referrer for auto-return). A department-station
-    /// (<see cref="CareStepCatalog.DepartmentStations"/>, e.g. "רופא נשים") instead MOVES the patient to
-    /// that department — reassigns the visit's department (referral provenance, queue ticket kept) and
-    /// adds that department's default clinician waiting-steps that aren't already active. Kinds may mix.</summary>
+    /// (<see cref="CareStepCatalog.DepartmentStations"/>, e.g. "רופא נשים") MOVES the patient's department:
+    /// ONE department-station → a single move (provenance kept, queue ticket kept); TWO department-stations
+    /// where one is women's → an automatic DUAL track (women's + other — see <see cref="ApplyDualByReferral"/>);
+    /// two non-women's, or three+, are rejected. Kinds may mix (a move/dual plus regular stations).</summary>
     public async Task<ReferralResult> ReferToStationsAsync(
         Guid visitId, IReadOnlyList<string> labels, Guid userId, string userName, UserRole role, string? department)
     {
@@ -290,20 +292,44 @@ public class CareStepService(AppDbContext db)
             .FirstOrDefaultAsync(v => v.Id == visitId)
             ?? throw new KeyNotFoundException($"Visit {visitId} not found");
 
-        var stationSteps = new List<CareStep>();
-        string? reassignedTo = null;
+        // The distinct departments the referral moves the patient to (department-stations only).
+        var deptTargets = clean
+            .Where(CareStepCatalog.DepartmentStations.ContainsKey)
+            .Select(l => CareStepCatalog.DepartmentStations[l])
+            .Distinct()
+            .ToList();
 
+        string? reassignedTo = null;
+        string? dualSecondary = null;
+
+        // ONE target → single move; TWO (one women's) → auto-dual; three+ or a non-women's pair → reject.
+        if (deptTargets.Count == 1)
+        {
+            ReassignByReferral(visit, deptTargets[0], userId, userName, role);
+            reassignedTo = deptTargets[0];
+        }
+        else if (deptTargets.Count == 2)
+        {
+            if (!deptTargets.Contains(Departments.Womens))
+                throw new ArgumentException("שיוך כפול אפשרי רק כאשר אחת המחלקות היא נשים.");
+            var otherDept = deptTargets.First(d => d != Departments.Womens);
+            ApplyDualByReferral(visit, Departments.Womens, otherDept, userId, userName, role);
+            reassignedTo = otherDept;
+            dualSecondary = Departments.Womens;
+        }
+        else if (deptTargets.Count >= 3)
+        {
+            throw new ArgumentException("ניתן להפנות לכל היותר לשתי מחלקות בו-זמנית.");
+        }
+
+        // Same-department nurse referral + regular stations (independent of any department move above).
+        var stationSteps = new List<CareStep>();
         foreach (var label in clean)
         {
+            if (CareStepCatalog.DepartmentStations.ContainsKey(label)) continue; // handled above
             if (label == CareStepCatalog.GeneralNurse)
             {
-                // Send the patient back to a regular nurse in the current department (no department move).
                 AddClinicianStepIfAbsent(visit, UserRole.Nurse, visit.ReceptionDepartment);
-            }
-            else if (CareStepCatalog.DepartmentStations.TryGetValue(label, out var targetDept))
-            {
-                ReassignByReferral(visit, targetDept, userId, userName, role);
-                reassignedTo = targetDept;
             }
             else
             {
@@ -332,7 +358,7 @@ public class CareStepService(AppDbContext db)
         }
 
         await db.SaveChangesAsync();
-        return new ReferralResult(clean, stationSteps, reassignedTo);
+        return new ReferralResult(clean, stationSteps, reassignedTo, dualSecondary);
     }
 
     /// <summary>Move the visit to a department because of a clinician's referral (e.g. "רופא נשים"):
@@ -371,6 +397,46 @@ public class CareStepService(AppDbContext db)
         // Add the new department's default clinician waits that aren't already active.
         foreach (var defaultRole in newRoles)
             AddClinicianStepIfAbsent(visit, defaultRole, targetDept);
+    }
+
+    /// <summary>Auto-create a DUAL (women's + other) track from a referral to TWO department-doctors, one
+    /// of which is women's (the caller guarantees this — the dual invariant is women's-only). The non-women's
+    /// department becomes primary; the women's department is the secondary track that sorts first (TrackOrder
+    /// 0). Prior clinician steps belonging to NEITHER new track are canceled, and each track is ensured to
+    /// have its default clinician waits. The queue ticket (letter+number) is unaffected — it is fixed at
+    /// admission, independent of <see cref="Visit.ReceptionDepartment"/>.</summary>
+    private void ApplyDualByReferral(Visit visit, string womensDept, string otherDept, Guid userId, string userName, UserRole role)
+    {
+        visit.ReceptionDepartment = otherDept;            // primary track (the non-women's one)
+        visit.SecondaryDepartment = womensDept;
+        visit.DepartmentAssignedByAi = false;
+        visit.DepartmentConfidence = null;
+        visit.DepartmentCandidatesJson = null;
+        visit.DepartmentChangedByUserId = userId;
+        visit.DepartmentChangedByName = userName;
+        visit.DepartmentChangedByRole = role;
+        visit.DepartmentChangedAt = DateTime.UtcNow;
+        visit.UpdatedAt = DateTime.UtcNow;
+
+        // Cancel prior active clinician steps that belong to neither new track (the old department's).
+        foreach (var s in visit.CareSteps.Where(s =>
+            s.Category == CareStepCategory.Clinician &&
+            s.Department != womensDept && s.Department != otherDept &&
+            s.Status is CareStepStatus.Waiting or CareStepStatus.Called or CareStepStatus.InProgress))
+        {
+            s.Status = CareStepStatus.Canceled;
+            s.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // Women's track sorts first (0), the other second (1).
+        foreach (var s in visit.CareSteps.Where(s => s.Category == CareStepCategory.Clinician))
+        {
+            if (s.Department == womensDept) s.TrackOrder = 0;
+            else if (s.Department == otherDept) s.TrackOrder = 1;
+        }
+
+        EnsureClinicianTrack(visit, womensDept, 0);
+        EnsureClinicianTrack(visit, otherDept, 1);
     }
 
     /// <summary>Add a "waiting for [role]" clinician step in the given department, unless the visit already
@@ -464,71 +530,15 @@ public class CareStepService(AppDbContext db)
         return visit;
     }
 
-    // ── Dual department (women's + other) ───────────────────────────────────────
+    // ── Dual department track helper (women's + other) ──────────────────────────
 
-    /// <summary>
-    /// Classify a visit into TWO department tracks — allowed ONLY when one of the two is women's
-    /// ("נשים"), and only as a clinical professional's call. The women's track is handled first
-    /// (TrackOrder 0). Ensures each track has nurse + doctor care-steps. The issued queue ticket
-    /// (letter + number) is intentionally left unchanged — it stays a single queue row.
-    /// </summary>
-    public async Task<Visit> SetDualDepartmentAsync(
-        Guid visitId, string secondaryDepartment, Guid userId, string userName, UserRole role)
-    {
-        var visit = await db.Visits
-            .Include(v => v.CareSteps)
-            .Include(v => v.Forms)
-            .FirstOrDefaultAsync(v => v.Id == visitId)
-            ?? throw new KeyNotFoundException($"Visit {visitId} not found");
-
-        var primary = visit.ReceptionDepartment;
-        var secondary = (secondaryDepartment ?? string.Empty).Trim();
-
-        if (string.IsNullOrWhiteSpace(primary))
-            throw new ArgumentException("למטופל אין מחלקה ראשית.");
-        if (!Departments.All.Contains(secondary))
-            throw new ArgumentException("מחלקה לא חוקית.");
-        if (secondary == primary)
-            throw new ArgumentException("המחלקה השנייה זהה למחלקה הראשית.");
-        if (primary != Departments.Womens && secondary != Departments.Womens)
-            throw new ArgumentException("שיוך כפול אפשרי רק כאשר אחת המחלקות היא נשים.");
-
-        var womensDept = primary == Departments.Womens ? primary : secondary;
-        var otherDept = primary == Departments.Womens ? secondary : primary;
-
-        visit.SecondaryDepartment = secondary;
-        visit.DepartmentAssignedByAi = false;
-        visit.DepartmentChangedByUserId = userId;
-        visit.DepartmentChangedByName = userName;
-        visit.DepartmentChangedByRole = role;
-        visit.DepartmentChangedAt = DateTime.UtcNow;
-        visit.UpdatedAt = DateTime.UtcNow;
-
-        // Re-track existing clinician steps so the women's track sorts first (0) and the other (1).
-        foreach (var s in visit.CareSteps.Where(s => s.Category == CareStepCategory.Clinician))
-        {
-            if (s.Department == womensDept) s.TrackOrder = 0;
-            else if (s.Department == otherDept) s.TrackOrder = 1;
-        }
-
-        EnsureClinicianTrack(visit, womensDept, 0);
-        EnsureClinicianTrack(visit, otherDept, 1);
-
-        // Compute the coarse status in-memory (the graph is fully loaded + freshly mutated).
-        if (visit.Status != VisitStatus.Discharged)
-        {
-            var allFormsSigned = visit.Forms.Count > 0 && visit.Forms.All(f => f.IsSigned);
-            visit.Status = DeriveStatus(visit.CareSteps, allFormsSigned);
-        }
-
-        await db.SaveChangesAsync();
-        return visit;
-    }
-
-    /// <summary>Ensure a department track has both a nurse and a doctor waiting-step (idempotent).</summary>
+    /// <summary>Ensure a department track has its default clinician waiting-step(s) (idempotent) — per
+    /// <see cref="CareStepCatalog.DefaultClinicianRoles"/>, so אורטופדיה stays doctor-only and עירוי
+    /// nurse-only rather than always seeding both. Used by the auto-dual-via-referral path
+    /// (<see cref="ApplyDualByReferral"/>).</summary>
     private void EnsureClinicianTrack(Visit visit, string department, int trackOrder)
     {
-        foreach (var role in new[] { UserRole.Nurse, UserRole.Doctor })
+        foreach (var role in CareStepCatalog.DefaultClinicianRoles(department))
         {
             var exists = visit.CareSteps.Any(s =>
                 s.Category == CareStepCategory.Clinician &&

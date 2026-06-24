@@ -95,7 +95,7 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   queue letters — [DepartmentRoutingService.cs](src/Server/YadSarah.Application/Services/DepartmentRoutingService.cs)
   ↔ [constants/departments.ts](src/Client/src/constants/departments.ts). (3) Role capability helpers —
   the server permission checks ↔ [constants/roles.ts](src/Client/src/constants/roles.ts) (`canDischarge`,
-  `canReassignDepartment`, `canPrioritizeQueue`, `isClinicalStaff`, …). (4) Care-step labels + station
+  `canPrioritizeQueue`, `isClinicalStaff`, `canEnterStep`, …). (4) Care-step labels + station
   catalog — `CareStepCatalog` in [CareStepService.cs](src/Server/YadSarah.Application/Services/CareStepService.cs)
   ↔ [constants/careSteps.ts](src/Client/src/constants/careSteps.ts). (5) Catalog **label format** —
   `MedicationCatalogService.Label` / `DiagnosisCatalogService.Label` ↔ client `medicationLabel` /
@@ -126,7 +126,8 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   patient to one or more **stations** (`ReferToStationsAsync`; closed `CareStepCatalog` —
   `אולטרסאונד/א.ק.ג/בדיקות מעבדה/צילום רנטגן/מוניטור עוברי`, an `אחות כללית` referral that adds a
   same-department nurse step, and `DepartmentStations` "department-moves" (`רופא X` per doctor-staffed
-  dept + `אחות עירוי`→עירוי) that reassign the visit's department);
+  dept + `אחות עירוי`→עירוי) that reassign the visit's department — referring to **two** department-moves
+  where one is נשים auto-creates a dual track via `ApplyDualByReferral`, see below);
   completing a station **auto-creates a waiting step back to the referrer** so they review the result. A
   doctor can also **claim** a waiting patient (`claim`/`release` on the step-action endpoint, doctor/SM/admin
   only) — a soft assignment that leaves the doctor step Waiting but renders it `ממתין לד״ר X`, so other
@@ -134,19 +135,26 @@ To get a populated queue for the demo, use the Demo subsystem ("מלא את הת
   coarse `Visit.Status` (`Waiting/Called/InTreatment/FinishedTreatment/Discharged`) used by analytics + the
   shift board is **derived** from the steps by `DeriveStatus` — never set it directly except for sign-all /
   manual discharge (which is terminal). `EnterAsync` on a clinician step also stamps the visit's treating
-  owner/room.
+  owner/room, and is the single chokepoint enforcing **enter-RBAC** (each role admits only to the wait that
+  targets its own track — Doctor/MedStudent→doctor, Nurse/NursingStudent→nurse; SM/Admin override; stations
+  open) and **presence exclusivity** (a patient is "אצל" only one professional and a professional holds only
+  one patient — entering vacates the others: a doctor step → back to `Waiting` + soft claim, anything else → Done).
 
-- **Dual department track (women's only).** A visit normally has one `ReceptionDepartment`; clinical staff
-  (not Reception) may add a `SecondaryDepartment` via `SetDualDepartmentAsync` **only when one of the two is
-  נשים** (women's). This creates a second nurse+doctor track (women's sorts first, `TrackOrder` 0); the issued
-  queue ticket stays a single row. `WOMENS_DEPARTMENT`/`Departments.Womens` is the gate on both sides.
+- **Dual department track (women's only) — auto-created from a referral.** A visit normally has one
+  `ReceptionDepartment`; a `SecondaryDepartment` is added **automatically** when a clinician refers the patient
+  to **two** department-moves where one is נשים (`ReferToStationsAsync` → `ApplyDualByReferral`) — there is **no
+  separate "dual"/"change department" button** (both happen off the referral). The non-women's dept becomes
+  primary, women's the secondary track that sorts first (`TrackOrder` 0); the issued queue ticket stays a single
+  row. The women's-only invariant holds: a non-women's pair (or three+ department-moves) is rejected with a 400.
+  `WOMENS_DEPARTMENT`/`Departments.Womens` is the gate on both sides.
 
 - **Queue is per-department and lettered.** Each department runs its own daily-resetting numbered queue
   identified by a letter (A=רפואה דחופה, B=ילדים, C=אורטופדיה, D=נשים, E=עירוי תרופות, F=ביקורת), plus a separate
   priority **"S"** queue; tickets render as `C-7` (`queueLabel` in `constants/departments.ts`). Numbers come
   from per-letter `QueueCounter` rows via `VisitService.NextQueueNumberAsync`. Clinical staff (never plain
-  Reception) can override routing with `ReassignDepartmentAsync`; a ShiftManager/Admin can promote a patient
-  into the S-queue with `MoveToSpecialQueueAsync`. **Discharge RBAC:** a doctor discharges automatically by
+  Reception) override routing by **referring** the patient to a `רופא X` department-move (`ReferToStationsAsync`
+  → `ReassignByReferral`; the old explicit `PATCH /department` endpoint was removed); a ShiftManager/Admin can
+  promote a patient into the S-queue with `MoveToSpecialQueueAsync`. **Discharge RBAC:** a doctor discharges automatically by
   signing; **manual** discharge is ShiftManager/Admin only (`canDischarge`, enforced by the `DischargePage`
   route guard).
 

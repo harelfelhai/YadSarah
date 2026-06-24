@@ -238,35 +238,6 @@ public class VisitService(AppDbContext db, SettingsService settings)
     }
 
     /// <summary>
-    /// Overrides the routed department with a clinical professional's determination. Marks the
-    /// visit as no longer AI-assigned and stamps who decided (name + role + time), so the UI can
-    /// show it distinctly from an AI recommendation. The issued queue ticket (letter + number) is
-    /// intentionally kept — the patient's printed sticker stays valid; only the clinical routing
-    /// (and the doctor who sees them) changes. Caller authorization (clinical, non-reception) is
-    /// enforced at the controller.
-    /// </summary>
-    public async Task<Visit> ReassignDepartmentAsync(
-        Guid id, string department, Guid userId, string userName, UserRole role)
-    {
-        var visit = await db.Visits
-            .Include(v => v.Patient)
-            .FirstOrDefaultAsync(v => v.Id == id)
-            ?? throw new KeyNotFoundException($"Visit {id} not found");
-
-        visit.ReceptionDepartment = department;
-        visit.DepartmentAssignedByAi = false;
-        visit.DepartmentConfidence = null;
-        visit.DepartmentCandidatesJson = null;
-        visit.DepartmentChangedByUserId = userId;
-        visit.DepartmentChangedByName = userName;
-        visit.DepartmentChangedByRole = role;
-        visit.DepartmentChangedAt = DateTime.UtcNow;
-        visit.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-        return visit;
-    }
-
-    /// <summary>
     /// Atomically reserves the next per-(day, letter) running queue number. A single
     /// INSERT…ON CONFLICT…RETURNING avoids races; on that letter's first insert for the day
     /// it seeds from visits already recorded that day for the same letter. Resets to 1 each

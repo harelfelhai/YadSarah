@@ -365,21 +365,22 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
   (+מוניטור עוברי משבוע 28). זיהוי ההיריון/שבוע נגזר **בשרת** מטקסט "סיבת הקבלה" (`PregnancyInfo`, אותו
   signal של ניתוב-המחלקה) — אין שדה-קלט חדש שהלקוח שולט בו, ואין egress חדש (טקסט-הסיבה כבר חסום
   ל-200 תווים לפני יציאתו ל-LLM). כל התחנות נשארות ברשימה הסגורה `CareStepCatalog.Stations`.
-- **הרשאות (need-to-know):** כל ה-endpoints החדשים ב-`VisitsController` מוגבלים לצוות הקליני
-  ו**קבלה חסומה** (כמו שינוי-מחלקה): `POST /visits/{id}/steps` (הפניה לתחנה) ו-
-  `PATCH /visits/{id}/dual-department` ל-`Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent`;
+- **הרשאות (need-to-know):** כל ה-endpoints של צעדי-הטיפול ב-`VisitsController` מוגבלים לצוות הקליני
+  ו**קבלה חסומה**: `POST /visits/{id}/steps` (הפניה לתחנה / העברת-מחלקה / שיוך-כפול-אוטומטי) ל-
+  `Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent`;
   `PATCH /visits/{id}/steps/{stepId}` (קרא/הכנס/סיים) כולל גם `LabStaff` (לסגירת תחנת-מעבדה).
+  נקודות-הקצה הנפרדות `PATCH /department` ו-`PATCH /dual-department` **הוסרו** — שינוי-מחלקה ושיוך-כפול
+  קורים כעת דרך ההפניה בלבד.
   צעדי-הטיפול אינם תוכן קליני (PHI) — הם מטא-דאטה תפעולי (תפקיד נדרש, שם הקורא/המטפל, חדר),
   בהתאמה לנראות-התור הקיימת לצוות; הטופס הרפואי נותר מאחורי `FormsController` המוגן.
 - **ייחוס פעולה ומניעת over-posting:** זהות מבצע הפעולה (`CalledBy*`/`StartedBy*`/`ReferredBy*`)
-  נחתמת **בשרת מתוך ה-JWT** (claims), לא מקלט הלקוח; הלקוח שולח רק `action`/`label`/`deviceId`/
-  `secondaryDepartment`. החדר נגזר בשרת מ-`deviceId` (`WorkstationService.ResolveRoomAsync`).
-  הקלט נקשר ל-DTOs ייעודיים (`StepActionRequest`/`ReferStationRequest`/`DualDepartmentRequest`)
-  עם `[Required]`/`[StringLength]` — אין קשירה ישירה לישות `CareStep`.
-- **בקרת קלט (whitelist בשרת):** שם-התחנה מאומת מול קטלוג סגור (`CareStepCatalog.Stations`),
-  המחלקה מאומתת מול `Departments.All`, ו**שיוך כפול נאכף בשרת**: מותר אך ורק כשאחת משתי
-  המחלקות היא "נשים" (`CareStepService.SetDualDepartmentAsync` → `400` אחרת) — אין מסלול לפצל
-  ביקור לשתי מחלקות שרירותיות.
+  נחתמת **בשרת מתוך ה-JWT** (claims), לא מקלט הלקוח; הלקוח שולח רק `action`/`labels`/`deviceId`.
+  החדר נגזר בשרת מ-`deviceId` (`WorkstationService.ResolveRoomAsync`). הקלט נקשר ל-DTOs ייעודיים
+  (`StepActionRequest`/`ReferStationRequest`) עם `[Required]`/`[StringLength]` — אין קשירה ישירה לישות `CareStep`.
+- **בקרת קלט (whitelist בשרת):** שמות-התחנה/מחלקה מאומתים מול קטלוג סגור
+  (`CareStepCatalog.IsKnownReferral`/`DepartmentStations`), ו**שיוך כפול נאכף בשרת**: נוצר אוטומטית
+  מהפניה לשתי "רופא X" כשאחת המחלקות היא "נשים" (`CareStepService.ApplyDualByReferral`); זוג ללא נשים,
+  או שלוש מחלקות ויותר, נדחים ב-`400` — אין מסלול לפצל ביקור לשתי מחלקות שרירותיות.
 - **שלמות מחזור-החיים (שחרור):** חתימת טופס מסיימת את ה-track שלה בלבד; הביקור עובר ל-`Discharged`
   **רק כששני הטפסים חתומים** (`FormService.SignAsync`) — מונע שחרור מוקדם של מטופלת בתהליך כפול.
   אין נתיב-הרשאה חדש: חתימה עדיין דורשת `Doctor` + step-up re-auth (§9), והשחרור הידני נותר
