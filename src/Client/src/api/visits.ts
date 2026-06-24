@@ -84,4 +84,9 @@ export const visitsApi = {
   // nurse clinician step without discharging. Doctors finish by signing the form instead.
   finishTreatment: (visitId: string) =>
     api.post<Visit>(`/visits/${visitId}/finish`, { deviceId: getOrCreateDeviceId() }),
+
+  // Manager (Admin/ShiftManager) "call to me" presence — call (page) / enter (present) / clear.
+  // Parallel to the clinical track; does NOT change the visit's "waiting-for" status.
+  managerPresence: (visitId: string, action: 'call' | 'enter' | 'clear') =>
+    api.post<Visit>(`/visits/${visitId}/manager-presence`, { action, deviceId: getOrCreateDeviceId() }),
 };

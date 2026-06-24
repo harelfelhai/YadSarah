@@ -10,6 +10,9 @@ interface Props {
   onAction: (step: CareStep, action: CareStepAction) => void;
   /** The current user's roles — gates the per-step actions to the wait that targets them. */
   userRoles?: UserRole[];
+  /** Hide the inline call/enter/complete buttons (the queue board shows them as a single
+   *  role-aware icon column instead; only the step status badges are rendered here). */
+  hideActionButtons?: boolean;
   /** Rendered when there are no active steps (e.g. legacy rows admitted before care steps). */
   fallback?: React.ReactNode;
 }
@@ -32,7 +35,7 @@ const STEP_VARIANT: Record<CareStepStatus, string> = {
  * admit, or complete a nurse's wait, and vice versa — mirrors the server's per-track RBAC). The
  * doctor "claim" (responsible party) lives in its own column on the queue page, not here.
  */
-export default function CareStepList({ steps, isClinical, onAction, userRoles, fallback }: Props) {
+export default function CareStepList({ steps, isClinical, onAction, userRoles, hideActionButtons, fallback }: Props) {
   const active = (steps ?? []).filter((s) => s.status !== 'Done' && s.status !== 'Canceled');
   if (active.length === 0) return <>{fallback ?? <Text c="dimmed">—</Text>}</>;
 
@@ -57,7 +60,7 @@ export default function CareStepList({ steps, isClinical, onAction, userRoles, f
                 {who ?? ''}{who && room ? ' · ' : ''}{room ?? ''}
               </Text>
             )}
-            {isClinical && (
+            {isClinical && !hideActionButtons && (
               <Group gap={4} wrap="nowrap">
                 {s.status === 'Waiting' && (
                   <>

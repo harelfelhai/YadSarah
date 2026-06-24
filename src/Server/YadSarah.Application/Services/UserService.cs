@@ -19,7 +19,8 @@ public record CreateUserRequest(
     string? EmployeeNumber,
     string? Mobile,
     string? Email,
-    string? Department
+    string? Department,
+    string? Station
 );
 
 public record UpdateUserRequest(
@@ -38,7 +39,8 @@ public record UpdateUserRequest(
     string? EmployeeNumber,
     string? Mobile,
     string? Email,
-    string? Department
+    string? Department,
+    string? Station
 );
 
 public class UserService(AppDbContext db, AuthService auth)
@@ -100,6 +102,7 @@ public class UserService(AppDbContext db, AuthService auth)
             Mobile = req.Mobile,
             Email = req.Email,
             Department = req.Department,
+            Station = req.Station,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -143,6 +146,7 @@ public class UserService(AppDbContext db, AuthService auth)
         user.Mobile = req.Mobile;
         user.Email = req.Email;
         user.Department = req.Department;
+        user.Station = req.Station;
         user.UpdatedAt = DateTime.UtcNow;
 
         var passwordReset = false;

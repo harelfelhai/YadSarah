@@ -5,6 +5,10 @@ namespace YadSarah.Domain.Entities;
 // FinishedTreatment (4) is appended last to preserve existing stored values.
 public enum VisitStatus { Waiting, Called, InTreatment, Discharged, FinishedTreatment }
 
+// A manager (Admin/ShiftManager) paging/seeing a patient "to themselves" — independent of the
+// clinical care-steps. None = no manager call; Called = paged to the manager's room; Present = with them.
+public enum ManagerPresenceState { None, Called, Present }
+
 public class Visit
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -84,6 +88,16 @@ public class Visit
     public UserRole? TreatingUserRole { get; set; }
     public DateTime? TreatmentStartedAt { get; set; }
     public string? TreatmentRoom { get; set; }
+
+    // ── Manager "call to me" presence (Admin/ShiftManager) ────────────────────
+    // A manager may page a patient to themselves / mark the patient present with them, WITHOUT
+    // touching the clinical care-steps or the derived Status (no one "waits for" a manager — they
+    // are not part of the clinical flow). Purely a parallel, display-only presence with a room.
+    public Guid? ManagerPresenceUserId { get; set; }
+    public string? ManagerPresenceName { get; set; }
+    public string? ManagerPresenceRoom { get; set; }
+    public ManagerPresenceState ManagerPresenceState { get; set; } = ManagerPresenceState.None;
+    public DateTime? ManagerPresenceAt { get; set; }
 
     /// <summary>When the visit was discharged (status → Discharged). The patient's "departure"
     /// instant — paired with <see cref="CreatedAt"/> it bounds the time the patient was present,

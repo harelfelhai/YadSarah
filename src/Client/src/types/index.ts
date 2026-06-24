@@ -149,6 +149,10 @@ export interface Visit {
   treatingUserRole?: UserRole;
   treatmentStartedAt?: string;
   treatmentRoom?: string;
+  // Manager "call to me" presence (Admin/ShiftManager) — parallel to the clinical track.
+  managerPresenceState?: 'None' | 'Called' | 'Present';
+  managerPresenceName?: string | null;
+  managerPresenceRoom?: string | null;
   // Live multi-dimensional status — everything the patient is waiting for / present at.
   careSteps?: CareStep[];
   createdAt: string;
@@ -325,6 +329,7 @@ export interface User {
   mobile?: string;
   email?: string;
   department?: string;
+  station?: string;
   lastLoginAt?: string;
   loginFailureCount?: number;
   createdAt?: string;

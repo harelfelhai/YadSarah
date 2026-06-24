@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { usersApi, type CreateUserPayload, type UpdateUserPayload } from '../../api/users';
 import { DEPARTMENTS } from '../../constants/departments';
+import { STATIONS } from '../../constants/careSteps';
 import { ROLE_OPTIONS, rolesLabel, isAdmin as isAdminRoles, canManageUsers } from '../../constants/roles';
 import type { User, UserRole } from '../../types';
 
@@ -38,13 +39,14 @@ interface FormValues {
   mobile: string;
   email: string;
   department: string;
+  station: string;
 }
 
 const EMPTY_FORM: FormValues = {
   firstName: '', lastName: '', displayName: '', username: '', password: '',
   roles: [], isActive: true, identityNumber: '', gender: '', title: '',
   licenseNumber: '', specialistLicenseNumber: '', employeeNumber: '',
-  mobile: '', email: '', department: '',
+  mobile: '', email: '', department: '', station: '',
 };
 
 export default function AdminPage() {
@@ -142,6 +144,7 @@ export default function AdminPage() {
       mobile: u.mobile ?? '',
       email: u.email ?? '',
       department: u.department ?? '',
+      station: u.station ?? '',
     });
     setModalOpen(true);
   };
@@ -169,6 +172,7 @@ export default function AdminPage() {
       mobile: optional(vals.mobile),
       email: optional(vals.email),
       department: optional(vals.department),
+      station: optional(vals.station),
     };
 
     if (editingId) {
@@ -307,6 +311,13 @@ export default function AdminPage() {
               <TextInput label="טלפון נייד" {...form.getInputProps('mobile')} />
               <TextInput label="דוא״ל" {...form.getInputProps('email')} />
               <Select label="מחלקה" data={[...DEPARTMENTS]} clearable {...form.getInputProps('department')} />
+              <Select
+                label="תחנה"
+                description="לאיש-צוות תחנה (מעבדה/דימות) — קובע למי בתור מיועדים 'קרא'/'הכנס' של אותה תחנה"
+                data={[...STATIONS]}
+                clearable
+                {...form.getInputProps('station')}
+              />
             </SimpleGrid>
 
             <MultiSelect

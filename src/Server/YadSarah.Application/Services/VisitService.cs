@@ -237,6 +237,40 @@ public class VisitService(AppDbContext db, SettingsService settings)
         return visit;
     }
 
+    /// <summary>Manager (Admin/ShiftManager) "call to me" presence — page the patient to the manager
+    /// (<c>call</c>), mark them present with the manager (<c>enter</c>), or clear it (<c>clear</c>).
+    /// Deliberately does NOT touch CareSteps or the derived <see cref="VisitStatus"/>: no one "waits
+    /// for" a manager, so this never affects the clinical "ממתין ל" — it is a parallel presence only.</summary>
+    public async Task<Visit> SetManagerPresenceAsync(Guid visitId, string action, Guid userId, string userName, string? room)
+    {
+        var visit = await db.Visits.Include(v => v.Patient).FirstOrDefaultAsync(v => v.Id == visitId)
+            ?? throw new KeyNotFoundException($"Visit {visitId} not found");
+
+        switch (action)
+        {
+            case "call":
+            case "enter":
+                visit.ManagerPresenceState = action == "call" ? ManagerPresenceState.Called : ManagerPresenceState.Present;
+                visit.ManagerPresenceUserId = userId;
+                visit.ManagerPresenceName = userName;
+                visit.ManagerPresenceRoom = room;
+                visit.ManagerPresenceAt = DateTime.UtcNow;
+                break;
+            case "clear":
+                visit.ManagerPresenceState = ManagerPresenceState.None;
+                visit.ManagerPresenceUserId = null;
+                visit.ManagerPresenceName = null;
+                visit.ManagerPresenceRoom = null;
+                visit.ManagerPresenceAt = null;
+                break;
+            default:
+                throw new ArgumentException("פעולה לא חוקית.");
+        }
+        visit.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return visit;
+    }
+
     /// <summary>
     /// Atomically reserves the next per-(day, letter) running queue number. A single
     /// INSERT…ON CONFLICT…RETURNING avoids races; on that letter's first insert for the day

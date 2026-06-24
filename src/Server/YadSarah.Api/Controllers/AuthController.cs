@@ -51,6 +51,8 @@ public class AuthController(AuthService auth, AuditService audit, WorkstationSer
                         user.Username,
                         FullName = displayName,
                         Roles = user.Roles.Select(r => r.ToString()).ToArray(),
+                        user.Department,
+                        user.Station,
                     },
                     workstationRoom = room,
                 });

@@ -78,3 +78,17 @@ export const canActOnStep = (roles: UserRole[] | undefined, clinicianRole: UserR
     ? hasAnyRole(roles, 'Nurse', 'NursingStudent')
     : hasAnyRole(roles, 'Doctor');
 };
+
+// The current user's primary queue "track" — drives the queue's auto call/enter target and the
+// role-aware ordering/highlight. Nurse/NursingStudent → nurse clinician steps; Doctor/MedStudent →
+// doctor clinician steps; LabStaff → their assigned station's steps; ShiftManager/Admin → a parallel
+// manager "presence" (not a clinical wait); Reception/none → null. Uses the highest-priority role.
+export type ViewerTrack = 'Nurse' | 'Doctor' | 'Lab' | 'Manager' | null;
+export function getViewerTrack(roles: UserRole[] | undefined): ViewerTrack {
+  const p = primaryRole(roles);
+  if (p === 'Nurse' || p === 'NursingStudent') return 'Nurse';
+  if (p === 'Doctor' || p === 'MedStudent') return 'Doctor';
+  if (p === 'LabStaff') return 'Lab';
+  if (p === 'ShiftManager' || p === 'Admin') return 'Manager';
+  return null;
+}

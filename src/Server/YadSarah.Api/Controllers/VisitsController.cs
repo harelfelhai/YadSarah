@@ -335,6 +335,26 @@ public class VisitsController(
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
+    // POST /api/visits/{id}/manager-presence — a manager (Admin/ShiftManager) pages a patient to
+    // themselves (call) / marks them present with them (enter) / clears it. Parallel to the clinical
+    // flow — does NOT change the visit's care-steps or "waiting-for" status.
+    [HttpPost("{id:guid}/manager-presence")]
+    [Authorize(Roles = "ShiftManager,Admin")]
+    public async Task<IActionResult> ManagerPresence(Guid id, [FromBody] ManagerPresenceRequest req)
+    {
+        var action = (req.Action ?? "").Trim().ToLowerInvariant();
+        try
+        {
+            var room = await workstations.ResolveRoomAsync(req.DeviceId);
+            var visit = await svc.SetManagerPresenceAsync(id, action, UserId, UserName, room);
+            await audit.LogAsync("ManagerPresence", "Visit", id, "managerPresence", newValue: action);
+            await BroadcastQueueUpdateAsync(id);
+            return Ok(visit);
+        }
+        catch (ArgumentException ex) { return BadRequest(new { message = ex.Message }); }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
     /// <summary>Re-broadcast the visit's queue row after a care-step change so every board refreshes.</summary>
     private async Task BroadcastQueueUpdateAsync(Guid id)
     {
@@ -361,6 +381,10 @@ public class VisitsController(
     public record FinishNonDoctorRequest([param: StringLength(120)] string? DeviceId = null);
 
     public record StepActionRequest(
+        [param: Required, StringLength(20)] string Action,
+        [param: StringLength(120)] string? DeviceId = null);
+
+    public record ManagerPresenceRequest(
         [param: Required, StringLength(20)] string Action,
         [param: StringLength(120)] string? DeviceId = null);
 }

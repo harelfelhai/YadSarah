@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title,
+  ActionIcon, Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconUserPlus, IconStar } from '@tabler/icons-react';
+import {
+  IconSearch, IconUserPlus, IconStar, IconSpeakerphone, IconDoorEnter, IconCheck, IconX,
+} from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
-import { isReceptionStaff, isClinicalStaff, hasAnyRole } from '../../constants/roles';
+import { isReceptionStaff, isClinicalStaff, hasAnyRole, getViewerTrack, canActOnStep, canEnterStep } from '../../constants/roles';
 import { STATUS_LABEL } from '../../constants/visitStatus';
 import { queueLabel, SPECIAL_QUEUE_LETTER } from '../../constants/departments';
 import CareStepList from '../../components/CareStepList';
-import type { CareStep, CareStepAction, CareStepStatus, Visit, VisitStatus } from '../../types';
+import type { CareStep, CareStepAction, CareStepStatus, UserRole, Visit, VisitStatus } from '../../types';
 
 // A single muted, neutral rail/divider tone — no loud per-status colors (kept subtle by request).
 const RAIL = 'var(--mantine-color-slate-3)';
@@ -89,6 +91,25 @@ export default function QueuePage() {
     }
   };
 
+  // Manager (Admin/ShiftManager) "call to me" presence — parallel to the clinical track, does not
+  // change "waiting-for". Optimistically stamps the manager's name + state, then reconciles.
+  const handleManagerPresence = async (visit: Visit, action: 'call' | 'enter' | 'clear') => {
+    const state = action === 'call' ? 'Called' : action === 'enter' ? 'Present' : 'None';
+    queryClient.setQueriesData<Visit[]>({ queryKey: ['queue'] }, (old) =>
+      old?.map((v) => v.id !== visit.id ? v : {
+        ...v,
+        managerPresenceState: state as Visit['managerPresenceState'],
+        managerPresenceName: action === 'clear' ? null : (user?.fullName ?? ''),
+      }));
+    try {
+      await visitsApi.managerPresence(visit.id, action);
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+    } catch {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      notifications.show({ color: 'brick', message: 'הפעולה נכשלה' });
+    }
+  };
+
   const isReception = isReceptionStaff(user?.roles);
   const isClinical = isClinicalStaff(user?.roles);
   // Who may "take a patient under their care": doctors (and shift-managers/admins acting clinically).
@@ -112,21 +133,40 @@ export default function QueuePage() {
     !!s.claimedByUserId && s.claimedByUserId !== user?.id &&
     (s.status === 'Waiting' || s.status === 'Called'));
 
-  // Ordering: priority tiers are preserved — the special/priority queue floats to the very top,
-  // then (when highlighting) the viewer's own department, then everyone else. WITHIN each tier
-  // patients claimed by ANOTHER doctor sink to the bottom, and otherwise by WAIT TIME (longest-waiting
-  // first) — not queue number: now that numbers run per-department (A-1, B-1, …) they're not comparable.
+  // ── Role-aware ordering (items 6 + 9) ───────────────────────────────────────
+  // The viewer's "track": nurse → nurse steps, doctor → doctor steps, lab/tech → their assigned
+  // station's steps. Patients WAITING for the viewer's own track float to the top (subtle highlight).
+  // For a doctor specifically: a patient who still has a pending station/lab is NOT yet ready for the
+  // doctor (they'll be seen after the tests) → sinks below those waiting only for a doctor.
+  const viewerTrack = getViewerTrack(user?.roles);
+  const viewerStation = user?.station ?? null;
+  const isActiveStep = (s: CareStep) => s.status === 'Waiting' || s.status === 'Called';
+  const hasPendingStation = (v: Visit) => !!v.careSteps?.some((s) =>
+    s.category === 'Station' && s.status !== 'Done' && s.status !== 'Canceled');
+  const waitingForMyTrack = (v: Visit): boolean => {
+    const steps = v.careSteps ?? [];
+    if (viewerTrack === 'Nurse') return steps.some((s) => s.category === 'Clinician' && s.clinicianRole === 'Nurse' && isActiveStep(s));
+    if (viewerTrack === 'Doctor') return steps.some((s) => s.category === 'Clinician' && s.clinicianRole === 'Doctor' && isActiveStep(s));
+    if (viewerTrack === 'Lab') return steps.some((s) => s.category === 'Station' && isActiveStep(s) && (!viewerStation || s.label === viewerStation));
+    return false;
+  };
+  // A doctor's patient who is still waiting on a station isn't ready for the doctor yet.
+  const doctorNotReady = (v: Visit) => viewerTrack === 'Doctor' && hasPendingStation(v);
+  // True for the rows we float to the top + tint (waiting for my track and, for a doctor, ready).
+  const myTurn = (v: Visit) => waitingForMyTrack(v) && !doctorNotReady(v);
+  const rankOf = (v: Visit): number => {
+    if (myTurn(v)) return 0;                                            // waiting for me (ready) → top
+    if (showDeptHighlight && v.receptionDepartment === userDept) return 1; // my department
+    if (doctorNotReady(v)) return 3;                                   // pending station → below the rest
+    return 2;
+  };
+  // WITHIN a rank, claimed-by-another sinks, then longest-waiting first (queue numbers run per-letter
+  // so they're not comparable).
   const byClaimThenWait = (a: Visit, b: Visit) =>
     (isClaimedByOther(a) ? 1 : 0) - (isClaimedByOther(b) ? 1 : 0) || waitMinutes(b) - waitMinutes(a);
-  const special = active.filter(isSpecial).sort(byClaimThenWait);
-  const rest = active.filter((v) => !isSpecial(v));
-  const ordered = showDeptHighlight
-    ? [
-        ...rest.filter((v) => v.receptionDepartment === userDept).sort(byClaimThenWait),
-        ...rest.filter((v) => v.receptionDepartment !== userDept).sort(byClaimThenWait),
-      ]
-    : [...rest].sort(byClaimThenWait);
-  const sorted = [...special, ...ordered];
+  const cmp = (a: Visit, b: Visit) => rankOf(a) - rankOf(b) || byClaimThenWait(a, b);
+  const special = active.filter(isSpecial).sort(cmp);
+  const sorted = [...special, ...active.filter((v) => !isSpecial(v)).sort(cmp)];
 
   // Find a patient quickly by name / ID (e.g. to open their form).
   const q = search.trim().toLowerCase();
@@ -205,7 +245,7 @@ export default function QueuePage() {
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1480} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1600} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
@@ -219,6 +259,7 @@ export default function QueuePage() {
                 <Table.Th style={{ minWidth: 150 }}>רופא</Table.Th>
                 <Table.Th style={{ minWidth: 170 }}>בדיקות ומעבדות</Table.Th>
                 <Table.Th style={{ minWidth: 150 }}>גורם אחראי</Table.Th>
+                <Table.Th style={{ width: 110, textAlign: 'center' }}>פעולות</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -243,8 +284,11 @@ export default function QueuePage() {
                     onClick={isClinical ? () => navigate(`/visits/${visit.id}`) : undefined}
                     style={{
                       animationDelay: `${Math.min(i, 12) * 25}ms`,
-                      opacity: isOtherDept ? 0.5 : 1,
-                      background: isOtherDept ? 'var(--mantine-color-slate-0)' : undefined,
+                      // Own-track-waiting rows get a subtle tint + stay full opacity (even if another dept).
+                      opacity: isOtherDept && !myTurn(visit) ? 0.5 : 1,
+                      background: myTurn(visit)
+                        ? 'var(--mantine-color-slate-1)'
+                        : isOtherDept ? 'var(--mantine-color-slate-0)' : undefined,
                       cursor: isClinical ? 'pointer' : undefined,
                     }}
                   >
@@ -288,6 +332,7 @@ export default function QueuePage() {
                         steps={nurseSteps}
                         isClinical={isClinical}
                         userRoles={user?.roles}
+                        hideActionButtons
                         onAction={(step, action) => handleStepAction(visit, step, action)}
                         fallback={terminalBadge}
                       />
@@ -297,6 +342,7 @@ export default function QueuePage() {
                         steps={doctorSteps}
                         isClinical={isClinical}
                         userRoles={user?.roles}
+                        hideActionButtons
                         onAction={(step, action) => handleStepAction(visit, step, action)}
                       />
                     </Table.Td>
@@ -305,6 +351,7 @@ export default function QueuePage() {
                         steps={testSteps}
                         isClinical={isClinical}
                         userRoles={user?.roles}
+                        hideActionButtons
                         onAction={(step, action) => handleStepAction(visit, step, action)}
                       />
                     </Table.Td>
@@ -314,6 +361,15 @@ export default function QueuePage() {
                         canClaim={canClaim}
                         currentUserId={user?.id}
                         onAction={(step, action) => handleStepAction(visit, step, action)}
+                      />
+                    </Table.Td>
+                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }} style={{ textAlign: 'center' }}>
+                      <AutoActionIcons
+                        visit={visit}
+                        userRoles={user?.roles}
+                        station={user?.station}
+                        onStep={(step, action) => handleStepAction(visit, step, action)}
+                        onManager={(action) => handleManagerPresence(visit, action)}
                       />
                     </Table.Td>
                   </Table.Tr>
@@ -370,11 +426,19 @@ function ResponsibleParty({
   const doctorSteps = (visit.careSteps ?? []).filter(
     (s) => s.category === 'Clinician' && s.clinicianRole === 'Doctor' &&
       (s.status === 'Waiting' || s.status === 'Called' || s.status === 'InProgress'));
-  if (doctorSteps.length === 0) return <Text c="dimmed">—</Text>;
+  // Manager "call to me" presence — parallel to the clinical responsible party, shown to everyone.
+  const mp = visit.managerPresenceState && visit.managerPresenceState !== 'None' ? (
+    <Badge variant="light" color="slate" size="sm" style={{ whiteSpace: 'nowrap' }}>
+      {visit.managerPresenceState === 'Present' ? 'אצל' : 'נקרא ל'} {visit.managerPresenceName || 'מנהל'}
+      {visit.managerPresenceRoom ? ` · ${visit.managerPresenceRoom}` : ''}
+    </Badge>
+  ) : null;
+  if (doctorSteps.length === 0) return mp ?? <Text c="dimmed">—</Text>;
   const showDept = doctorSteps.length > 1;
 
   return (
     <Stack gap={4}>
+      {mp}
       {doctorSteps.map((s) => {
         const name = s.claimedByName ?? s.startedByName ?? null;
         const claimedByMe = !!s.claimedByUserId && s.claimedByUserId === currentUserId;
@@ -399,5 +463,68 @@ function ResponsibleParty({
         );
       })}
     </Stack>
+  );
+}
+
+// "פעולות" — role-aware call/enter/complete, as icons, auto-targeting the viewer's own track:
+// nurse→nurse step, doctor→doctor step, lab/tech→their assigned station's step (one icon-set per row,
+// no need to pick a station). A manager (Admin/ShiftManager) instead gets a parallel "call/enter to me"
+// that does NOT change the clinical "waiting-for". Hidden when there's nothing the viewer can act on.
+function AutoActionIcons({
+  visit, userRoles, station, onStep, onManager,
+}: {
+  visit: Visit;
+  userRoles?: UserRole[];
+  station?: string;
+  onStep: (step: CareStep, action: CareStepAction) => void;
+  onManager: (action: 'call' | 'enter' | 'clear') => void;
+}) {
+  const track = getViewerTrack(userRoles);
+  if (!track) return <Text c="dimmed">—</Text>;
+
+  // Manager: parallel presence (call / enter / clear), unrelated to the clinical track.
+  if (track === 'Manager') {
+    const state = visit.managerPresenceState ?? 'None';
+    return (
+      <Group gap={6} justify="center" wrap="nowrap">
+        {state === 'None' ? (
+          <>
+            <Tooltip label="קרא אליי"><ActionIcon variant="subtle" color="slate" onClick={() => onManager('call')}><IconSpeakerphone size={16} /></ActionIcon></Tooltip>
+            <Tooltip label="הכנס אליי"><ActionIcon variant="light" color="slate" onClick={() => onManager('enter')}><IconDoorEnter size={16} /></ActionIcon></Tooltip>
+          </>
+        ) : (
+          <Tooltip label={state === 'Present' ? 'נקה (אצלי)' : 'נקה (נקרא אליי)'}>
+            <ActionIcon variant="subtle" color="slate" onClick={() => onManager('clear')}><IconX size={16} /></ActionIcon>
+          </Tooltip>
+        )}
+      </Group>
+    );
+  }
+
+  // Clinical / station track: find the matching active step (prefer the primary-department one
+  // when a dual-track visit has two), then expose the action that fits its status.
+  const isActive = (s: CareStep) => s.status !== 'Done' && s.status !== 'Canceled';
+  const matches = (visit.careSteps ?? []).filter((s) =>
+    track === 'Lab'
+      ? s.category === 'Station' && isActive(s) && (!station || s.label === station)
+      : s.category === 'Clinician' && s.clinicianRole === track && isActive(s));
+  if (matches.length === 0) return null;
+  const step = matches.find((s) => s.department === visit.receptionDepartment) ?? matches[0];
+
+  const mayAct = canActOnStep(userRoles, step.clinicianRole ?? null);
+  const mayEnter = canEnterStep(userRoles, step.clinicianRole ?? null);
+
+  return (
+    <Group gap={6} justify="center" wrap="nowrap">
+      {step.status === 'Waiting' && mayAct && (
+        <Tooltip label="קרא"><ActionIcon variant="subtle" color="slate" onClick={() => onStep(step, 'call')}><IconSpeakerphone size={16} /></ActionIcon></Tooltip>
+      )}
+      {(step.status === 'Waiting' || step.status === 'Called') && mayEnter && (
+        <Tooltip label="הכנס"><ActionIcon variant="light" color="slate" onClick={() => onStep(step, 'enter')}><IconDoorEnter size={16} /></ActionIcon></Tooltip>
+      )}
+      {step.status === 'InProgress' && mayAct && (
+        <Tooltip label="סיים"><ActionIcon variant="subtle" color="slate" onClick={() => onStep(step, 'complete')}><IconCheck size={16} /></ActionIcon></Tooltip>
+      )}
+    </Group>
   );
 }

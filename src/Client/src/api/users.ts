@@ -17,6 +17,7 @@ export interface CreateUserPayload {
   mobile?: string;
   email?: string;
   department?: string;
+  station?: string;
 }
 
 export interface UpdateUserPayload extends Omit<CreateUserPayload, 'password'> {

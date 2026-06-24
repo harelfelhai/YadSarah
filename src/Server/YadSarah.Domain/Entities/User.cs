@@ -69,6 +69,9 @@ public class User
     public string? Mobile { get; set; }
     public string? Email { get; set; }
     public string? Department { get; set; }
+    // Station a station-staffer (e.g. LabStaff) is assigned to — the analogue of Department for a
+    // doctor. Drives the queue's auto call/enter target for station steps. One of CareStepCatalog.Stations.
+    public string? Station { get; set; }
 
     // Legacy profile columns — no longer surfaced in the user form, kept for back-compat.
     public DateOnly? DateOfBirth { get; set; }

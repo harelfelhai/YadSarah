@@ -495,3 +495,27 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 קבצים: `Api/Program.cs`, `Api/appsettings.json`, `Api/Controllers/{VisitsController,PublicIntakeController,FormsController}.cs`,
 `Application/Services/{AuthService,UserService,CareStepService,PricingService,VisitService,IntakeSubmissionService}.cs`,
 `Domain/Entities/User.cs` (+ מיגרציה `AddUserSecurityStamp`), `Client/src/{store/auth.ts,layout/AppShell.tsx,App.tsx,features/auth/LoginPage.tsx}`.
+
+## 20. תור מודע-תפקיד: פעולות אוטומטיות, שדה-תחנה, ונוכחות-מנהל (2026-06-25)
+
+לוח-התור הומר לפעולות **אוטומטיות לפי תפקיד** (קרא/הכנס/סיים כאייקונים מימין, ממוקדים ל-step של מסלול
+הצופה), בתוספת שדה **"תחנה" למשתמש** ו**נוכחות-מנהל** מקבילה לתהליך הקליני.
+
+- **פעולות-התור עדיין נאכפות בשרת (לא נפתח נתיב חדש):** האייקונים קוראים לאותם
+  `PATCH /visits/{id}/steps/{stepId}` (call/enter/complete) שכבר אוכפים RBAC לפי-מסלול
+  (`EnsureMayEnter`/`EnsureRoleMayActOnStep`, §18). בחירת-היעד האוטומטית בלקוח (`getViewerTrack` ב-
+  `constants/roles.ts`) היא **נוחות-UI בלבד** — השרת הוא הסמכות; ניסיון לפעול על step לא-תואם →
+  `403`. הכפתורים ה-inline בעמודות הוסרו (כפילות), אין שינוי הרשאה.
+- **שדה `User.Station` (חדש, מיגרציה `AddStationAndManagerPresence`):** מטא-דאטה תפעולי (אנלוג ל-
+  `Department` של רופא) הקובע לאיש-תחנה (LabStaff) לאיזו תחנה מיועדים ה-call/enter שלו בתור. נכתב רק
+  דרך `UsersController` (Admin/ShiftManager, §2) ונחשף בתגובת ה-login (לצד `Department`) — אינו PHI ואינו
+  מעניק הרשאה (הפעולה עצמה עדיין עוברת את ה-RBAC של ה-step).
+- **נוכחות-מנהל (`POST /visits/{id}/manager-presence`, Admin/ShiftManager בלבד):** מנהל יכול "לקרוא/להכניס
+  אליו" מטופל (`call`/`enter`/`clear`) — **בלי לגעת ב-`CareSteps`/ב-`Visit.Status`/ב-`DeriveStatus`**: אין
+  המתנה-למנהל בתהליך הקליני, זו נוכחות-תצוגה מקבילה בלבד (`VisitService.SetManagerPresenceAsync`). מתועד
+  (`ManagerPresence` עם הפעולה), משודר ב-SignalR, והחדר נגזר בשרת מ-`deviceId` (כמו call/enter רגיל) — אין
+  שדה-לקוח חדש, over-posting, או חשיפת-PHI. השדות (`ManagerPresence*`) הם מטא-דאטה תפעולי (שם המנהל + חדר).
+
+קבצים: `Domain/Entities/{User,Visit}.cs` (+ מיגרציה `AddStationAndManagerPresence`),
+`Application/Services/{UserService,VisitService}.cs`, `Api/Controllers/{UsersController,AuthController,VisitsController}.cs`,
+`Client/src/{constants/roles.ts,features/queue/QueuePage.tsx,components/CareStepList.tsx,features/admin/AdminPage.tsx,api/{users,visits}.ts}`.
