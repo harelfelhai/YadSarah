@@ -433,3 +433,46 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 `Application/Services/{CareStepService,VisitService,FormService,PregnancyInfo}.cs`, `Api/Controllers/{VisitsController,FormsController}.cs`,
 `Infrastructure/Data/AppDbContext.cs` (+ מיגרציה `MultiDimStatusAndDualDept`), `Client/src/components/CareStepList.tsx`,
 `Client/src/constants/careSteps.ts`, `Client/src/features/{queue/QueuePage,treatment/TreatmentFormPage}.tsx`.
+
+## 19. סבב הקשחת-אבטחה (2026-06-24) — פריסה web-hosted
+
+סבב תיקונים בעקבות בדיקת-אבטחה מעמיקה (High+Medium) לקראת אירוח web. כל השינויים **מהדקים** בקרה
+קיימת — אף אחד אינו מוסיף נתיב-גישה חדש ל-PHI, מרחיב הרשאה, או מכניס SQL גולמי / over-posting.
+
+- **גבול-אמון של proxy ו-rate-limiting (H-1, `Program.cs`):** מאחורי TLS-terminating proxy (Render),
+  `ForwardedHeaders` מוגדר עם `ForwardLimit=1` ורשימת-proxy מהימנה אופציונלית (`ForwardedHeaders:
+  KnownProxyNetworks`) — כך שזיוף `X-Forwarded-For` לעקיפת המגבלות-פר-IP דורש גישה ישירה לקונטיינר.
+  מאחר שגם ה-limiter הפר-IP וגם ה-cap הפר-מכשירי מפתחים על ערכים ניתנים-לסיבוב, נוסף **חסם-הצפה
+  גלובלי לא-מבוסס-IP** ל-`POST /api/public-intake` (משורשר ל-`GlobalLimiter` ב-`CreateChained`) שמונע
+  הצפת לוח-הקבלה.
+- **ביטול-טוקן בזמן-בקשה (M-2, `User.cs`/`AuthService.cs`/`UserService.cs`/`Program.cs`):** נוסף
+  `User.SecurityStamp` (לא-PHI, `[JsonIgnore]`), הנפלט כ-claim `stamp` ונבדק ב-`OnTokenValidated`
+  בכל בקשה מאומתת יחד עם `IsActive`/lockout/expiry. סיבוב ה-stamp (בהשבתה, שינוי-תפקיד, איפוס-סיסמה)
+  **מבטל מיידית את כל ה-JWT הקודמים** של המשתמש — מסגרת bearer חסרה זאת אחרת. תומך ב"צורך-לדעת":
+  משתמש שתפקידו נשלל מאבד גישה לפני תפוגת-הטוקן.
+- **בקרת-גישה (M-6, `CareStepService.cs`):** `EnsureRoleMayActOnStep` מהדק את `complete`/`call` של
+  צעד-טיפול — צעד-רופא ניתן לקידום רק ע"י Doctor/ShiftManager/Admin (לא MedStudent), צעד-אחות רק
+  ע"י Nurse/NursingStudent/ShiftManager/Admin; `ForbiddenException`→403. משלים את `EnsureMayEnter`
+  הקיים (§18) ומונע מבעל-תפקיד נמוך לסמן צעד-רופא Done ולהיחתם כגורם-מטפל.
+- **שלמות-מצב (M-8, `VisitService.UpdateStatusAsync`):** ביקור **משוחרר** (terminal) אינו ניתן
+  לפתיחה-מחדש דרך PATCH-סטטוס → `409`, כדי שהסטטוס החי לא יתנתק מהרשומה החתומה.
+- **ולידציית-קלט ורשימות-סגורות (M-7/M-9):** סיבות-הפטור נאכפות מול **רשימה-סגורה בשרת**
+  (`PricingService.KnownExemptionReasons`, mirror ל-`constants/exemptionReasons.ts`) → טקסט-חופשי
+  אינו יכול עוד לאפס חיוב; פטור-מלא נרשם ל-audit (`ExemptionApplied`). בקבלה הציבורית
+  (`IntakeSubmissionService`) נדחה `DeviceId` ריק, נוסף cap פר-IP-מקור ותקרת-pending מוחלטת.
+- **הגנת brute-force (M-3, `VisitsController`):** אישור-מנהל להנחה (re-auth שאינו מפעיל נעילת-חשבון
+  בכוונה) קיבל **throttle ממופתח-שם-מנהל** (`IMemoryCache`, 5/5דק') + audit `DiscountAuthFailed`,
+  כדי שנתיב יצירת-הביקור לא ישמש oracle לניחוש סיסמת-מנהל.
+- **תיעוד (M-10, `FormsController.Export`):** ייצוא טופס מלא (קריאת-PHI בכמות) נרשם כעת
+  `Viewed/export`, כמו שאר קריאות הטופס.
+- **הגנת-PHI בצד-לקוח (M-4/M-5):** logout מאוחד מנקה את מטמון TanStack Query (`queryClient.clear()`)
+  כדי שנתוני-מטופל לא ידלפו למשתמש הבא בעמדה משותפת; נוסף ניתוק-אוטומטי בחוסר-פעילות (15 ד') וכיבוד
+  תפוגת-טוקן. גם כניסה חדשה מנקה מטמון קודם.
+- **ניהול-סודות והיגיינת-DB (M-1/M-11, `Program.cs`/`appsettings.json`):** הוסר ערך-ה-placeholder של
+  `Jwt:Secret` מ-appsettings.json (מסופק מ-env/Development.json); העלייה **נכשלת בקול** אם הסוד חסר
+  או קצר מ-32 בתים. חיבור ה-DB מוצפן תמיד (`SSL Mode=Require`), ואימות-התעודה ניתן-להקשחה ל-`VerifyFull`
+  דרך `Database__SslMode`/`Database__RootCert` (ברירת-מחדל תואמת ל-CA הפרטי של Render).
+
+קבצים: `Api/Program.cs`, `Api/appsettings.json`, `Api/Controllers/{VisitsController,PublicIntakeController,FormsController}.cs`,
+`Application/Services/{AuthService,UserService,CareStepService,PricingService,VisitService,IntakeSubmissionService}.cs`,
+`Domain/Entities/User.cs` (+ מיגרציה `AddUserSecurityStamp`), `Client/src/{store/auth.ts,layout/AppShell.tsx,App.tsx,features/auth/LoginPage.tsx}`.
