@@ -77,12 +77,21 @@ public class DiagnosisCatalogService(AppDbContext db)
         foreach (var json in rows)
             AddDiagnoses(json, counts);
 
-        return counts
+        var ordered = counts
             .OrderByDescending(kv => kv.Value)
             .ThenBy(kv => kv.Key)
-            .Take(take)
             .Select(kv => kv.Key)
-            .ToList();
+            .AsEnumerable();
+
+        // Surface ONLY current official-catalog labels ("English — Code"). Legacy/free-text
+        // values (e.g. Hebrew diagnoses predating the closed catalog, or demo seed data) are
+        // dropped — the picker must offer only entries from the official ICD-10-CM catalog. When
+        // no catalog is loaded yet (free-text mode), keep the raw history so quick-picks stay useful.
+        var active = await GetActiveLabelsAsync();
+        if (active.Count > 0)
+            ordered = ordered.Where(active.Contains);
+
+        return ordered.Take(take).ToList();
     }
 
     // Parse a JSON array of {diagnosis, ...} objects and tally each non-empty diagnosis.

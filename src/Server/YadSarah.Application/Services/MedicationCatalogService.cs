@@ -60,12 +60,21 @@ public class MedicationCatalogService(AppDbContext db)
             AddDrugNames(r.AdministrationOrdersJson, counts);
         }
 
-        return counts
+        var ordered = counts
             .OrderByDescending(kv => kv.Value)
             .ThenBy(kv => kv.Key)
-            .Take(take)
             .Select(kv => kv.Key)
-            .ToList();
+            .AsEnumerable();
+
+        // Surface ONLY current official-catalog labels ("English — RegNo"). Legacy/free-text
+        // values (e.g. Hebrew drug names predating the closed catalog, or demo seed data) are
+        // dropped — the picker must offer only entries from the official MoH registry. When no
+        // catalog is loaded yet (free-text mode), keep the raw history so quick-picks stay useful.
+        var active = await GetActiveLabelsAsync();
+        if (active.Count > 0)
+            ordered = ordered.Where(active.Contains);
+
+        return ordered.Take(take).ToList();
     }
 
     // Parse a JSON array of {drugName, ...} objects and tally each non-empty drugName.
