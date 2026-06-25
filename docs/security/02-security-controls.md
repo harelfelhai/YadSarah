@@ -525,3 +525,22 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 קבצים: `Domain/Entities/{User,Visit}.cs` (+ מיגרציה `AddStationAndManagerPresence`),
 `Application/Services/{UserService,VisitService}.cs`, `Api/Controllers/{UsersController,AuthController,VisitsController,PatientsController}.cs`,
 `Client/src/{constants/roles.ts,features/queue/QueuePage.tsx,components/CareStepList.tsx,features/admin/AdminPage.tsx,utils/phone.ts,features/reception/ReceptionPage.tsx,api/{users,visits}.ts}`.
+
+## 21. הקשחת טופס-טיפול: רשימת "שכיחים" מהקטלוג בלבד + רינדור-תאים עמיד (2026-06-25)
+
+שני תיקוני-יציבות בטופס-הטיפול (PHI), שניהם **מצמצמים** חשיפה/סיכון ולא מרחיבים גישה:
+
+- **רשימת "שכיחים" מסוננת לקטלוג הרשמי** (`MedicationCatalogService`/`DiagnosisCatalogService`
+  `GetFrequentForDoctorAsync`): הרשימה נגזרת מטפסים שהרופא **עצמו** חתם, וכעת מסוננת מול תוויות-הקטלוג
+  הפעיל (`GetActiveLabelsAsync`) — רק ערך שהוא תווית-קטלוג רשמית (`EnglishName — RegNo/Code`) נשאר; ערכי
+  טקסט-חופשי/עבר/דמו מושמטים. **אין הרחבת גישה** (אותו מקור — המידע של הרופא), **אין שאילתה נגזרת-קלט**
+  (סינון membership ב-HashSet בזיכרון; ה-`ILIKE` הקיים פרמטרי), ואין PHI חדש (שמות תרופות/אבחנות = נתוני-
+  ייחוס, לא מזהי-מטופל). נטו: פחות נתוני-עבר חשופים בבורר, ועקביות עם הרשימה-הסגורה (§10).
+- **רינדור-תאים עמיד + מקור-באג שתוקן** (`components/DateField.tsx`, `features/treatment/TreatmentFormPage.tsx`,
+  client בלבד): כפתור "היום" בשדה-תאריך שמר בעבר אובייקט-אירוע מזויף כערך-השדה (Mantine `getInputOnChange`),
+  שנשמר ב-JSON של הטופס וקרס ברינדור (`React #31`). תוקן ע"י כתיבה ל-`<input>` האמיתי דרך native-setter+אירוע
+  אמיתי; בנוסף `cellText` מקודד ערך לא-מחרוזתי ל-"—" כך שטפסים עם נתוני-עבר "מורעלים" **נפתחים** במקום לקרוס.
+  זמינות/שלמות-תצוגה בלבד — אין שינוי הרשאה/RBAC/PHI; הנתונים נשמרים בשרת כרגיל.
+
+קבצים: `Application/Services/{MedicationCatalogService,DiagnosisCatalogService}.cs`,
+`Client/src/components/DateField.tsx`, `Client/src/features/treatment/TreatmentFormPage.tsx`.
