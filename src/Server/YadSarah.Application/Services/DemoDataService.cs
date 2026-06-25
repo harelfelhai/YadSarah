@@ -635,11 +635,13 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             UpdatedByUserId = doctorId,
             UpdatedAt = atLate,
         };
-        // ~1 in 12 signed forms carries an allergy note, for realism.
+        // ~1 in 12 signed forms carries an allergy note, for realism. The drug name is a real
+        // catalog label (like every other drug field in the demo) so the form loads a genuine
+        // catalog selection rather than free Hebrew text.
         if (rng.Next(12) == 0)
             form.AllergiesJson = JsonSerializer.Serialize(new[]
             {
-                new { drugName = "פניצילין", type = "תרופה", effect = "פריחה", determinationDate = "" }
+                new { drugName = drugs[rng.Next(drugs.Length)], type = "תרופה", effect = "פריחה", determinationDate = "" }
             }, Json);
 
         if (signed)
