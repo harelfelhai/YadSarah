@@ -1,4 +1,5 @@
 import { Button, TextInput, type TextInputProps } from '@mantine/core';
+import { useRef } from 'react';
 
 /**
  * Native HTML date input (`<TextInput type="date" />`) with a small "היום" (Today)
@@ -9,24 +10,34 @@ import { Button, TextInput, type TextInputProps } from '@mantine/core';
  *   (a) {...form.getInputProps('x')}            — Mantine form
  *   (b) explicit value / onChange (HistoryPage) — controlled by the caller
  *
- * Clicking "היום" sets the field to today's date in `YYYY-MM-DD` by calling the
- * field's own `onChange` with a synthetic change event, so whichever handler the
- * caller passed reads the new value the same way it reads a real user edit
- * (both `currentTarget.value` and `target.value` are provided).
+ * Clicking "היום" writes today's date straight onto the real <input> through the
+ * native value setter and dispatches a genuine `input` event, so the caller's
+ * onChange fires with a REAL DOM event (a true `currentTarget`).
+ *
+ * IMPORTANT — do NOT hand-roll a fake `{ currentTarget, target }` object and pass it
+ * to onChange: Mantine's `getInputOnChange` stores any object that lacks `nativeEvent`
+ * VERBATIM as the field value. That object is then persisted and later rendered as a
+ * React child → "Objects are not valid as a React child" (React error #31), crashing
+ * the whole form. Dispatching a native event avoids that class of bug entirely.
  */
-export default function DateField({ rightSection, rightSectionWidth, onChange, ...props }: TextInputProps) {
+export default function DateField({ rightSection, rightSectionWidth, ...props }: TextInputProps) {
+  const ref = useRef<HTMLInputElement>(null);
+
   const setToday = () => {
+    const input = ref.current;
+    if (!input) return;
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    onChange?.({
-      currentTarget: { value: today },
-      target: { value: today },
-    } as React.ChangeEvent<HTMLInputElement>);
+    // Set via the native setter (bypasses React's value tracker) then fire a real
+    // `input` event so React + Mantine both pick up the change like a normal user edit.
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, today);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
   };
 
   return (
     <TextInput
+      ref={ref}
       type="date"
-      onChange={onChange}
       rightSectionWidth={rightSectionWidth ?? 52}
       rightSectionPointerEvents="auto"
       rightSection={

@@ -78,6 +78,15 @@ function formatDateTime(iso?: string): string {
   return d.toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// Render a stored table-cell value defensively — never an object. Legacy rows may hold a
+// non-string value (e.g. a date field poisoned by the old DateField bug, where a fake event
+// object got saved as the value); rendering it raw throws React error #31 and crashes the form.
+function cellText(v: unknown, dash = '—'): string {
+  if (v == null || v === '') return dash;
+  if (typeof v === 'object') return dash;
+  return String(v);
+}
+
 // The form serving a department track. A pre-dual single form has a null department, so it
 // stands in for the primary track.
 function formForDept(list: MedicalForm[], dept: string, primaryDept?: string): MedicalForm | undefined {
@@ -1076,7 +1085,7 @@ function AllergiesEditor({ rows, locked, saving, onFocus, onSave }: AllergyEdito
               <Table.Td>{row.drugName}</Table.Td>
               <Table.Td>{row.type ?? '—'}</Table.Td>
               <Table.Td>{row.effect ?? '—'}</Table.Td>
-              <Table.Td>{row.determinationDate ?? '—'}</Table.Td>
+              <Table.Td>{cellText(row.determinationDate)}</Table.Td>
               {!locked && <Table.Td><TableActions onEdit={() => openEdit(row)} onDelete={() => commit(localRows.filter((x) => x.id !== row.id))} locked={locked} /></Table.Td>}
             </Table.Tr>
           ))}
@@ -1290,8 +1299,8 @@ function VitalSignsEditor({ rows, locked, saving, onFocus, onSave }: VitalSignsE
           <Table.Tbody>
             {localRows.map((row) => (
               <Table.Tr key={row.id}>
-                <Table.Td fz="xs">{row.date}</Table.Td>
-                <Table.Td fz="xs">{row.time}</Table.Td>
+                <Table.Td fz="xs">{cellText(row.date, '')}</Table.Td>
+                <Table.Td fz="xs">{cellText(row.time, '')}</Table.Td>
                 <BpCell bp={row.bp} />
                 <VCell value={row.pulse}       field="pulse" />
                 <VCell value={row.respiration} field="respiration" />
@@ -1425,7 +1434,7 @@ function TreatmentsEditor({ rows, locked, saving, onFocus, onSave }: TreatmentsE
           {localRows.map((row) => (
             <Table.Tr key={row.id}>
               <Table.Td>{row.drugName}</Table.Td><Table.Td>{row.dosage ?? '—'}</Table.Td>
-              <Table.Td>{row.startDate ?? '—'}</Table.Td><Table.Td>{row.duration ?? '—'}</Table.Td>
+              <Table.Td>{cellText(row.startDate)}</Table.Td><Table.Td>{row.duration ?? '—'}</Table.Td>
               <Table.Td>{row.notes ?? '—'}</Table.Td>
               {!locked && <Table.Td><TableActions onEdit={() => openEdit(row)} onDelete={() => commit(localRows.filter((x) => x.id !== row.id))} locked={locked} /></Table.Td>}
             </Table.Tr>
@@ -1499,7 +1508,7 @@ function DiagnosesEditor({ rows, locked, saving, onFocus, onSave }: DiagnosesEdi
           {localRows.map((row) => (
             <Table.Tr key={row.id}>
               <Table.Td>{row.diagnosis}</Table.Td>
-              <Table.Td>{row.startDate ?? '—'}</Table.Td><Table.Td>{row.endDate ?? '—'}</Table.Td>
+              <Table.Td>{cellText(row.startDate)}</Table.Td><Table.Td>{cellText(row.endDate)}</Table.Td>
               <Table.Td>{row.status ?? '—'}</Table.Td>
               <Table.Td>{row.isPrimary ? '✓' : ''}</Table.Td>
               <Table.Td>{row.severity ?? '—'}</Table.Td>
@@ -1701,7 +1710,7 @@ function RoutingEditor({ rows, locked, saving, onFocus, onSave, visit }: Routing
         <Table.Tbody>
           {localRows.map((row) => (
             <Table.Tr key={row.id}>
-              <Table.Td>{row.station}</Table.Td><Table.Td>{row.status ?? '—'}</Table.Td><Table.Td>{row.arrivalDate ?? '—'}</Table.Td>
+              <Table.Td>{cellText(row.station)}</Table.Td><Table.Td>{row.status ?? '—'}</Table.Td><Table.Td>{cellText(row.arrivalDate)}</Table.Td>
               {!locked && <Table.Td><TableActions onEdit={() => openEdit(row)} onDelete={() => commit(localRows.filter((x) => x.id !== row.id))} locked={locked} /></Table.Td>}
             </Table.Tr>
           ))}
