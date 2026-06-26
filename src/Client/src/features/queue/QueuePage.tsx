@@ -402,18 +402,23 @@ export default function QueuePage() {
                 // Women's track on top (it sorts first), the other department below.
                 const isWomen = (s: CareStep) => s.department === WOMENS_DEPARTMENT;
                 const notWomen = (s: CareStep) => s.department !== WOMENS_DEPARTMENT;
+                // Women's track is always shown on top, whichever department field happens to hold it
+                // (real data keeps women as the secondary, but don't rely on that); the other below.
+                const otherDept = visit.receptionDepartment === WOMENS_DEPARTMENT
+                  ? visit.secondaryDepartment
+                  : visit.receptionDepartment;
                 return (
                   <Fragment key={visit.id}>
                     <Table.Tr className="ys-row-in" onClick={onRowClick} style={rowStyle}>
                       {lead(2)}
-                      {deptCell(visit.secondaryDepartment)}
+                      {deptCell(WOMENS_DEPARTMENT)}
                       {stepsCell(nurseSteps.filter(isWomen), terminalBadge)}
                       {stepsCell(doctorSteps.filter(isWomen))}
                       {stepsCell(testSteps.filter(isWomen))}
                       {respCell(isWomen, true)}
                     </Table.Tr>
                     <Table.Tr className="ys-row-in" onClick={onRowClick} style={rowStyle}>
-                      {deptCell(visit.receptionDepartment)}
+                      {deptCell(otherDept)}
                       {stepsCell(nurseSteps.filter(notWomen))}
                       {stepsCell(doctorSteps.filter(notWomen))}
                       {stepsCell(testSteps.filter(notWomen))}
