@@ -28,6 +28,13 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         TimeZoneInfo.FindSystemTimeZoneById(OperatingSystem.IsWindows() ? "Israel Standard Time" : "Asia/Jerusalem");
     private static DateTime IsraelNow() => TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, IsraelTz);
 
+    // Treat the value as Israel wall-clock time (how the demo computes every timestamp) and convert to a
+    // real UTC instant — independent of the SERVER's timezone. Plain DateTime.ToUniversalTime() is wrong
+    // here: it reads an Unspecified-Kind value as the SERVER's local zone, so on a UTC host (Render) it
+    // does no shift and stores timestamps ~3h in the future (on an Israel-TZ dev box it happens to work).
+    private static DateTime ToUtc(DateTime israelLocal) =>
+        TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(israelLocal, DateTimeKind.Unspecified), IsraelTz);
+
     public static readonly string[] DemoDepartments = ["רפואה דחופה", "ילדים", "נשים"];
 
     // ── Hebrew name & locale pools ──────────────────────────────────────────
@@ -260,12 +267,12 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
                 AdmissionDate = today,
                 AdmissionTime = TimeOnly.FromDateTime(arrival),
                 AdmissionReason = AdmissionReasons[rng.Next(AdmissionReasons.Length)],
-                CreatedAt = arrival.ToUniversalTime(),
-                UpdatedAt = arrival.ToUniversalTime(),
+                CreatedAt = ToUtc(arrival),
+                UpdatedAt = ToUtc(arrival),
                 // Already-discharged arrivals get a departure instant (between arrival and now)
                 // so today shows up on the census chart; everyone else is still "present".
                 DepartedAt = status == VisitStatus.Discharged
-                    ? arrival.AddMinutes(rng.Next(20, Math.Max(21, (int)(now - arrival).TotalMinutes))).ToUniversalTime()
+                    ? ToUtc(arrival.AddMinutes(rng.Next(20, Math.Max(21, (int)(now - arrival).TotalMinutes))))
                     : null,
             };
             if (secondaryDept is not null)
@@ -548,9 +555,9 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             AdmissionDate = date,
             AdmissionTime = time,
             AdmissionReason = AdmissionReasons[rng.Next(AdmissionReasons.Length)],
-            CreatedAt = dt.ToUniversalTime(),
-            UpdatedAt = departed.ToUniversalTime(),
-            DepartedAt = departed.ToUniversalTime(),
+            CreatedAt = ToUtc(dt),
+            UpdatedAt = ToUtc(departed),
+            DepartedAt = ToUtc(departed),
         };
         visits.Add(visit);
         forms.Add(BuildForm(visit, dept, dt, rng, drugs, doctorsByDept, nursesByDept, signed: true));
@@ -603,8 +610,8 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
         var doctorName = doctor?.FullName ?? "רופא תורן";
         var nurseId = nurse?.Id ?? Guid.Empty;
         var doctorId = doctor?.Id ?? Guid.Empty;
-        var atEarly = when.AddMinutes(rng.Next(5, 25)).ToUniversalTime();
-        var atLate = when.AddMinutes(rng.Next(30, 90)).ToUniversalTime();
+        var atEarly = ToUtc(when.AddMinutes(rng.Next(5, 25)));
+        var atLate = ToUtc(when.AddMinutes(rng.Next(30, 90)));
 
         var fieldEdits = new Dictionary<string, object>
         {
@@ -631,7 +638,7 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             DischargeMedicationsJson = JsonSerializer.Serialize(dischargeMeds, Json),
             FieldEditsJson = JsonSerializer.Serialize(fieldEdits, Json),
             CreatedByUserId = nurseId,
-            CreatedAt = when.ToUniversalTime(),
+            CreatedAt = ToUtc(when),
             UpdatedByUserId = doctorId,
             UpdatedAt = atLate,
         };
@@ -650,15 +657,15 @@ public class DemoDataService(AppDbContext db, AuthService auth, SettingsService 
             form.IsSigned = true;
             form.SignedByUserId = doctorId;
             form.SignedByName = doctorName;
-            form.SignedAt = signedAt.ToUniversalTime();
+            form.SignedAt = ToUtc(signedAt);
 
             // ~1 in 14 signed forms gets a post-signature addendum (separately signed).
             if (rng.Next(14) == 0)
             {
                 var add = new Addendum(
                     Guid.NewGuid(), "תוספת: התקבלה תשובת מעבדה תקינה. אין שינוי בהמלצות.",
-                    doctorId, doctorName, signedAt.AddHours(2).ToUniversalTime(),
-                    true, doctorId, doctorName, signedAt.AddHours(2).AddMinutes(3).ToUniversalTime());
+                    doctorId, doctorName, ToUtc(signedAt.AddHours(2)),
+                    true, doctorId, doctorName, ToUtc(signedAt.AddHours(2).AddMinutes(3)));
                 form.AddendaJson = JsonSerializer.Serialize(new[] { add }, Json);
             }
         }
