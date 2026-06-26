@@ -185,7 +185,7 @@ export default function QueuePage() {
   // Re-render exactly when the soonest "Called" badge's 10s window elapses, so it flips back to
   // "בהמתנה" and its "קרא" (re-announce) action reappears — without waiting for the 30s poll.
   const now = nowMs();
-  const nextCalledExpiry = filtered
+  const nextCalledExpiry = active
     .flatMap((v) => v.careSteps ?? [])
     .filter((s) => s.status === 'Called' && s.calledAt)
     .map((s) => new Date(s.calledAt as string).getTime() + CALLED_DISPLAY_MS)
@@ -197,9 +197,11 @@ export default function QueuePage() {
     return () => clearTimeout(id);
   }, [nextCalledExpiry]);
 
-  // Live status counts for the summary strip (over the loaded set).
+  // Live status counts for the summary strip — counted by effVisitStatus so a called patient whose
+  // 10s window elapsed moves from "נקרא" back to "בהמתנה", consistent with the row badge.
   const counts = active.reduce<Record<string, number>>((acc, v) => {
-    acc[v.status] = (acc[v.status] ?? 0) + 1;
+    const st = effVisitStatus(v, now);
+    acc[st] = (acc[st] ?? 0) + 1;
     return acc;
   }, {});
   const COUNT_ORDER: VisitStatus[] = ['Waiting', 'Called', 'InTreatment', 'FinishedTreatment', 'Discharged'];
@@ -439,6 +441,16 @@ export default function QueuePage() {
 // ── helpers ─────────────────────────────────────────────────────────────────
 // Wrapped at module scope so the time read isn't a bare impure call in a render body.
 const nowMs = () => Date.now();
+
+// The count strip mirrors the 10s "נקרא" display revert: once a visit's Called step(s) pass the
+// announcement window, the visit counts as "בהמתנה" again (matching its row badge). The coarse
+// server status stays Called until admit, so this is a display-only adjustment.
+function effVisitStatus(v: Visit, now: number): VisitStatus {
+  if (v.status !== 'Called') return v.status;
+  const stillCalled = (v.careSteps ?? []).some(
+    (s) => s.status === 'Called' && s.calledAt && now - new Date(s.calledAt).getTime() < CALLED_DISPLAY_MS);
+  return stillCalled ? 'Called' : 'Waiting';
+}
 
 function calcAge(birthDate?: string): string {
   if (!birthDate) return '—';
