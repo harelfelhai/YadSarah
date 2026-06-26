@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ActionIcon, Badge, Box, Button, Card, Group, Loader, Stack, Switch, Table, Text, TextInput, Title, Tooltip,
@@ -13,8 +13,9 @@ import { onQueueUpdate } from '../../realtime/hub';
 import { useAuthStore } from '../../store/auth';
 import { isReceptionStaff, isClinicalStaff, hasAnyRole, getViewerTrack, canActOnStep, canEnterStep } from '../../constants/roles';
 import { STATUS_LABEL } from '../../constants/visitStatus';
-import { queueLabel, SPECIAL_QUEUE_LETTER } from '../../constants/departments';
+import { queueLabel, SPECIAL_QUEUE_LETTER, WOMENS_DEPARTMENT } from '../../constants/departments';
 import CareStepList from '../../components/CareStepList';
+import { CALLED_DISPLAY_MS, effectiveStepStatus } from '../../constants/careSteps';
 import type { CareStep, CareStepAction, CareStepStatus, UserRole, Visit, VisitStatus } from '../../types';
 
 // A single muted, neutral rail/divider tone — no loud per-status colors (kept subtle by request).
@@ -76,10 +77,13 @@ export default function QueuePage() {
       return;
     }
     const optimistic: CareStepStatus = action === 'call' ? 'Called' : action === 'enter' ? 'InProgress' : 'Done';
+    // When calling, stamp calledAt now so the "נקרא" badge's 10s display window starts immediately
+    // (before the server round-trip); reconciled with server truth on the following invalidate.
+    const stamp = action === 'call' ? { calledAt: new Date().toISOString(), calledByName: user?.fullName ?? null } : {};
     queryClient.setQueriesData<Visit[]>({ queryKey: ['queue'] }, (old) =>
       old?.map((v) => v.id !== visit.id ? v : {
         ...v,
-        careSteps: v.careSteps?.map((s) => s.id === step.id ? { ...s, status: optimistic } : s),
+        careSteps: v.careSteps?.map((s) => s.id === step.id ? { ...s, status: optimistic, ...stamp } : s),
       }));
     try {
       await visitsApi.updateStep(visit.id, step.id, action);
@@ -178,6 +182,21 @@ export default function QueuePage() {
       })
     : sorted;
 
+  // Re-render exactly when the soonest "Called" badge's 10s window elapses, so it flips back to
+  // "בהמתנה" and its "קרא" (re-announce) action reappears — without waiting for the 30s poll.
+  const now = nowMs();
+  const nextCalledExpiry = filtered
+    .flatMap((v) => v.careSteps ?? [])
+    .filter((s) => s.status === 'Called' && s.calledAt)
+    .map((s) => new Date(s.calledAt as string).getTime() + CALLED_DISPLAY_MS)
+    .filter((t) => t > now)
+    .reduce((m, t) => Math.min(m, t), Infinity);
+  useEffect(() => {
+    if (!Number.isFinite(nextCalledExpiry)) return;
+    const id = setTimeout(() => setTick((n) => n + 1), nextCalledExpiry - nowMs() + 50);
+    return () => clearTimeout(id);
+  }, [nextCalledExpiry]);
+
   // Live status counts for the summary strip (over the loaded set).
   const counts = active.reduce<Record<string, number>>((acc, v) => {
     acc[v.status] = (acc[v.status] ?? 0) + 1;
@@ -245,7 +264,7 @@ export default function QueuePage() {
         </Card>
       ) : (
         <Box style={{ border: '1px solid var(--line)', background: 'var(--surface)', overflowX: 'auto' }}>
-          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1600} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
+          <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} striped={false} highlightOnHover={false} miw={1600} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 110, textAlign: 'center' }}>פעולות</Table.Th>
@@ -254,8 +273,8 @@ export default function QueuePage() {
                 <Table.Th>ת.ז / מזהה</Table.Th>
                 <Table.Th style={{ width: 56 }}>גיל</Table.Th>
                 <Table.Th style={{ width: 120, whiteSpace: 'nowrap' }}>המתנה</Table.Th>
-                <Table.Th style={{ minWidth: 210, whiteSpace: 'nowrap' }}>מחלקה</Table.Th>
                 <Table.Th>סיבת קבלה</Table.Th>
+                <Table.Th style={{ minWidth: 210, whiteSpace: 'nowrap' }}>מחלקה</Table.Th>
                 <Table.Th style={{ minWidth: 150 }}>אחות</Table.Th>
                 <Table.Th style={{ minWidth: 150 }}>רופא</Table.Th>
                 <Table.Th style={{ minWidth: 170 }}>בדיקות ומעבדות</Table.Th>
@@ -277,22 +296,31 @@ export default function QueuePage() {
                 const terminalBadge = (visit.status === 'Discharged' || visit.status === 'FinishedTreatment')
                   ? <Badge color="slate" variant="light">{STATUS_LABEL[visit.status]}</Badge>
                   : undefined;
-                return (
-                  <Table.Tr
-                    key={visit.id}
-                    className="ys-row-in"
-                    onClick={isClinical ? () => navigate(`/visits/${visit.id}`) : undefined}
-                    style={{
-                      animationDelay: `${Math.min(i, 12) * 25}ms`,
-                      // Own-track-waiting rows get a subtle tint + stay full opacity (even if another dept).
-                      opacity: isOtherDept && !myTurn(visit) ? 0.5 : 1,
-                      background: myTurn(visit)
-                        ? 'var(--mantine-color-slate-1)'
-                        : isOtherDept ? 'var(--mantine-color-slate-0)' : undefined,
-                      cursor: isClinical ? 'pointer' : undefined,
-                    }}
-                  >
-                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }} style={{ borderInlineStart: `4px solid ${RAIL}`, textAlign: 'center', width: 110 }}>
+                const isDual = !!visit.secondaryDepartment;
+
+                // Row background: own-track / other-dept highlights take precedence; otherwise a subtle
+                // per-patient alternating stripe. Both half-rows of a dual visit share the one stripe.
+                const rowBg = myTurn(visit)
+                  ? 'var(--mantine-color-slate-1)'
+                  : isOtherDept
+                    ? 'var(--mantine-color-slate-0)'
+                    : i % 2 === 1 ? 'var(--mantine-color-slate-0)' : undefined;
+                const rowStyle = {
+                  animationDelay: `${Math.min(i, 12) * 25}ms`,
+                  opacity: isOtherDept && !myTurn(visit) ? 0.5 : 1,
+                  background: rowBg,
+                  cursor: isClinical ? 'pointer' : undefined,
+                };
+                const onRowClick = isClinical ? () => navigate(`/visits/${visit.id}`) : undefined;
+                // Don't navigate when a control inside the cell was clicked.
+                const guard = (e: MouseEvent<HTMLElement>) => {
+                  if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation();
+                };
+
+                // The 7 leading columns are shared; for a dual visit they rowSpan both half-rows.
+                const lead = (rowSpan?: number) => (
+                  <>
+                    <Table.Td onClick={guard} rowSpan={rowSpan} style={{ borderInlineStart: `4px solid ${RAIL}`, textAlign: 'center', width: 110 }}>
                       <AutoActionIcons
                         visit={visit}
                         userRoles={user?.roles}
@@ -301,7 +329,7 @@ export default function QueuePage() {
                         onManager={(action) => handleManagerPresence(visit, action)}
                       />
                     </Table.Td>
-                    <Table.Td>
+                    <Table.Td rowSpan={rowSpan}>
                       <Group gap={4} wrap="nowrap" align="center">
                         {isSpecial(visit) && (
                           <IconStar size={16} fill="var(--mantine-color-slate-4)" color="var(--mantine-color-slate-5)" />
@@ -314,65 +342,84 @@ export default function QueuePage() {
                         </Text>
                       </Group>
                     </Table.Td>
-                    <Table.Td>
+                    <Table.Td rowSpan={rowSpan}>
                       <Text fw={600}>
                         {visit.patient ? `${visit.patient.firstName} ${visit.patient.lastName}` : '—'}
                       </Text>
                     </Table.Td>
-                    <Table.Td style={{ fontVariantNumeric: 'tabular-nums' }}>{visit.patient?.identityNumber ?? '—'}</Table.Td>
-                    <Table.Td style={{ fontVariantNumeric: 'tabular-nums' }}>{calcAge(visit.patient?.birthDate)}</Table.Td>
-                    <Table.Td>{waitChip(visit, wait, overdue)}</Table.Td>
-                    <Table.Td>
-                      <Group gap={6} wrap="nowrap" align="center">
-                        {visit.receptionDepartment ? (
-                          <Badge variant={isOtherDept ? 'outline' : 'light'} color="slate" size="sm">
-                            {visit.receptionDepartment}
-                          </Badge>
-                        ) : <Text c="dimmed">—</Text>}
-                        {/* Dual classification (women's + other) — shown as a second badge on the one row. */}
-                        {visit.secondaryDepartment && (
-                          <Badge variant="light" color="slate" size="sm">+ {visit.secondaryDepartment}</Badge>
-                        )}
-                      </Group>
-                    </Table.Td>
-                    <Table.Td>{visit.admissionReason ?? '—'}</Table.Td>
-                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }}>
-                      <CareStepList
-                        steps={nurseSteps}
-                        isClinical={isClinical}
-                        userRoles={user?.roles}
-                        hideActionButtons
-                        onAction={(step, action) => handleStepAction(visit, step, action)}
-                        fallback={terminalBadge}
-                      />
-                    </Table.Td>
-                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }}>
-                      <CareStepList
-                        steps={doctorSteps}
-                        isClinical={isClinical}
-                        userRoles={user?.roles}
-                        hideActionButtons
-                        onAction={(step, action) => handleStepAction(visit, step, action)}
-                      />
-                    </Table.Td>
-                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }}>
-                      <CareStepList
-                        steps={testSteps}
-                        isClinical={isClinical}
-                        userRoles={user?.roles}
-                        hideActionButtons
-                        onAction={(step, action) => handleStepAction(visit, step, action)}
-                      />
-                    </Table.Td>
-                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }}>
-                      <ResponsibleParty
-                        visit={visit}
-                        canClaim={canClaim}
-                        currentUserId={user?.id}
-                        onAction={(step, action) => handleStepAction(visit, step, action)}
-                      />
-                    </Table.Td>
-                  </Table.Tr>
+                    <Table.Td rowSpan={rowSpan} style={{ fontVariantNumeric: 'tabular-nums' }}>{visit.patient?.identityNumber ?? '—'}</Table.Td>
+                    <Table.Td rowSpan={rowSpan} style={{ fontVariantNumeric: 'tabular-nums' }}>{calcAge(visit.patient?.birthDate)}</Table.Td>
+                    <Table.Td rowSpan={rowSpan}>{waitChip(visit, wait, overdue)}</Table.Td>
+                    <Table.Td rowSpan={rowSpan}>{visit.admissionReason ?? '—'}</Table.Td>
+                  </>
+                );
+
+                // Department label — uniform tone, no border (a single consistent look for every dept).
+                const deptCell = (name?: string | null) => (
+                  <Table.Td>
+                    {name ? <Badge variant="light" color="slate" size="sm">{name}</Badge> : <Text c="dimmed">—</Text>}
+                  </Table.Td>
+                );
+                const stepsCell = (steps: CareStep[], fallback?: React.ReactNode) => (
+                  <Table.Td onClick={guard}>
+                    <CareStepList
+                      steps={steps}
+                      isClinical={isClinical}
+                      userRoles={user?.roles}
+                      hideActionButtons
+                      onAction={(step, action) => handleStepAction(visit, step, action)}
+                      fallback={fallback}
+                    />
+                  </Table.Td>
+                );
+                const respCell = (stepFilter?: (s: CareStep) => boolean, showMp = true) => (
+                  <Table.Td onClick={guard}>
+                    <ResponsibleParty
+                      visit={visit}
+                      canClaim={canClaim}
+                      stepFilter={stepFilter}
+                      showMp={showMp}
+                      onAction={(step, action) => handleStepAction(visit, step, action)}
+                    />
+                  </Table.Td>
+                );
+
+                if (!isDual) {
+                  return (
+                    <Table.Tr key={visit.id} className="ys-row-in" onClick={onRowClick} style={rowStyle}>
+                      {lead()}
+                      {deptCell(visit.receptionDepartment)}
+                      {stepsCell(nurseSteps, terminalBadge)}
+                      {stepsCell(doctorSteps)}
+                      {stepsCell(testSteps)}
+                      {respCell()}
+                    </Table.Tr>
+                  );
+                }
+
+                // Dual department (women's + other): the 5 trailing columns split into two stacked
+                // half-rows joined by a horizontal line (the shared lead columns rowSpan across both).
+                // Women's track on top (it sorts first), the other department below.
+                const isWomen = (s: CareStep) => s.department === WOMENS_DEPARTMENT;
+                const notWomen = (s: CareStep) => s.department !== WOMENS_DEPARTMENT;
+                return (
+                  <Fragment key={visit.id}>
+                    <Table.Tr className="ys-row-in" onClick={onRowClick} style={rowStyle}>
+                      {lead(2)}
+                      {deptCell(visit.secondaryDepartment)}
+                      {stepsCell(nurseSteps.filter(isWomen), terminalBadge)}
+                      {stepsCell(doctorSteps.filter(isWomen))}
+                      {stepsCell(testSteps.filter(isWomen))}
+                      {respCell(isWomen, true)}
+                    </Table.Tr>
+                    <Table.Tr className="ys-row-in" onClick={onRowClick} style={rowStyle}>
+                      {deptCell(visit.receptionDepartment)}
+                      {stepsCell(nurseSteps.filter(notWomen))}
+                      {stepsCell(doctorSteps.filter(notWomen))}
+                      {stepsCell(testSteps.filter(notWomen))}
+                      {respCell(notWomen, false)}
+                    </Table.Tr>
+                  </Fragment>
                 );
               })}
             </Table.Tbody>
@@ -385,6 +432,9 @@ export default function QueuePage() {
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+// Wrapped at module scope so the time read isn't a bare impure call in a render body.
+const nowMs = () => Date.now();
+
 function calcAge(birthDate?: string): string {
   if (!birthDate) return '—';
   const diff = Date.now() - new Date(birthDate).getTime();
@@ -403,11 +453,11 @@ function waitMinutes(v: Visit): number {
 function waitChip(v: Visit, wait: number, overdue: boolean) {
   if (v.status === 'Discharged' || v.status === 'FinishedTreatment') return <Text c="dimmed">—</Text>;
   const label = wait < 60 ? `${wait} ד׳` : `${Math.floor(wait / 60)}ש ${wait % 60}ד׳`;
-  // Overdue gets a subtle emphasis (filled, same neutral tone) — no alert red, no blinking.
+  // Long waits: no box/frame — just color the figure red (overdue). Normal waits stay neutral.
   return (
-    <Badge variant={overdue ? 'filled' : 'light'} color="slate" style={{ fontVariantNumeric: 'tabular-nums' }}>
+    <Text fw={overdue ? 800 : 600} c={overdue ? 'brick.7' : undefined} style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
       {label}
-    </Badge>
+    </Text>
   );
 }
 
@@ -416,46 +466,45 @@ function waitChip(v: Visit, wait: number, overdue: boolean) {
 // patient under their care without starting treatment (the soft assignment behavior of "שייך אליי").
 // One entry per active doctor track (a dual women's visit has two); a department label disambiguates.
 function ResponsibleParty({
-  visit, canClaim, currentUserId, onAction,
+  visit, canClaim, onAction, stepFilter, showMp = true,
 }: {
   visit: Visit;
   canClaim: boolean;
-  currentUserId?: string;
   onAction: (step: CareStep, action: CareStepAction) => void;
+  /** Restrict to one department's doctor step (used by the dual-track split halves). */
+  stepFilter?: (s: CareStep) => boolean;
+  /** Whether to show the manager-presence badge here (only on the top half of a dual row). */
+  showMp?: boolean;
 }) {
   const doctorSteps = (visit.careSteps ?? []).filter(
     (s) => s.category === 'Clinician' && s.clinicianRole === 'Doctor' &&
-      (s.status === 'Waiting' || s.status === 'Called' || s.status === 'InProgress'));
+      (s.status === 'Waiting' || s.status === 'Called' || s.status === 'InProgress') &&
+      (!stepFilter || stepFilter(s)));
   // Manager "call to me" presence — parallel to the clinical responsible party, shown to everyone.
-  const mp = visit.managerPresenceState && visit.managerPresenceState !== 'None' ? (
+  const mp = showMp && visit.managerPresenceState && visit.managerPresenceState !== 'None' ? (
     <Badge variant="light" color="slate" size="sm" style={{ whiteSpace: 'nowrap' }}>
-      {visit.managerPresenceState === 'Present' ? 'אצל' : 'נקרא ל'} {visit.managerPresenceName || 'מנהל'}
+      {visit.managerPresenceState === 'Present' ? 'בטיפול' : 'נקרא ל'} {visit.managerPresenceName || 'מנהל'}
       {visit.managerPresenceRoom ? ` · ${visit.managerPresenceRoom}` : ''}
     </Badge>
   ) : null;
   if (doctorSteps.length === 0) return mp ?? <Text c="dimmed">—</Text>;
-  const showDept = doctorSteps.length > 1;
+  // A department prefix only helps when several doctor steps share one cell (non-split, dual visit).
+  const showDept = !stepFilter && doctorSteps.length > 1;
 
   return (
     <Stack gap={4}>
       {mp}
       {doctorSteps.map((s) => {
         const name = s.claimedByName ?? s.startedByName ?? null;
-        const claimedByMe = !!s.claimedByUserId && s.claimedByUserId === currentUserId;
         // Claimable: nobody has it yet (no claim, not in treatment) and it's still a waiting/called step.
         const claimable = (s.status === 'Waiting' || s.status === 'Called') && !s.claimedByUserId && !s.startedByName;
         return (
           <Group key={s.id} gap={6} wrap="nowrap" align="center">
             {showDept && s.department && <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{s.department}:</Text>}
             {name ? (
-              <>
-                <Badge variant="light" color="slate" size="sm" style={{ whiteSpace: 'nowrap' }}>{name}</Badge>
-                {claimedByMe && (
-                  <Button size="compact-xs" variant="subtle" color="slate" onClick={() => onAction(s, 'release')}>שחרר</Button>
-                )}
-              </>
+              <Badge variant="light" color="slate" size="sm" style={{ whiteSpace: 'nowrap' }}>{name}</Badge>
             ) : canClaim && claimable ? (
-              <Button size="compact-xs" variant="light" color="slate" onClick={() => onAction(s, 'claim')}>שייך אליי</Button>
+              <Button size="compact-xs" variant="filled" color="steel" onClick={() => onAction(s, 'claim')}>שייך אליי</Button>
             ) : (
               <Text c="dimmed">—</Text>
             )}
@@ -510,19 +559,22 @@ function AutoActionIcons({
       : s.category === 'Clinician' && s.clinicianRole === track && isActive(s));
   if (matches.length === 0) return null;
   const step = matches.find((s) => s.department === visit.receptionDepartment) ?? matches[0];
+  // After the 10s announcement window a "Called" step is treated as Waiting again, so "קרא"
+  // (re-announce) reappears alongside "הכנס" (the re-render is driven by the queue page's timer).
+  const eff = effectiveStepStatus(step, nowMs());
 
   const mayAct = canActOnStep(userRoles, step.clinicianRole ?? null);
   const mayEnter = canEnterStep(userRoles, step.clinicianRole ?? null);
 
   return (
     <Group gap={6} justify="center" wrap="nowrap">
-      {step.status === 'Waiting' && mayAct && (
+      {eff === 'Waiting' && mayAct && (
         <Tooltip label="קרא"><ActionIcon variant="light" color="blue" onClick={() => onStep(step, 'call')}><IconSpeakerphone size={16} /></ActionIcon></Tooltip>
       )}
-      {(step.status === 'Waiting' || step.status === 'Called') && mayEnter && (
+      {(eff === 'Waiting' || eff === 'Called') && mayEnter && (
         <Tooltip label="הכנס"><ActionIcon variant="light" color="green" onClick={() => onStep(step, 'enter')}><IconDoorEnter size={16} /></ActionIcon></Tooltip>
       )}
-      {step.status === 'InProgress' && mayAct && (
+      {eff === 'InProgress' && mayAct && (
         <Tooltip label="סיים"><ActionIcon variant="light" color="teal" onClick={() => onStep(step, 'complete')}><IconCheck size={16} /></ActionIcon></Tooltip>
       )}
     </Group>

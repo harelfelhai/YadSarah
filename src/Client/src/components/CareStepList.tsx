@@ -1,6 +1,7 @@
-import { Badge, Button, Group, Stack, Text } from '@mantine/core';
+import { useEffect, useState } from 'react';
+import { Badge, Button, Group, Stack, Text, Tooltip } from '@mantine/core';
 import type { CareStep, CareStepAction, CareStepStatus, UserRole } from '../types';
-import { stepPrefix } from '../constants/careSteps';
+import { stepText, CALLED_DISPLAY_MS, effectiveStepStatus } from '../constants/careSteps';
 import { canActOnStep, canEnterStep } from '../constants/roles';
 
 interface Props {
@@ -17,25 +18,51 @@ interface Props {
   fallback?: React.ReactNode;
 }
 
-// Subtle, single-tone status distinction (no loud colors): a faint → light → filled progression in
-// one neutral hue, so the step state is still readable at a glance without standing out. The status
-// is also spelled out in the badge text via stepPrefix ("ממתין ל…/נקרא ל…/אצל…").
+// Subtle status distinction via a thin border, no loud fills: waiting → gray (slate) outline ·
+// called → soft amber (ochre) · in-treatment → a slightly-more-prominent green (moss) outline.
 const STEP_VARIANT: Record<CareStepStatus, string> = {
   Waiting: 'outline',
   Called: 'light',
-  InProgress: 'filled',
+  InProgress: 'outline',
   Done: 'light',
   Canceled: 'outline',
 };
+const STEP_COLOR: Record<CareStepStatus, string> = {
+  Waiting: 'slate',
+  Called: 'ochre',
+  InProgress: 'moss',
+  Done: 'pine',
+  Canceled: 'slate',
+};
+
+// Current time (ms). Wrapped at module scope so the time read isn't a bare impure call in the render
+// body (same pattern as the queue page's waitMinutes); the effect below forces the re-render that
+// flips a "נקרא" badge back once its window elapses.
+const nowMs = () => Date.now();
 
 /**
  * The live multi-dimensional status of a visit: every thing the patient is currently waiting for
- * or present at, each with who is handling it + the room, and inline call / admit / complete actions.
- * Each action is shown only for the wait that targets the current user's track (a doctor can't call,
- * admit, or complete a nurse's wait, and vice versa — mirrors the server's per-track RBAC). The
- * doctor "claim" (responsible party) lives in its own column on the queue page, not here.
+ * or present at, each with who is handling it + the room (on hover), and inline call / admit /
+ * complete actions. Each action is shown only for the wait that targets the current user's track
+ * (a doctor can't call, admit, or complete a nurse's wait, and vice versa — mirrors the server's
+ * per-track RBAC). The doctor "claim" (responsible party) lives in its own column on the queue page.
  */
 export default function CareStepList({ steps, isClinical, onAction, userRoles, hideActionButtons, fallback }: Props) {
+  // Re-render exactly when the soonest "Called" badge's 10s display window elapses, so it flips
+  // back to "בהמתנה" without waiting for the next poll / SignalR round-trip.
+  const [, force] = useState(0);
+  const now = nowMs();
+  const nextCalledExpiry = (steps ?? [])
+    .filter((s) => s.status === 'Called' && s.calledAt)
+    .map((s) => new Date(s.calledAt as string).getTime() + CALLED_DISPLAY_MS)
+    .filter((t) => t > now)
+    .reduce((min, t) => Math.min(min, t), Infinity);
+  useEffect(() => {
+    if (!Number.isFinite(nextCalledExpiry)) return;
+    const id = setTimeout(() => force((n) => n + 1), nextCalledExpiry - Date.now() + 50);
+    return () => clearTimeout(id);
+  }, [nextCalledExpiry]);
+
   const active = (steps ?? []).filter((s) => s.status !== 'Done' && s.status !== 'Canceled');
   if (active.length === 0) return <>{fallback ?? <Text c="dimmed">—</Text>}</>;
 
@@ -45,24 +72,25 @@ export default function CareStepList({ steps, isClinical, onAction, userRoles, h
   return (
     <Stack gap={4}>
       {ordered.map((s) => {
-        const who = s.status === 'Called' ? s.calledByName : s.status === 'InProgress' ? s.startedByName : null;
-        const room = s.status === 'Called' ? s.calledRoom : s.status === 'InProgress' ? s.startedRoom : null;
+        // Display-only: a Called step older than the announcement window reads as Waiting again.
+        const eff = effectiveStepStatus(s, now);
+        const who = eff === 'Called' ? s.calledByName : eff === 'InProgress' ? s.startedByName : null;
+        const room = eff === 'Called' ? s.calledRoom : eff === 'InProgress' ? s.startedRoom : null;
+        // Who + room (e.g. "ד״ר כהן · חדר 3") moved to a hover tooltip — the badge itself stays compact.
+        const detail = who || room ? `${who ?? ''}${who && room ? ' · ' : ''}${room ?? ''}` : null;
         // "קרא"/"סיים" are gated to the user's track (call/complete RBAC); "הכנס" to the enter RBAC.
         const mayAct = canActOnStep(userRoles, s.clinicianRole);
         const mayEnter = canEnterStep(userRoles, s.clinicianRole);
         return (
           <Group key={s.id} gap={6} wrap="nowrap" align="center">
-            <Badge color="slate" variant={STEP_VARIANT[s.status]} size="sm" style={{ whiteSpace: 'nowrap' }}>
-              {stepPrefix(s.status, s.category)}{s.label}
-            </Badge>
-            {(who || room) && (
-              <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                {who ?? ''}{who && room ? ' · ' : ''}{room ?? ''}
-              </Text>
-            )}
+            <Tooltip label={detail ?? ''} disabled={!detail} withArrow position="top">
+              <Badge color={STEP_COLOR[eff]} variant={STEP_VARIANT[eff]} size="sm" style={{ whiteSpace: 'nowrap' }}>
+                {stepText(eff, s.category, s.label)}
+              </Badge>
+            </Tooltip>
             {isClinical && !hideActionButtons && (
               <Group gap={4} wrap="nowrap">
-                {s.status === 'Waiting' && (
+                {eff === 'Waiting' && (
                   <>
                     {mayAct && (
                       <Button size="compact-xs" variant="subtle" color="slate" onClick={() => onAction(s, 'call')}>קרא</Button>
@@ -72,10 +100,10 @@ export default function CareStepList({ steps, isClinical, onAction, userRoles, h
                     )}
                   </>
                 )}
-                {s.status === 'Called' && mayEnter && (
+                {eff === 'Called' && mayEnter && (
                   <Button size="compact-xs" variant="light" color="slate" onClick={() => onAction(s, 'enter')}>הכנס</Button>
                 )}
-                {s.status === 'InProgress' && mayAct && (
+                {eff === 'InProgress' && mayAct && (
                   <Button size="compact-xs" variant="subtle" color="slate" onClick={() => onAction(s, 'complete')}>סיים</Button>
                 )}
               </Group>

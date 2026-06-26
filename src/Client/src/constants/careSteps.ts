@@ -38,7 +38,7 @@ export const REFERRAL_OPTIONS: string[] = REFERRAL_GROUPS.flatMap((g) => g.items
 
 // Per-step status labels + colors (same muted palette as visitStatus.ts).
 export const STEP_STATUS_LABEL: Record<CareStepStatus, string> = {
-  Waiting: 'ממתין',
+  Waiting: 'בהמתנה',
   Called: 'נקרא',
   InProgress: 'בטיפול',
   Done: 'הושלם',
@@ -53,19 +53,36 @@ export const STEP_STATUS_COLOR: Record<CareStepStatus, string> = {
   Canceled: 'slate',
 };
 
-// Verb prefix for a step line, by status + category. Clinician: "ממתין ל… / נקרא ל… / אצל…".
-// Station: "ממתין ל… / בבדיקת…".
-export function stepPrefix(status: CareStepStatus, category: 'Clinician' | 'Station'): string {
+// Full badge text for a step line, by status + category.
+// Clinician steps show ONLY the status word ("בהמתנה / נקרא / בטיפול") — the queue column header
+// (רופא / אחות) already names the track, so the role label would be redundant. Station steps keep
+// the station name, since that IS the meaningful content ("בהמתנה לאולטרסאונד / בבדיקת אולטרסאונד").
+export function stepText(status: CareStepStatus, category: 'Clinician' | 'Station', label: string): string {
+  if (category === 'Clinician') return STEP_STATUS_LABEL[status];
   switch (status) {
     case 'Waiting':
-      return 'ממתין ל';
+      return `בהמתנה ל${label}`;
     case 'Called':
-      return 'נקרא ל';
+      return `נקרא ל${label}`;
     case 'InProgress':
-      return category === 'Station' ? 'בבדיקת ' : 'אצל ';
+      return `בבדיקת ${label}`;
     case 'Done':
-      return 'הושלם: ';
+      return `הושלם: ${label}`;
     case 'Canceled':
-      return 'בוטל: ';
+      return `בוטל: ${label}`;
   }
+}
+
+// A "Called" step reads as "נקרא" only during this brief announcement window. Afterwards it reverts to
+// the waiting display AND the "קרא" action becomes available again (re-announce). This is DISPLAY-only:
+// the server status stays Called until the clinician admits the patient (and re-calling just refreshes
+// CalledAt server-side). Pass the current time in (callers wrap the time read at module scope).
+export const CALLED_DISPLAY_MS = 10_000;
+
+export function effectiveStepStatus(
+  s: { status: CareStepStatus; calledAt?: string | null }, now: number,
+): CareStepStatus {
+  return s.status === 'Called' && s.calledAt && now - new Date(s.calledAt).getTime() >= CALLED_DISPLAY_MS
+    ? 'Waiting'
+    : s.status;
 }

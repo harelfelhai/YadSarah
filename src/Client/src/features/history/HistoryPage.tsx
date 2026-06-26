@@ -13,7 +13,7 @@ import type { VisitStatus } from '../../types';
 import DateField from '../../components/DateField';
 
 const STATUS_LABEL: Record<VisitStatus, string> = {
-  Waiting: 'ממתין', Called: 'נקרא', InTreatment: 'בטיפול',
+  Waiting: 'בהמתנה', Called: 'נקרא', InTreatment: 'בטיפול',
   FinishedTreatment: 'סיים טיפול', Discharged: 'שוחרר',
 };
 const STATUS_COLOR: Record<VisitStatus, string> = {
