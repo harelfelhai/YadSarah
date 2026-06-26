@@ -85,6 +85,11 @@ export const visitsApi = {
   finishTreatment: (visitId: string) =>
     api.post<Visit>(`/visits/${visitId}/finish`, { deviceId: getOrCreateDeviceId() }),
 
+  // A doctor left the form WITHOUT signing: revert their "אצל רופא" (InProgress) step back to Waiting
+  // + soft claim, so the patient keeps waiting for that doctor (server no-ops on a mere peek).
+  leave: (visitId: string) =>
+    api.post<Visit>(`/visits/${visitId}/leave`, { deviceId: getOrCreateDeviceId() }),
+
   // Manager (Admin/ShiftManager) "call to me" presence — call (page) / enter (present) / clear.
   // Parallel to the clinical track; does NOT change the visit's "waiting-for" status.
   managerPresence: (visitId: string, action: 'call' | 'enter' | 'clear') =>

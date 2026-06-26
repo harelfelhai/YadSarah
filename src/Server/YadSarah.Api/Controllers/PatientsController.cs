@@ -93,6 +93,10 @@ public class PatientsController(AppDbContext db, AuditService audit) : Controlle
         if (patient.BirthDate is null)
             return BadRequest(new { message = "תאריך לידה הוא שדה חובה." });
 
+        // Gender is likewise required on create only (same grandfathering rationale as birth date).
+        if (string.IsNullOrWhiteSpace(patient.Gender))
+            return BadRequest(new { message = "מין הוא שדה חובה." });
+
         // Block duplicate identities — a patient with the same identity type +
         // number may not be created twice (the existing record must be reused).
         if (await IdentityExistsAsync(patient.IdentityType, patient.IdentityNumber, excludeId: null))

@@ -37,12 +37,6 @@ import type {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const STATION_OPTIONS: StationType[] = [
-  'טריאז׳', 'טריאז׳ ילדים', 'רופא ר.דחופה', 'רופא ילדים', 'רופאת הריון',
-  'רופא טראומה', 'אחות', 'אחות ילדים', 'אחות טיפולים',
-  'מעבדה', 'א.ק.ג', 'רנטגן', 'US', 'מוקד 119',
-];
-
 const TEXT_SECTION_KEYS = [
   'chiefComplaintNurse', 'chiefComplaint', 'presentIllness', 'pastMedicalHistory', 'triage',
   'physicalExam', 'discussionAndPlan', 'dischargeRecommendations', 'orderedUnits',
@@ -257,6 +251,20 @@ export default function TreatmentFormPage() {
   });
   useEffect(() => () => {
     if (finishOnExitRef.current && visitId) visitsApi.finishTreatment(visitId).catch(() => {});
+  }, [visitId]);
+
+  // Exit for a DOCTOR who entered but did NOT sign: revert their "אצל רופא" (InProgress) step back to
+  // Waiting + soft claim, so the patient keeps waiting for that doctor (parallels the non-doctor finish
+  // above, but the doctor wait ends only at signing). Guarded to an InProgress doctor step so a mere
+  // peek doesn't fire; the server additionally no-ops unless the step was started by this caller.
+  const releaseOnExitRef = useRef(false);
+  useEffect(() => {
+    const doctorTrack = hasAnyRole(user?.roles, 'Doctor', 'MedStudent');
+    releaseOnExitRef.current = doctorTrack && !activeForm?.isSigned && !!visit?.careSteps?.some(
+      (s) => s.category === 'Clinician' && s.clinicianRole === 'Doctor' && s.status === 'InProgress');
+  });
+  useEffect(() => () => {
+    if (releaseOnExitRef.current && visitId) visitsApi.leave(visitId).catch(() => {});
   }, [visitId]);
 
   // ── Derived edit-permission state ──────────────────────────────────────────
@@ -1668,7 +1676,6 @@ function RoutingEditor({ rows, locked, saving, onFocus, onSave, visit }: Routing
     validate: { station: (v) => v ? null : 'שדה חובה' },
   });
 
-  function openAdd() { onFocus(); form.reset(); setEditingId(null); setOpen(true); }
   function openEdit(row: Routing) {
     form.setValues({ station: row.station, status: row.status ?? '', arrivalDate: row.arrivalDate ?? '' });
     setEditingId(row.id); setOpen(true);
@@ -1679,6 +1686,25 @@ function RoutingEditor({ rows, locked, saving, onFocus, onSave, visit }: Routing
     const next = editingId ? localRows.map((x) => x.id === editingId ? row : x) : [...localRows, row];
     commit(next);
     setOpen(false);
+  }
+
+  // Deleting a referral row also cancels the matching ACTIVE station-test step, so the patient's
+  // "ממתין ל[תחנה]" clears in the queue. Department-moves ("רופא X"/"אחות עירוי") have no matching
+  // Station step → only the documentation row is removed (reverting a department move is out of scope).
+  async function handleDelete(row: Routing) {
+    const step = visit?.careSteps?.find((s) =>
+      s.category === 'Station' && s.status !== 'Done' && s.status !== 'Canceled' && s.label === row.station);
+    if (step && visit) {
+      try {
+        await visitsApi.updateStep(visit.id, step.id, 'cancel');
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
+        queryClient.invalidateQueries({ queryKey: ['visit', visit.id] });
+      } catch (e) {
+        notifications.show({ color: 'red', message: apiErrorMessage(e, 'ביטול ההפניה נכשל') });
+        return; // keep the row if the server-side cancel failed
+      }
+    }
+    commit(localRows.filter((x) => x.id !== row.id));
   }
 
   return (
@@ -1711,20 +1737,17 @@ function RoutingEditor({ rows, locked, saving, onFocus, onSave, visit }: Routing
           {localRows.map((row) => (
             <Table.Tr key={row.id}>
               <Table.Td>{cellText(row.station)}</Table.Td><Table.Td>{row.status ?? '—'}</Table.Td><Table.Td>{cellText(row.arrivalDate)}</Table.Td>
-              {!locked && <Table.Td><TableActions onEdit={() => openEdit(row)} onDelete={() => commit(localRows.filter((x) => x.id !== row.id))} locked={locked} /></Table.Td>}
+              {!locked && <Table.Td><TableActions onEdit={() => openEdit(row)} onDelete={() => handleDelete(row)} locked={locked} /></Table.Td>}
             </Table.Tr>
           ))}
           {localRows.length === 0 && <Table.Tr><Table.Td colSpan={4} ta="center" c="dimmed">אין הפניות</Table.Td></Table.Tr>}
         </Table.Tbody>
       </Table>
-      <Group justify="space-between">
-        <AddButton onClick={openAdd} locked={locked} />
-        {saving && <Group gap={4}><Loader size={12} /><Text size="xs" c="dimmed">שומר…</Text></Group>}
-      </Group>
-      <Modal opened={open} onClose={() => setOpen(false)} title={editingId ? 'עריכת הפניה' : 'הוספת הפניה'} size="sm">
+      {saving && <Group justify="flex-end" gap={4}><Loader size={12} /><Text size="xs" c="dimmed">שומר…</Text></Group>}
+      <Modal opened={open} onClose={() => setOpen(false)} title="עריכת הפניה" size="sm">
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack gap="xs">
-            <Select label="תחנה *" data={STATION_OPTIONS} searchable {...form.getInputProps('station')} />
+            <Select label="תחנה *" data={REFERRAL_GROUPS} searchable {...form.getInputProps('station')} />
             <TextInput label="סטטוס" {...form.getInputProps('status')} />
             <DateField label="תאריך הגעה" {...form.getInputProps('arrivalDate')} />
             <Group justify="flex-end"><Button type="submit" size="sm">שמור</Button></Group>

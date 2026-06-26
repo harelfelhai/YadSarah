@@ -39,7 +39,7 @@ export interface CareStep {
   claimedAt?: string | null;
 }
 
-export type CareStepAction = 'call' | 'enter' | 'complete' | 'claim' | 'release';
+export type CareStepAction = 'call' | 'enter' | 'complete' | 'claim' | 'release' | 'cancel';
 
 export type UserRole =
   | 'Reception' | 'Nurse' | 'Doctor' | 'Admin' | 'ShiftManager'

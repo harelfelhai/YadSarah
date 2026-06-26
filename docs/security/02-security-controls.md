@@ -544,3 +544,27 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 
 קבצים: `Application/Services/{MedicationCatalogService,DiagnosisCatalogService}.cs`,
 `Client/src/components/DateField.tsx`, `Client/src/features/treatment/TreatmentFormPage.tsx`.
+
+## 22. תיקוני זרימה: יציאת-רופא, ביטול-הפניה, וחובת שדה-מין (2026-06-26)
+
+אצווה בת 6 תיקוני-UX; שלושה נוגעים באבטחה, וכולם **מצמצמים** סיכון או משאירים את משטח-הגישה ללא שינוי
+(אין מיגרציה — כל השדות/הסטטוסים קיימים). אין PHI חדש ואין נתיב-גישה חדש לנתוני-מטופל.
+
+- **`POST /visits/{id}/leave` (חדש; Doctor/MedStudent/ShiftManager/Admin):** יציאת רופא מטופס-טיפול **ללא
+  חתימה** מחזירה את צעד-הרופא שלו מ-`InProgress` ל-`Waiting` + soft-claim — אנלוג ל-`POST /finish` של
+  הלא-רופא (§18), אך למסלול-הרופא (שהמתנתו מסתיימת רק בחתימה). השרת (`CareStepService.ReleaseDoctorPresenceAsync`)
+  מחזיר **רק** את צעד-ה-`InProgress` ש**הותחל ע"י הקורא** (`StartedByUserId == userId`) — לכן רופא שמציץ
+  בטופס של מטופל שנמצא אצל רופא אחר אינו יכול לפנות את נוכחותו (no-op). מתועד (`CareStepDoctorLeft`), משודר,
+  ואינו נוגע במחלקה/בחתימה/ב-PHI.
+- **פעולת `cancel` ב-`PATCH /visits/{id}/steps/{stepId}` (חדשה):** מחיקת שורת-הפניה בטופס מבטלת את צעד-התחנה
+  התואם, כך ש"ממתין ל[תחנה]" נעלם בתור. נאכף בשרת ש**ניתן לבטל רק צעד `Station`** (`CancelStationStepAsync`
+  זורק על קלינאי/העברת-מחלקה) — כך העברות-מחלקה/מסלול-כפול **אינן** ניתנות-להחזרה דרך נתיב זה. הוגבל
+  לתפקידי-ההפניה (Doctor/Nurse/ShiftManager/Admin/MedStudent/NursingStudent — **ללא** LabStaff, כמו ב-
+  `POST /steps`) בבדיקה פנימית, מעבר ל-`[Authorize]` הרחב של ה-endpoint. מתועד (`CareStepCancel`), משודר.
+- **מין (`Gender`) כשדה-חובה ב-`Create` בלבד:** הידוק-קלט בלקוח (`patientForm.validate`+`withAsterisk`)
+  **וגם** בשרת **רק ב-`PatientsController.Create`** (אותה תבנית כמו תאריך-לידה, §20) — רשומות-מטופל קיימות
+  ללא מין **grandfathered** (ה-`ValidatePatient` המשותף וה-`Update` לא נשברים). הסרת ה-`Alert` "קופ״ח לא
+  נשלפת" היא תצוגה בלבד — שאיבת-קופ״ח עדיין מושמטת מכוונה (`toFormValues`).
+
+קבצים: `Application/Services/CareStepService.cs`, `Api/Controllers/{VisitsController,PatientsController}.cs`,
+`Client/src/{types/index.ts,api/visits.ts,features/treatment/TreatmentFormPage.tsx,features/queue/QueuePage.tsx,features/reception/ReceptionPage.tsx}`.

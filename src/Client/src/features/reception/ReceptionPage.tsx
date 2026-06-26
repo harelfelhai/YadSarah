@@ -3,12 +3,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box, Button, Card, Grid, Group, Input, Select, Stack, Stepper, Text,
   TextInput, Checkbox, Textarea, NumberInput, Badge,
-  Alert, ActionIcon, Tooltip, Autocomplete,
+  ActionIcon, Tooltip, Autocomplete,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useQuery } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
-import { IconSearch, IconX, IconAlertCircle, IconLock } from '@tabler/icons-react';
+import { IconSearch, IconX, IconLock } from '@tabler/icons-react';
 import { DEFAULT_CITY, orderCitiesByFrequency } from '../../constants/israeliCities';
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { patientsApi } from '../../api/patients';
@@ -183,6 +183,7 @@ export default function ReceptionPage() {
       lastName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       fatherName: (v) => (!v.trim() ? 'שדה חובה (אפשר "לא ידוע")' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       birthDate: (v) => (!v?.trim() ? 'שדה חובה' : null),
+      gender: (v) => (!v?.trim() ? 'שדה חובה' : null),
       // Need 2 numbers total: טלפון 1 is always required; the second may be either
       // טלפון 2 OR the digital-contact's mobile. Any number entered must be well-formed.
       phoneMobile: (v) => phoneValidationError(v ?? '', true),
@@ -544,7 +545,7 @@ export default function ReceptionPage() {
                     <TextInput label="שם האב" withAsterisk {...patientForm.getInputProps('fatherName')} />
                   </Grid.Col>
                   <Grid.Col span={3}>
-                    <Select label="מין" data={GENDERS} clearable {...patientForm.getInputProps('gender')} />
+                    <Select label="מין" withAsterisk data={GENDERS} {...patientForm.getInputProps('gender')} />
                   </Grid.Col>
                   <Grid.Col span={4}>
                     <BirthDateField
@@ -635,11 +636,6 @@ export default function ReceptionPage() {
               <Card withBorder p="md">
                 <Group gap="xs" mb="sm">
                   <Text fw={600}>קופ"ח ודגלים</Text>
-                  {foundPatient && (
-                    <Alert icon={<IconAlertCircle size={14} />} color="orange" p="xs" radius="sm">
-                      קופת חולים לא נשלפת — יש למלא מחדש
-                    </Alert>
-                  )}
                 </Group>
                 <Grid>
                   <Grid.Col span={3}>

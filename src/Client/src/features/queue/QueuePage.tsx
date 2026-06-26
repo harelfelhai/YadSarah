@@ -248,6 +248,7 @@ export default function QueuePage() {
           <Table horizontalSpacing="md" verticalSpacing="sm" withTableBorder={false} miw={1600} styles={{ th: { whiteSpace: 'nowrap' }, td: { whiteSpace: 'nowrap' } }}>
             <Table.Thead>
               <Table.Tr>
+                <Table.Th style={{ width: 110, textAlign: 'center' }}>פעולות</Table.Th>
                 <Table.Th style={{ width: 70 }}>מס׳ תור</Table.Th>
                 <Table.Th>שם</Table.Th>
                 <Table.Th>ת.ז / מזהה</Table.Th>
@@ -259,7 +260,6 @@ export default function QueuePage() {
                 <Table.Th style={{ minWidth: 150 }}>רופא</Table.Th>
                 <Table.Th style={{ minWidth: 170 }}>בדיקות ומעבדות</Table.Th>
                 <Table.Th style={{ minWidth: 150 }}>גורם אחראי</Table.Th>
-                <Table.Th style={{ width: 110, textAlign: 'center' }}>פעולות</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -292,7 +292,16 @@ export default function QueuePage() {
                       cursor: isClinical ? 'pointer' : undefined,
                     }}
                   >
-                    <Table.Td style={{ borderInlineStart: `4px solid ${RAIL}` }}>
+                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }} style={{ borderInlineStart: `4px solid ${RAIL}`, textAlign: 'center', width: 110 }}>
+                      <AutoActionIcons
+                        visit={visit}
+                        userRoles={user?.roles}
+                        station={user?.station}
+                        onStep={(step, action) => handleStepAction(visit, step, action)}
+                        onManager={(action) => handleManagerPresence(visit, action)}
+                      />
+                    </Table.Td>
+                    <Table.Td>
                       <Group gap={4} wrap="nowrap" align="center">
                         {isSpecial(visit) && (
                           <IconStar size={16} fill="var(--mantine-color-slate-4)" color="var(--mantine-color-slate-5)" />
@@ -361,15 +370,6 @@ export default function QueuePage() {
                         canClaim={canClaim}
                         currentUserId={user?.id}
                         onAction={(step, action) => handleStepAction(visit, step, action)}
-                      />
-                    </Table.Td>
-                    <Table.Td onClick={(e) => { if ((e.target as HTMLElement).closest('button,a,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="listbox"]')) e.stopPropagation(); }} style={{ textAlign: 'center' }}>
-                      <AutoActionIcons
-                        visit={visit}
-                        userRoles={user?.roles}
-                        station={user?.station}
-                        onStep={(step, action) => handleStepAction(visit, step, action)}
-                        onManager={(action) => handleManagerPresence(visit, action)}
                       />
                     </Table.Td>
                   </Table.Tr>
@@ -489,12 +489,12 @@ function AutoActionIcons({
       <Group gap={6} justify="center" wrap="nowrap">
         {state === 'None' ? (
           <>
-            <Tooltip label="קרא אליי"><ActionIcon variant="subtle" color="slate" onClick={() => onManager('call')}><IconSpeakerphone size={16} /></ActionIcon></Tooltip>
-            <Tooltip label="הכנס אליי"><ActionIcon variant="light" color="slate" onClick={() => onManager('enter')}><IconDoorEnter size={16} /></ActionIcon></Tooltip>
+            <Tooltip label="קרא אליי"><ActionIcon variant="light" color="blue" onClick={() => onManager('call')}><IconSpeakerphone size={16} /></ActionIcon></Tooltip>
+            <Tooltip label="הכנס אליי"><ActionIcon variant="light" color="green" onClick={() => onManager('enter')}><IconDoorEnter size={16} /></ActionIcon></Tooltip>
           </>
         ) : (
           <Tooltip label={state === 'Present' ? 'נקה (אצלי)' : 'נקה (נקרא אליי)'}>
-            <ActionIcon variant="subtle" color="slate" onClick={() => onManager('clear')}><IconX size={16} /></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" onClick={() => onManager('clear')}><IconX size={16} /></ActionIcon>
           </Tooltip>
         )}
       </Group>
@@ -517,13 +517,13 @@ function AutoActionIcons({
   return (
     <Group gap={6} justify="center" wrap="nowrap">
       {step.status === 'Waiting' && mayAct && (
-        <Tooltip label="קרא"><ActionIcon variant="subtle" color="slate" onClick={() => onStep(step, 'call')}><IconSpeakerphone size={16} /></ActionIcon></Tooltip>
+        <Tooltip label="קרא"><ActionIcon variant="light" color="blue" onClick={() => onStep(step, 'call')}><IconSpeakerphone size={16} /></ActionIcon></Tooltip>
       )}
       {(step.status === 'Waiting' || step.status === 'Called') && mayEnter && (
-        <Tooltip label="הכנס"><ActionIcon variant="light" color="slate" onClick={() => onStep(step, 'enter')}><IconDoorEnter size={16} /></ActionIcon></Tooltip>
+        <Tooltip label="הכנס"><ActionIcon variant="light" color="green" onClick={() => onStep(step, 'enter')}><IconDoorEnter size={16} /></ActionIcon></Tooltip>
       )}
       {step.status === 'InProgress' && mayAct && (
-        <Tooltip label="סיים"><ActionIcon variant="subtle" color="slate" onClick={() => onStep(step, 'complete')}><IconCheck size={16} /></ActionIcon></Tooltip>
+        <Tooltip label="סיים"><ActionIcon variant="light" color="teal" onClick={() => onStep(step, 'complete')}><IconCheck size={16} /></ActionIcon></Tooltip>
       )}
     </Group>
   );

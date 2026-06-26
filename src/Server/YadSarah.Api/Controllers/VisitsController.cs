@@ -289,6 +289,25 @@ public class VisitsController(
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
+    // POST /api/visits/{id}/leave — a doctor left the medical form WITHOUT signing. Reverts their
+    // "אצל רופא" (InProgress) doctor step back to Waiting + soft claim, so the patient keeps waiting for
+    // that doctor (the doctor wait ends only at signing). Mirror of the non-doctor /finish for the doctor
+    // track; no-op if the caller has no InProgress doctor step here (a mere peek, or already signed).
+    [HttpPost("{id:guid}/leave")]
+    [Authorize(Roles = "Doctor,MedStudent,ShiftManager,Admin")]
+    public async Task<IActionResult> LeaveForm(Guid id, [FromBody] FinishNonDoctorRequest? req = null)
+    {
+        _ = req; // body (deviceId) is accepted for symmetry but unused — no room is stamped on release
+        try
+        {
+            var updated = await steps.ReleaseDoctorPresenceAsync(id, UserId);
+            await audit.LogAsync("CareStepDoctorLeft", "Visit", id, "careStep");
+            await BroadcastQueueUpdateAsync(id);
+            return Ok(updated);
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
     // PATCH /api/visits/{id}/steps/{stepId} — advance a step: call (page) / enter (admit) / complete.
     [HttpPatch("{id:guid}/steps/{stepId:guid}")]
     [Authorize(Roles = "Doctor,Nurse,ShiftManager,Admin,MedStudent,NursingStudent,LabStaff")]
@@ -321,6 +340,15 @@ public class VisitsController(
                         ? await steps.ClaimDoctorStepAsync(stepId, UserId, UserName)
                         : await steps.ReleaseDoctorClaimAsync(stepId, UserId,
                             User.IsInRole(nameof(UserRole.ShiftManager)) || User.IsInRole(nameof(UserRole.Admin)));
+                    break;
+                case "cancel":
+                    // Canceling a referral is a referrer (clinician) decision — restrict to the roles that
+                    // may CREATE a referral (exclude LabStaff), regardless of the broader authorization above.
+                    if (!(User.IsInRole(nameof(UserRole.Doctor)) || User.IsInRole(nameof(UserRole.Nurse)) ||
+                          User.IsInRole(nameof(UserRole.ShiftManager)) || User.IsInRole(nameof(UserRole.Admin)) ||
+                          User.IsInRole(nameof(UserRole.MedStudent)) || User.IsInRole(nameof(UserRole.NursingStudent))))
+                        return StatusCode(403, new { message = "אינך מורשה לבטל הפניה." });
+                    step = await steps.CancelStationStepAsync(stepId, CallerRoles);
                     break;
                 default:
                     return BadRequest(new { message = "פעולה לא חוקית." });

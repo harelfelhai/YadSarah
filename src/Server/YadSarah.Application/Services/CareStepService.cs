@@ -286,6 +286,26 @@ public class CareStepService(AppDbContext db)
         return step;
     }
 
+    /// <summary>Cancel a STATION step the patient was referred to — invoked when the referring clinician
+    /// deletes the referral row in the form, so the patient's "ממתין ל[תחנה]" disappears. ONLY a Station
+    /// step may be canceled this way; clinician / department-move steps are refused (reverting a department
+    /// reassignment / dual track is out of scope and risky). No auto-return step is created.</summary>
+    public async Task<CareStep> CancelStationStepAsync(Guid stepId, IReadOnlyCollection<UserRole> roles)
+    {
+        var step = await LoadActiveStepAsync(stepId);
+        EnsureRoleMayActOnStep(step, roles); // no-op for stations (open); guards if a clinician step slips in
+        if (step.Category != CareStepCategory.Station)
+            throw new ArgumentException("ניתן לבטל בדרך זו רק הפניה לתחנת בדיקה.");
+
+        step.Status = CareStepStatus.Canceled;
+        step.CompletedAt = DateTime.UtcNow;
+        step.UpdatedAt = DateTime.UtcNow;
+
+        await RecomputeVisitStatusAsync(step.VisitId, enterActor: null);
+        await db.SaveChangesAsync();
+        return step;
+    }
+
     /// <summary>The result of a (possibly multi-target) referral: the accepted referral labels (for the
     /// audit trail — covers stations, the general-nurse referral, and department-moves alike), the station
     /// steps created, and the department the patient was moved to if any target was a department-station.</summary>
@@ -548,6 +568,39 @@ public class CareStepService(AppDbContext db)
             var allFormsSigned = visit.Forms.Count > 0 && visit.Forms.All(f => f.IsSigned);
             visit.Status = DeriveStatus(visit.CareSteps, allFormsSigned);
             visit.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync();
+        return visit;
+    }
+
+    /// <summary>A doctor left the medical form WITHOUT signing: take them out of the live "אצל רופא"
+    /// (InProgress) state for this visit. The doctor's step reverts to Waiting and the interrupted
+    /// treatment becomes a soft claim — so the patient still shows "ממתין לד״ר X" and that doctor
+    /// resumes — exactly the vacate that already happens when a doctor enters another patient. No-op if
+    /// the caller has no InProgress doctor step here (a mere peek, or they already signed). Never touches
+    /// another professional's presence (matched on StartedByUserId).</summary>
+    public async Task<Visit> ReleaseDoctorPresenceAsync(Guid visitId, Guid userId)
+    {
+        var visit = await db.Visits.Include(v => v.CareSteps).Include(v => v.Forms)
+            .FirstOrDefaultAsync(v => v.Id == visitId)
+            ?? throw new KeyNotFoundException($"Visit {visitId} not found");
+
+        var now = DateTime.UtcNow;
+        var step = visit.CareSteps.FirstOrDefault(s =>
+            s.Category == CareStepCategory.Clinician &&
+            s.ClinicianRole == UserRole.Doctor &&
+            s.Status == CareStepStatus.InProgress &&
+            s.StartedByUserId == userId);
+        if (step is null) return visit; // nothing to release (peek / already signed / another doctor)
+
+        VacateInProgress(step, now);
+
+        if (visit.Status != VisitStatus.Discharged)
+        {
+            var allFormsSigned = visit.Forms.Count > 0 && visit.Forms.All(f => f.IsSigned);
+            visit.Status = DeriveStatus(visit.CareSteps, allFormsSigned);
+            visit.UpdatedAt = now;
         }
 
         await db.SaveChangesAsync();
