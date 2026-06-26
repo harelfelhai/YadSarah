@@ -82,7 +82,9 @@ export const CALLED_DISPLAY_MS = 10_000;
 export function effectiveStepStatus(
   s: { status: CareStepStatus; calledAt?: string | null }, now: number,
 ): CareStepStatus {
-  return s.status === 'Called' && s.calledAt && now - new Date(s.calledAt).getTime() >= CALLED_DISPLAY_MS
-    ? 'Waiting'
-    : s.status;
+  if (s.status !== 'Called') return s.status;
+  // "נקרא" only during the announcement window [0, 10s). Past it → reverts to waiting; a future-dated
+  // calledAt (clock skew / bad data) is treated as not-in-window rather than perpetually "called".
+  const elapsed = s.calledAt ? now - new Date(s.calledAt).getTime() : Infinity;
+  return elapsed >= 0 && elapsed < CALLED_DISPLAY_MS ? 'Called' : 'Waiting';
 }

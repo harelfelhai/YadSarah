@@ -448,7 +448,7 @@ const nowMs = () => Date.now();
 function effVisitStatus(v: Visit, now: number): VisitStatus {
   if (v.status !== 'Called') return v.status;
   const stillCalled = (v.careSteps ?? []).some(
-    (s) => s.status === 'Called' && s.calledAt && now - new Date(s.calledAt).getTime() < CALLED_DISPLAY_MS);
+    (s) => s.status === 'Called' && effectiveStepStatus(s, now) === 'Called');
   return stillCalled ? 'Called' : 'Waiting';
 }
 
