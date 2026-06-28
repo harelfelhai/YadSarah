@@ -297,7 +297,12 @@ export default function QueuePage() {
               {filtered.map((visit, i) => {
                 const isOtherDept = showDeptHighlight && visit.receptionDepartment !== userDept;
                 const wait = waitMinutes(visit);
-                const overdue = visit.status === 'Waiting' && wait >= OVERDUE_MIN;
+                // "Overdue" = waited long AND nobody is treating the patient right now. A derived
+                // Waiting/Called status means no step is InProgress (the patient is genuinely sitting and
+                // waiting) — so a long-waiting "נקרא" patient turns red too, while one actively in treatment
+                // (a nurse with them while the doctor wait runs long) does not. Consistent with the count strip.
+                const overdueEff = effVisitStatus(visit, now);
+                const overdue = (overdueEff === 'Waiting' || overdueEff === 'Called') && wait >= OVERDUE_MIN;
                 // Status is split into three per-track columns: nurse / doctor / everything else
                 // (stations = "בדיקות ומעבדות"). Terminal visits have no active steps, so surface the
                 // overall status once (in the nurse column) instead of three empty cells.
@@ -310,13 +315,13 @@ export default function QueuePage() {
                   : undefined;
                 const isDual = !!visit.secondaryDepartment;
 
-                // Row background: own-track / other-dept highlights take precedence; otherwise a subtle
-                // per-patient alternating stripe. Both half-rows of a dual visit share the one stripe.
+                // Row background: the own-track highlight takes precedence; otherwise a subtle per-patient
+                // alternating stripe (applied to EVERY non-myTurn row — incl. other-dept ones, which stay
+                // distinguished by the opacity dimming below — so a doctor whose board is mostly other-dept
+                // still gets stripes, like the manager view). Both half-rows of a dual visit share the stripe.
                 const rowBg = myTurn(visit)
                   ? 'var(--mantine-color-slate-1)'
-                  : isOtherDept
-                    ? 'var(--mantine-color-slate-0)'
-                    : i % 2 === 1 ? 'var(--mantine-color-slate-0)' : undefined;
+                  : i % 2 === 1 ? 'var(--mantine-color-slate-0)' : undefined;
                 const rowStyle = {
                   animationDelay: `${Math.min(i, 12) * 25}ms`,
                   opacity: isOtherDept && !myTurn(visit) ? 0.5 : 1,

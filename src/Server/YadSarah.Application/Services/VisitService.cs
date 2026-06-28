@@ -12,7 +12,7 @@ public record VisitHistoryItem(
     Guid VisitId, Guid PatientId, string PatientName, string? IdentityNumber,
     DateOnly AdmissionDate, TimeOnly? AdmissionTime, int QueueNumber, string? QueueLetter,
     string? Department, VisitStatus Status,
-    string? SignedByName, List<string> Editors, int RelatedTier);
+    string? SignedByName, List<string> Editors, int RelatedTier, DateTime? DepartedAt);
 
 /// <summary>A single page of history results plus the total count of all matching records.</summary>
 public record HistoryResult(List<VisitHistoryItem> Items, int Total, int Page, int PageSize);
@@ -175,7 +175,7 @@ public class VisitService(AppDbContext db, SettingsService settings)
                 v.Id, v.PatientId,
                 $"{v.Patient!.FirstName} {v.Patient.LastName}", v.Patient.IdentityNumber,
                 v.AdmissionDate, v.AdmissionTime, v.QueueNumber, v.QueueLetter,
-                v.ReceptionDepartment, v.Status, signedBy, editors, tier);
+                v.ReceptionDepartment, v.Status, signedBy, editors, tier, v.DepartedAt);
         }).ToList();
 
         return new HistoryResult(items, total, page, HistoryPageSize);

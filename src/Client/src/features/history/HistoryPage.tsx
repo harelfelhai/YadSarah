@@ -27,6 +27,13 @@ function fmtDate(iso?: string): string {
   return d ? `${d}/${m}/${y}` : iso;
 }
 
+// Discharge time (UTC ISO) → local HH:MM; "—" while the patient is still present (not yet discharged).
+function fmtTime(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+}
+
 export default function HistoryPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -131,7 +138,6 @@ export default function HistoryPage() {
             )}
             {isFetching && <Loader size="xs" />}
           </Group>
-          <Text size="xs" c="dimmed">המטופלים שלי בראש</Text>
         </Group>
       </Card>
 
@@ -148,7 +154,8 @@ export default function HistoryPage() {
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>תאריך</Table.Th>
-                    <Table.Th>שעה</Table.Th>
+                    <Table.Th>שעת הגעה</Table.Th>
+                    <Table.Th>שעת שחרור</Table.Th>
                     <Table.Th>מטופל</Table.Th>
                     <Table.Th>ת״ז</Table.Th>
                     <Table.Th>מחלקה</Table.Th>
@@ -166,6 +173,7 @@ export default function HistoryPage() {
                     >
                       <Table.Td style={{ whiteSpace: 'nowrap' }}>{fmtDate(v.admissionDate)}</Table.Td>
                       <Table.Td>{v.admissionTime?.slice(0, 5) ?? '—'}</Table.Td>
+                      <Table.Td>{fmtTime(v.departedAt)}</Table.Td>
                       <Table.Td>
                         <Group gap={6} wrap="nowrap">
                           <Text fw={600}>{v.patientName}</Text>

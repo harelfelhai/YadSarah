@@ -593,3 +593,21 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 
 קבצים: `Client/src/{realtime/hub.ts,layout/AppShell.tsx,features/queue/QueuePage.tsx,constants/careSteps.ts,
 components/CareStepList.tsx,features/reception/ReceptionPage.tsx}`.
+
+## 24. ליטושי-UI: סירוגין-שורות, אדום-המתנה עקבי, הדפסה-פעם-אחת, ושעת-שחרור בהיסטוריה (2026-06-28)
+
+אצווה בת 6 ליטושי-UI; חמישה בלקוח בלבד, ואחד (שעת-שחרור בהיסטוריה) מוסיף שדה-תצוגה אחד ל-DTO בשרת.
+אין נתיב-גישה חדש, אין מיגרציה, ואין הרחבת-PHI.
+
+- **שעת-שחרור בהיסטוריית-מטופלים (`Application/Services/VisitService.cs`):** ל-record
+  `VisitHistoryItem` ולהיטל נוסף `DateTime? DepartedAt` — **מטא-דאטה תפעולי** (רגע-השחרור, נקבע ב-
+  `Discharged`), **לא מזהה-מטופל ולא תוכן-קליני**. אותו endpoint `GET /api/visits/history` שכבר
+  RBAC-מוגן ומתועד (`AuditService.Searched`), עם אותה שכבת-הרשאה ומיון-לפי-צופה (§12) — אין שינוי גישה,
+  ואין PHI חדש מעבר למה שכבר מוצג שם (שם/ת״ז/מחלקה). הלקוח מציג שעה בלבד (`he-IL`, זמן-עמדה).
+- **שאר חמשת התיקונים — לקוח בלבד, ללא השלכת-אבטחה:** סירוגין-שורות בתור-הרופא + צביעת-אדום עקבית
+  לפי `effVisitStatus` (`features/queue/QueuePage.tsx`, תצוגה בלבד); פתיחת חלון-ההדפסה פעם-אחת עם
+  guard (`features/treatment/VisitSummaryPage.tsx`); כפתור "חזור לתור" (ניווט קליינט); והסרת טקסט-עזר
+  בהיסטוריה (לוגיקת-המיון בשרת ללא שינוי).
+
+קבצים: `Application/Services/VisitService.cs`, `Client/src/{api/visits.ts,features/queue/QueuePage.tsx,
+features/treatment/VisitSummaryPage.tsx,features/history/HistoryPage.tsx}`.

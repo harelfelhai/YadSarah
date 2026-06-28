@@ -16,6 +16,7 @@ export interface VisitHistoryItem {
   signedByName?: string | null;
   editors: string[];
   relatedTier: number; // 0 = treated by me, 1 = my department, 2 = other
+  departedAt?: string | null; // ISO (UTC) discharge instant; null while still present
 }
 
 export interface HistoryParams {

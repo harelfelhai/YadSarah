@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Button, Group, Loader } from '@mantine/core';
-import { IconArrowRight, IconPrinter, IconWriting } from '@tabler/icons-react';
+import { IconArrowRight, IconList, IconPrinter, IconWriting } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { visitsApi } from '../../api/visits';
 import { formsApi } from '../../api/forms';
@@ -45,17 +45,17 @@ export default function VisitSummaryPage() {
 
   const print = () => iframeRef.current?.contentWindow?.print();
 
-  // Auto-open the print dialog once the document has rendered.
+  // Auto-open the print dialog EXACTLY ONCE, when the document iframe has rendered. The iframe uses
+  // `srcDoc`, so onLoad fires once the html is ready (covering "html arrives after mount" too) — the
+  // printedRef guard then prevents a second dialog from any extra onLoad / re-render. The manual
+  // "הדפסה" button below calls print() directly and is intentionally NOT gated by this guard.
+  const printedRef = useRef(false);
   const onFrameLoad = () => {
-    if (autoPrint && html) setTimeout(print, 250);
-  };
-  // Re-run auto-print if html arrives after the iframe mounted.
-  useEffect(() => {
-    if (autoPrint && html) {
-      const t = setTimeout(() => iframeRef.current?.contentWindow?.print(), 400);
-      return () => clearTimeout(t);
+    if (autoPrint && html && !printedRef.current) {
+      printedRef.current = true;
+      setTimeout(print, 250);
     }
-  }, [autoPrint, html]);
+  };
 
   const loading = visitLoading || formsLoading;
 
@@ -66,6 +66,15 @@ export default function VisitSummaryPage() {
           חזרה
         </Button>
         <Group gap="sm">
+          {/* Back to the live queue board (distinct from "חזרה" which steps back to the form). */}
+          <Button
+            variant="light"
+            color="steel"
+            leftSection={<IconList size={16} />}
+            onClick={() => navigate('/queue')}
+          >
+            חזור לתור
+          </Button>
           {/* Unsigned form → edit it directly, exactly like a patient in the queue. */}
           {form && !form.isSigned && isClinicalStaff(roles) && (
             <Button
