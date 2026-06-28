@@ -110,7 +110,9 @@ export default function TreatmentFormPage() {
   const [signConfirm, setSignConfirm] = useState(false);
   // Default view shows only the sections the current user may edit; this reveals the
   // (already-filled) sections owned by the other professional, read-only.
-  const [showOtherFields, setShowOtherFields] = useState(false);
+  // The other professional's already-filled sections are shown read-only by DEFAULT (a doctor sees the
+  // nurse's reason-for-referral and vice versa); the toggle can hide them to declutter.
+  const [showOtherFields, setShowOtherFields] = useState(true);
   const [nowTick, setNowTick] = useState(Date.now());
 
   // Refs for serialized auto-save (always uses the latest version)
@@ -482,9 +484,10 @@ export default function TreatmentFormPage() {
           return Array.isArray(rows) && rows.length > 0;
         };
         const canEdit = (key: string) => canEditSection(user?.roles, key);
-        // Default view = the user's own (editable) sections. The toggle additionally reveals the
-        // other professional's sections that are already filled (read-only). Empty non-editable
-        // sections are never shown.
+        // The user's own (editable) sections always show. The other professional's already-filled
+        // sections show read-only BY DEFAULT (showOtherFields starts true), so a doctor sees the nurse's
+        // reason-for-referral and vice versa; the toggle can hide them. Empty non-editable sections are
+        // never shown.
         const visibleSections = SECTIONS.filter(
           ({ key }) => canEdit(key) || (showOtherFields && sectionHasContent(key)));
         const otherFilledCount = SECTIONS.filter(({ key }) => !canEdit(key) && sectionHasContent(key)).length;

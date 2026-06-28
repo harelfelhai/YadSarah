@@ -611,3 +611,17 @@ components/CareStepList.tsx,features/reception/ReceptionPage.tsx}`.
 
 קבצים: `Application/Services/VisitService.cs`, `Client/src/{api/visits.ts,features/queue/QueuePage.tsx,
 features/treatment/VisitSummaryPage.tsx,features/history/HistoryPage.tsx}`.
+
+## 25. טופס-טיפול: הצגת שדות התפקיד-השני לקריאה כברירת-מחדל (2026-06-28)
+
+שינוי-**תצוגה בלקוח בלבד** (`features/treatment/TreatmentFormPage.tsx`): סקשנים שכבר מולאו ע"י התפקיד
+השני (למשל "סיבת הפנייה — אחות" אצל הרופא, ולהפך) מוצגים כעת **לקריאה-בלבד כברירת-מחדל**, במקום מאחורי
+toggle שהיה כבוי כברירת-מחדל. (ה-toggle נשאר ומאפשר להסתירם.)
+
+- **אין שינוי הרשאות-עריכה:** `FormSectionPolicy` (§9) ללא שינוי — סקשן לא-נערך נשאר read-only
+  (`sectionReadOnly` + תג "לקריאה"), ואין נתיב-כתיבה חדש (`canEditSection` שומר על ה-RBAC בשרת ובלקוח).
+- **אין PHI/גישה חדשים:** השרת כבר החזיר את **כל** הסקשנים (`FormsController.MapForm` — ללא רידקציה-
+  לפי-תפקיד) לכל צוות-קליני המורשה לצפות בביקור, והשדות כבר היו נגישים דרך ה-toggle. השינוי רק הופך אותם
+  לגלויים כברירת-מחדל — מידע קליני חיוני לאותו צוות-טיפול (הרופא חייב לראות את סיבת-ההפניה של האחות).
+
+קובץ: `Client/src/features/treatment/TreatmentFormPage.tsx`.
