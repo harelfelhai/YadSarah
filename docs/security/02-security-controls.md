@@ -568,3 +568,28 @@ MedicationSyncService}.cs`, `Api/Services/MedicationSyncBackgroundService.cs`,
 
 קבצים: `Application/Services/CareStepService.cs`, `Api/Controllers/{VisitsController,PatientsController}.cs`,
 `Client/src/{types/index.ts,api/visits.ts,features/treatment/TreatmentFormPage.tsx,features/queue/QueuePage.tsx,features/reception/ReceptionPage.tsx}`.
+
+## 23. תיקוני זרימה: חלון "נקרא" חסין-שעון, ניווט-אופטימי, באנר-אופליין, ו-debounce ניתוב (2026-06-28)
+
+אצווה בת 4 תיקוני-זרימה **בלקוח בלבד** — אין endpoint חדש, אין payload/שדה חדש לשרת, אין מיגרציה, ואין
+נתיב-גישה חדש לנתוני-מטופל. כל גבולות-האמון בשרת (RBAC, audit, גזירת-חדר מ-`deviceId`, רשימה-סגורה)
+ללא שינוי.
+
+- **אות מצב-חיבור ב-`realtime/hub.ts` (חדש) + באנר "אין חיבור לשרת" ב-`layout/AppShell.tsx`:** ה-hub חושף
+  כעת `getConnectionOnline`/`onConnectionChange` — **בוליאני יחיד** (האם ה-socket למעלה), נגזר מאירועי-מחזור-החיים
+  של SignalR (`onreconnecting/onreconnected/onclose`/הצלחת-`start`). **אין PHI, אין token, אין נתוני-מטופל/משתמש**
+  באות. `accessTokenFactory` (קריאת `auth_token` מ-localStorage) והגבלת ה-RBAC על `JoinForm` (§15) **לא שונו**.
+  טקסט-הבאנר סטטי. זמינות/משוב-תצוגה בלבד.
+- **`cancelQueries` + ניווט-אופטימי ב-`features/queue/QueuePage.tsx`:** "הכנס" מנווט לטופס מיד והעדכון האופטימי
+  מבוטל-מירוץ מול refetch-ברקע. שינוי-תזמון-לקוח בלבד — **אותה** קריאת `PATCH /steps/{id}` (`action:enter`),
+  והשרת נשאר גבול-האמון: `EnsureMayEnter` אוכף enter-RBAC לפי-מסלול, והחדר נגזר בשרת מ-`deviceId`. אם השרת
+  דוחה — הלקוח מציג שגיאה ומסנכרן מחדש; אין חשיפת-נתון חדשה.
+- **חלון-תצוגה "נקרא" לפי זמן-תצפית-מקומי (`constants/careSteps.ts`, `components/CareStepList.tsx`):** חישוב-תצוגה
+  טהור בלקוח (10ש׳ נמדדות ממתי הדפדפן ראה לראשונה את הצעד כ-`Called`, לא מחותמת-השרת) — חסין להפרש-שעון
+  דפדפן↔שרת. אין השלכת-אבטחה (סטטוס-השרת אינו משתנה; זו תצוגה בלבד).
+- **`debounce` 2ש׳ + dedup לניתוב-מחלקה ב-`features/reception/ReceptionPage.tsx`:** אותה קריאת
+  `POST /reception/route-department` עם אותו payload (`admissionReason/age/gender` — כבר נשלחו, אין PHI חדש);
+  ה-debounce+dedup (reason+age+gender) **מצמצמים** את מספר קריאות-ה-LLM-בתשלום. אין משטח-קלט חדש.
+
+קבצים: `Client/src/{realtime/hub.ts,layout/AppShell.tsx,features/queue/QueuePage.tsx,constants/careSteps.ts,
+components/CareStepList.tsx,features/reception/ReceptionPage.tsx}`.
