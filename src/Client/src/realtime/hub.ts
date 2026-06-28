@@ -18,6 +18,29 @@ let restartTimer: ReturnType<typeof setTimeout> | null = null;
 // connect attempt (never double-start) and can both await it.
 let startPromise: Promise<void> | null = null;
 
+// ─── Live connection-state signal (drives the "offline" banner) ──────────────
+// Whether the realtime link to the server is currently up. Optimistic default (true) so the banner
+// doesn't flash before the first connect completes; flipped false on reconnecting/close/start-failure
+// and back true once (re)connected. The UI also combines this with navigator.onLine.
+let connectionOnline = true;
+const connectionListeners = new Set<(online: boolean) => void>();
+
+function setConnectionOnline(online: boolean) {
+  if (connectionOnline === online) return;
+  connectionOnline = online;
+  connectionListeners.forEach((fn) => fn(online));
+}
+
+export function getConnectionOnline(): boolean {
+  return connectionOnline;
+}
+
+/** Subscribe to realtime connection up/down transitions. Returns an unsubscribe fn. */
+export function onConnectionChange(handler: (online: boolean) => void): () => void {
+  connectionListeners.add(handler);
+  return () => connectionListeners.delete(handler);
+}
+
 // Keep trying to bring the connection back after it closes for good. A brief server
 // blip (e.g. a restart) otherwise left the default policy exhausted after ~30s and the
 // connection permanently dead — silently killing presence + live form sync until a
@@ -45,7 +68,11 @@ export function getHub(): signalR.HubConnection {
       })
       .build();
 
+    // Dropped → trying to come back: surface "offline" to the UI immediately.
+    connection.onreconnecting(() => setConnectionOnline(false));
+
     connection.onreconnected(() => {
+      setConnectionOnline(true);
       if (activeFormId) {
         connection?.invoke('JoinForm', activeFormId).catch(() => {});
       }
@@ -54,6 +81,7 @@ export function getHub(): signalR.HubConnection {
     // Closed despite auto-reconnect (or it never started) → keep trying, unless we
     // logged out on purpose.
     connection.onclose(() => {
+      setConnectionOnline(false);
       if (!intentionallyStopped) scheduleRestart();
     });
   }
@@ -72,10 +100,12 @@ function ensureConnected(): Promise<void> {
   if (hub.state === signalR.HubConnectionState.Disconnected && !startPromise) {
     startPromise = hub.start()
       .then(() => {
+        setConnectionOnline(true);
         if (activeFormId) hub.invoke('JoinForm', activeFormId).catch(() => {});
       })
       .catch((e) => {
         // Server not up yet (e.g. opened the app before the API) — retry in background.
+        setConnectionOnline(false);
         scheduleRestart();
         throw e;
       })

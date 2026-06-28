@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Group, Stack, Text, Tooltip } from '@mantine/core';
 import type { CareStep, CareStepAction, CareStepStatus, UserRole } from '../types';
-import { stepText, CALLED_DISPLAY_MS, effectiveStepStatus } from '../constants/careSteps';
+import { stepText, calledExpiry, effectiveStepStatus } from '../constants/careSteps';
 import { canActOnStep, canEnterStep } from '../constants/roles';
 
 interface Props {
@@ -53,8 +53,8 @@ export default function CareStepList({ steps, isClinical, onAction, userRoles, h
   const [, force] = useState(0);
   const now = nowMs();
   const nextCalledExpiry = (steps ?? [])
-    .filter((s) => s.status === 'Called' && s.calledAt)
-    .map((s) => new Date(s.calledAt as string).getTime() + CALLED_DISPLAY_MS)
+    .filter((s) => s.status === 'Called')
+    .map((s) => calledExpiry(s, now))
     .filter((t) => t > now)
     .reduce((min, t) => Math.min(min, t), Infinity);
   useEffect(() => {

@@ -15,7 +15,7 @@ import { isReceptionStaff, isClinicalStaff, hasAnyRole, getViewerTrack, canActOn
 import { STATUS_LABEL } from '../../constants/visitStatus';
 import { queueLabel, SPECIAL_QUEUE_LETTER, WOMENS_DEPARTMENT } from '../../constants/departments';
 import CareStepList from '../../components/CareStepList';
-import { CALLED_DISPLAY_MS, effectiveStepStatus } from '../../constants/careSteps';
+import { calledExpiry, effectiveStepStatus } from '../../constants/careSteps';
 import type { CareStep, CareStepAction, CareStepStatus, UserRole, Visit, VisitStatus } from '../../types';
 
 // A single muted, neutral rail/divider tone — no loud per-status colors (kept subtle by request).
@@ -58,6 +58,12 @@ export default function QueuePage() {
   // that track's form. The cache is updated optimistically so the status flips instantly (instead
   // of waiting for the refetch / SignalR round-trip), then reconciled with the server.
   const handleStepAction = async (visit: Visit, step: CareStep, action: CareStepAction) => {
+    // Stop any queue refetch already in flight (the 30s poll / a SignalR-triggered invalidate / the
+    // initial load) before writing the optimistic state — otherwise that stale GET resolves AFTER our
+    // optimistic update and CLOBBERS it back to the old server value. That race was why the first
+    // call/enter could appear to "do nothing" and only the second click stuck.
+    await queryClient.cancelQueries({ queryKey: ['queue'] });
+
     // Claim / release: a soft doctor assignment — no status change, just stamp/clear the claiming doctor.
     if (action === 'claim' || action === 'release') {
       const claimedByName = action === 'claim' ? (user?.fullName ?? '') : null;
@@ -85,10 +91,13 @@ export default function QueuePage() {
         ...v,
         careSteps: v.careSteps?.map((s) => s.id === step.id ? { ...s, status: optimistic, ...stamp } : s),
       }));
+    // "הכנס" opens the treatment form. Navigate IMMEDIATELY (optimistically), not after the server
+    // round-trip — on a cold backend that wait made the form appear to "not open" on the first click.
+    // The mutation continues in the background; on failure the catch surfaces it and re-syncs the queue.
+    if (action === 'enter' && step.category === 'Clinician') navigate(`/visits/${visit.id}`);
     try {
       await visitsApi.updateStep(visit.id, step.id, action);
       queryClient.invalidateQueries({ queryKey: ['queue'] });
-      if (action === 'enter' && step.category === 'Clinician') navigate(`/visits/${visit.id}`);
     } catch {
       queryClient.invalidateQueries({ queryKey: ['queue'] }); // roll back to server truth
       notifications.show({ color: 'brick', message: 'הפעולה נכשלה' });
@@ -98,6 +107,7 @@ export default function QueuePage() {
   // Manager (Admin/ShiftManager) "call to me" presence — parallel to the clinical track, does not
   // change "waiting-for". Optimistically stamps the manager's name + state, then reconciles.
   const handleManagerPresence = async (visit: Visit, action: 'call' | 'enter' | 'clear') => {
+    await queryClient.cancelQueries({ queryKey: ['queue'] }); // see handleStepAction — avoid the clobber race
     const state = action === 'call' ? 'Called' : action === 'enter' ? 'Present' : 'None';
     queryClient.setQueriesData<Visit[]>({ queryKey: ['queue'] }, (old) =>
       old?.map((v) => v.id !== visit.id ? v : {
@@ -187,8 +197,8 @@ export default function QueuePage() {
   const now = nowMs();
   const nextCalledExpiry = active
     .flatMap((v) => v.careSteps ?? [])
-    .filter((s) => s.status === 'Called' && s.calledAt)
-    .map((s) => new Date(s.calledAt as string).getTime() + CALLED_DISPLAY_MS)
+    .filter((s) => s.status === 'Called')
+    .map((s) => calledExpiry(s, now))
     .filter((t) => t > now)
     .reduce((m, t) => Math.min(m, t), Infinity);
   useEffect(() => {

@@ -79,12 +79,37 @@ export function stepText(status: CareStepStatus, category: 'Clinician' | 'Statio
 // CalledAt server-side). Pass the current time in (callers wrap the time read at module scope).
 export const CALLED_DISPLAY_MS = 10_000;
 
-export function effectiveStepStatus(
-  s: { status: CareStepStatus; calledAt?: string | null }, now: number,
-): CareStepStatus {
-  if (s.status !== 'Called') return s.status;
-  // "נקרא" only during the announcement window [0, 10s). Past it → reverts to waiting; a future-dated
-  // calledAt (clock skew / bad data) is treated as not-in-window rather than perpetually "called".
-  const elapsed = s.calledAt ? now - new Date(s.calledAt).getTime() : Infinity;
-  return elapsed >= 0 && elapsed < CALLED_DISPLAY_MS ? 'Called' : 'Waiting';
+type StepWindowInput = { id: string; status: CareStepStatus; calledAt?: string | null };
+
+// When the CLIENT first observed each step's CURRENT "Called" announcement (by step id). The 10s window
+// is measured from this LOCAL instant — never from the server's CalledAt — so it is immune to clock skew
+// between the browser and the server. Comparing the server CalledAt to the browser's Date.now() was the
+// bug: even ~2s of skew either shortened the window or (when the browser lagged the server) made CalledAt
+// look "future" and reverted "נקרא" almost instantly. Keyed also by CalledAt so a re-announce (which bumps
+// CalledAt server-side, and which the optimistic call also re-stamps) restarts the window.
+const calledObservedAt = new Map<string, { calledAt?: string | null; at: number }>();
+
+// First-observation instant (client-local) of this step's current call: records "now" the first time we
+// see this particular call, and returns it on subsequent reads. A changed CalledAt is a new call → resets.
+function observeCalled(s: StepWindowInput, now: number): number {
+  const rec = calledObservedAt.get(s.id);
+  if (rec && rec.calledAt === s.calledAt) return rec.at;
+  calledObservedAt.set(s.id, { calledAt: s.calledAt, at: now });
+  return now;
+}
+
+export function effectiveStepStatus(s: StepWindowInput, now: number): CareStepStatus {
+  if (s.status !== 'Called') {
+    calledObservedAt.delete(s.id); // no longer called → forget its window (keeps the map small)
+    return s.status;
+  }
+  // "נקרא" only during the announcement window [0, 10s) measured from when WE first saw it called.
+  return now - observeCalled(s, now) < CALLED_DISPLAY_MS ? 'Called' : 'Waiting';
+}
+
+// The client-local instant this step's "Called" window ends (Infinity when not called) — callers take the
+// soonest such instant to schedule the single re-render that flips the badge back to "בהמתנה" on time.
+export function calledExpiry(s: StepWindowInput, now: number): number {
+  if (s.status !== 'Called') return Infinity;
+  return observeCalled(s, now) + CALLED_DISPLAY_MS;
 }

@@ -6,12 +6,12 @@ import {
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconList, IconUserPlus, IconLogout, IconUsers, IconSettings, IconHistory,
-  IconShieldLock, IconMessageReport, IconClock, IconLayoutDashboard, IconChartHistogram,
+  IconShieldLock, IconMessageReport, IconClock, IconLayoutDashboard, IconChartHistogram, IconWifiOff,
 } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { hasAnyRole, rolesLabel } from '../constants/roles';
-import { startHub, stopHub } from '../realtime/hub';
+import { startHub, stopHub, getConnectionOnline, onConnectionChange } from '../realtime/hub';
 import { workstationApi } from '../api/workstation';
 import { getOrCreateDeviceId } from '../utils/deviceId';
 import Logo from '../components/Logo';
@@ -45,6 +45,54 @@ function HeaderClock() {
         {'  ·  '}
         {now.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}
       </Text>
+    </Group>
+  );
+}
+
+// A persistent banner shown while the system is offline — the browser reports no network OR the realtime
+// link to the server is down (so the board / forms are no longer receiving live updates). A short grace
+// delay avoids flashing it during a brief auto-reconnect; it clears the moment the link is back.
+function ConnectionBanner() {
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const evaluate = () => {
+      const down = !navigator.onLine || !getConnectionOnline();
+      clearTimeout(grace);
+      if (down) grace = setTimeout(() => setOffline(true), 2500); // confirm it's really down first
+      else setOffline(false);                                     // back online → clear immediately
+    };
+    const offHub = onConnectionChange(evaluate);
+    window.addEventListener('online', evaluate);
+    window.addEventListener('offline', evaluate);
+    evaluate();
+    return () => {
+      clearTimeout(grace);
+      offHub();
+      window.removeEventListener('online', evaluate);
+      window.removeEventListener('offline', evaluate);
+    };
+  }, []);
+
+  if (!offline) return null;
+  return (
+    <Group
+      gap={8}
+      justify="center"
+      wrap="nowrap"
+      mb="sm"
+      py={6}
+      px="md"
+      style={{
+        background: 'var(--mantine-color-ochre-2)',
+        color: 'var(--ink)',
+        border: '1px solid var(--mantine-color-ochre-4)',
+        borderRadius: 4,
+        fontWeight: 600,
+      }}
+    >
+      <IconWifiOff size={16} />
+      <Text size="sm">אין חיבור לשרת — ייתכן שהמידע אינו מעודכן. מנסה להתחבר מחדש…</Text>
     </Group>
   );
 }
@@ -196,6 +244,7 @@ export default function AppShellLayout({ children }: { children: ReactNode }) {
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
+        <ConnectionBanner />
         {children}
         <FeedbackWidget />
         {needsRoom && (

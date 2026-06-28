@@ -68,6 +68,11 @@ export default function ReceptionPage() {
   // Street autocomplete (city-scoped, served offline from the internal catalog)
   const [streetOptions, setStreetOptions] = useState<string[]>([]);
   const streetTimer = useRef<number | undefined>(undefined);
+  // Debounce for the AI department routing — run 2s after the user stops typing the admission reason
+  // (not only on blur). lastRoutedKey dedups an identical reason+age+gender so the debounce + a following
+  // blur don't fire the paid LLM call twice for the same input.
+  const routingTimer = useRef<number | undefined>(undefined);
+  const lastRoutedKey = useRef<string>('');
 
   // City picker ordered by registration frequency (most-used first), full catalog as the tail.
   const { data: frequentCities = [] } = useQuery({
@@ -154,6 +159,9 @@ export default function ReceptionPage() {
     setDiscountUnlocked(false);
     setDiscountApprovedBy('');
     managerCreds.current = null;
+    window.clearTimeout(routingTimer.current);
+    routingTimer.current = undefined;
+    lastRoutedKey.current = '';
     patientForm.reset();
     visitForm.reset();
     setStep(0);
@@ -315,13 +323,21 @@ export default function ReceptionPage() {
 
   const runRouting = async (reason: string) => {
     visitForm.setFieldValue('admissionReason', reason);
-    if (!reason.trim()) { return; }
+    const trimmed = reason.trim();
+    if (!trimmed) { return; }
+    const age = ageFromBirth(patientForm.values.birthDate);
+    const gender = patientForm.values.gender || undefined;
+    // Skip an identical re-route (same reason + age + gender) — so the 2s debounce and a following blur
+    // don't both hit the paid classifier for the same input. Reset on failure so a retry is allowed.
+    const key = `${trimmed}|${age ?? ''}|${gender ?? ''}`;
+    if (key === lastRoutedKey.current) return;
+    lastRoutedKey.current = key;
     setRouting(true);
     try {
       const res = await receptionApi.routeDepartment({
         admissionReason: reason,
-        age: ageFromBirth(patientForm.values.birthDate),
-        gender: patientForm.values.gender || undefined,
+        age,
+        gender,
       });
       // Routing always commits to exactly ONE department (rule/ai/fallback). Reception never picks
       // (the field is display-only); a clinician finalizes the department during treatment. The
@@ -331,10 +347,23 @@ export default function ReceptionPage() {
       visitForm.setFieldValue('departmentConfidence', res.confidence);
       visitForm.setFieldValue('departmentCandidatesJson', '');
     } catch {
+      lastRoutedKey.current = ''; // allow a retry of this same input
       notifications.show({ message: 'קביעת מחלקה נכשלה — בחר ידנית', color: 'orange' });
     } finally {
       setRouting(false);
     }
+  };
+
+  // Admission-reason typing → route the department 2s after the user stops typing (debounced), instead
+  // of only when the field loses focus. Blur still routes immediately (see the field's onBlur).
+  const handleAdmissionReasonChange = (value: string) => {
+    visitForm.setFieldValue('admissionReason', value);
+    window.clearTimeout(routingTimer.current);
+    if (!value.trim()) { routingTimer.current = undefined; return; }
+    routingTimer.current = window.setTimeout(() => {
+      routingTimer.current = undefined;
+      runRouting(value);
+    }, 2000);
   };
 
   // ── Discount / exemption manager gate ───────────────────────────────────────
@@ -669,14 +698,15 @@ export default function ReceptionPage() {
           <Stack gap="md" mt="md">
             <Card withBorder p="md">
               <Grid>
-                {/* סיבת קבלה — free text (entered first; drives the AI department routing on blur) */}
+                {/* סיבת קבלה — free text (entered first; drives the AI department routing: 2s after the
+                    user stops typing, and immediately on blur) */}
                 <Grid.Col span={6}>
                   <TextInput
                     label="סיבת קבלה"
                     withAsterisk
                     value={visitForm.values.admissionReason}
-                    onChange={(e) => visitForm.setFieldValue('admissionReason', e.currentTarget.value)}
-                    onBlur={() => runRouting(visitForm.values.admissionReason)}
+                    onChange={(e) => handleAdmissionReasonChange(e.currentTarget.value)}
+                    onBlur={() => { window.clearTimeout(routingTimer.current); routingTimer.current = undefined; runRouting(visitForm.values.admissionReason); }}
                     error={visitForm.errors.admissionReason}
                   />
                 </Grid.Col>
