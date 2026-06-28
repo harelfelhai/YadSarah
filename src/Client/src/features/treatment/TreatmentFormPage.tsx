@@ -108,11 +108,10 @@ export default function TreatmentFormPage() {
   const [localTextValues, setLocalTextValues] = useState<Record<string, string>>({});
   const [saveState, setSaveState] = useState<Record<string, SaveState>>({});
   const [signConfirm, setSignConfirm] = useState(false);
-  // Default view shows only the sections the current user may edit; this reveals the
-  // (already-filled) sections owned by the other professional, read-only.
-  // The other professional's already-filled sections are shown read-only by DEFAULT (a doctor sees the
-  // nurse's reason-for-referral and vice versa); the toggle can hide them to declutter.
-  const [showOtherFields, setShowOtherFields] = useState(true);
+  // Nurse view only: whether the doctor's read-only sections (hidden by default) are revealed via the
+  // button at the bottom of her form. The doctor view ignores this — it always shows the nurse's
+  // read-only reason at the top (see the form render below).
+  const [showOtherFields, setShowOtherFields] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
 
   // Refs for serialized auto-save (always uses the latest version)
@@ -484,80 +483,93 @@ export default function TreatmentFormPage() {
           return Array.isArray(rows) && rows.length > 0;
         };
         const canEdit = (key: string) => canEditSection(user?.roles, key);
-        // The user's own (editable) sections always show. The other professional's already-filled
-        // sections show read-only BY DEFAULT (showOtherFields starts true), so a doctor sees the nurse's
-        // reason-for-referral and vice versa; the toggle can hide them. Empty non-editable sections are
-        // never shown.
-        const visibleSections = SECTIONS.filter(
-          ({ key }) => canEdit(key) || (showOtherFields && sectionHasContent(key)));
-        const otherFilledCount = SECTIONS.filter(({ key }) => !canEdit(key) && sectionHasContent(key)).length;
-        // A nurse can't edit the doctor's reason → her hidden fields are the doctor's (and vice versa).
-        const revealLabel = canEdit('chiefComplaint') ? 'הצג שדות אחות' : 'הצג שדות רופא';
+        // Asymmetric visibility of the OTHER professional's read-only sections:
+        //  • Doctor view (can edit the doctor's reason — doctor / medstudent / manager): the nurse's
+        //    filled "סיבת הפנייה — אחות" shows read-only at the TOP by default (it is SECTIONS[0]).
+        //  • Nurse view: the doctor's filled sections are HIDDEN behind a reveal button at the BOTTOM of
+        //    her own fields (showOtherFields starts false), revealed read-only only when she opens it.
+        const isDoctorView = canEdit('chiefComplaint');
+        const otherFilled = SECTIONS.filter(({ key }) => !canEdit(key) && sectionHasContent(key));
+
+        const renderSection = ({ key, label }: { key: string; label: string }) => {
+          const readOnly = sectionReadOnly(key);
+          const heldByOther = !!locks[key] && locks[key].lockedByUserId !== user?.id;
+          const myLock = locks[key]?.lockedByUserId === user?.id;
+          const isText = TEXT_SECTION_KEYS.includes(key);
+          const edit = activeForm.fieldEdits?.[key];
+          const st = saveState[key];
+          const noPerm = !canEditSection(user?.roles, key);
+
+          return (
+            <Card key={key} withBorder p="sm" radius="md">
+              <Group gap="xs" mb="xs">
+                <Text fw={600} size="md">{label}</Text>
+                {edit && (
+                  <Tooltip label={`נערך לאחרונה ע"י ${edit.userName} — ${formatDateTime(edit.at)}`}>
+                    <IconInfoCircle size={14} color="gray" />
+                  </Tooltip>
+                )}
+                {heldByOther && (
+                  <Tooltip label={`בעריכה ע"י ${lockedBy(key)}`}>
+                    <IconLock size={14} color="red" />
+                  </Tooltip>
+                )}
+                {myLock && <IconLockOpen size={14} color="green" />}
+                {noPerm && <Badge size="xs" variant="light" color="gray">לקריאה</Badge>}
+                {st === 'saving' && <Loader size={12} />}
+                {st === 'saved' && <IconCheck size={13} color="green" />}
+              </Group>
+              {isText ? (
+                <TextSectionEditor
+                  value={localTextValues[key] ?? String((activeForm as unknown as Record<string, unknown>)[key] ?? '')}
+                  readOnly={readOnly}
+                  onFocus={() => handleFocus(key)}
+                  onChange={(v) => handleTextChange(key, v)}
+                  onBlur={() => handleTextBlur(key)}
+                />
+              ) : (
+                <TableSectionRouter
+                  sectionKey={key}
+                  form={activeForm}
+                  locked={readOnly}
+                  saving={st === 'saving'}
+                  onFocus={() => handleFocus(key)}
+                  onSave={(rows) => handleTableSave(key, rows)}
+                  visit={visit}
+                />
+              )}
+            </Card>
+          );
+        };
+
+        // Doctor view → natural order (the nurse's read-only reason is already at the top); no toggle.
+        if (isDoctorView) {
+          return (
+            <Stack gap="sm">
+              {SECTIONS.filter(({ key }) => canEdit(key) || sectionHasContent(key)).map(renderSection)}
+            </Stack>
+          );
+        }
+
+        // Nurse view → her editable sections, then a reveal button at the BOTTOM, then (when opened) the
+        // doctor's filled sections read-only.
         return (
         <Stack gap="sm">
-          {otherFilledCount > 0 && (
-            <Group justify="flex-end">
+          {SECTIONS.filter(({ key }) => canEdit(key)).map(renderSection)}
+          {otherFilled.length > 0 && (
+            <Group justify="center" mt="xs">
               <Button
-                variant="subtle"
-                size="xs"
+                variant="light"
+                size="sm"
                 color="slate"
-                leftSection={showOtherFields ? <IconEyeOff size={14} /> : <IconEye size={14} />}
+                leftSection={showOtherFields ? <IconEyeOff size={16} /> : <IconEye size={16} />}
                 onClick={() => setShowOtherFields((v) => !v)}
               >
-                {showOtherFields ? 'הסתר שדות נוספים' : `${revealLabel} (${otherFilledCount})`}
+                {showOtherFields ? 'הסתר שדות רופא' : `הצג שדות רופא (${otherFilled.length})`}
               </Button>
             </Group>
           )}
-          {visibleSections.map(({ key, label }) => {
-            const readOnly = sectionReadOnly(key);
-            const heldByOther = !!locks[key] && locks[key].lockedByUserId !== user?.id;
-            const myLock = locks[key]?.lockedByUserId === user?.id;
-            const isText = TEXT_SECTION_KEYS.includes(key);
-            const edit = activeForm.fieldEdits?.[key];
-            const st = saveState[key];
-            const noPerm = !canEditSection(user?.roles, key);
-
-            return (
-              <Card key={key} withBorder p="sm" radius="md">
-                <Group gap="xs" mb="xs">
-                  <Text fw={600} size="md">{label}</Text>
-                  {edit && (
-                    <Tooltip label={`נערך לאחרונה ע"י ${edit.userName} — ${formatDateTime(edit.at)}`}>
-                      <IconInfoCircle size={14} color="gray" />
-                    </Tooltip>
-                  )}
-                  {heldByOther && (
-                    <Tooltip label={`בעריכה ע"י ${lockedBy(key)}`}>
-                      <IconLock size={14} color="red" />
-                    </Tooltip>
-                  )}
-                  {myLock && <IconLockOpen size={14} color="green" />}
-                  {noPerm && <Badge size="xs" variant="light" color="gray">לקריאה</Badge>}
-                  {st === 'saving' && <Loader size={12} />}
-                  {st === 'saved' && <IconCheck size={13} color="green" />}
-                </Group>
-                {isText ? (
-                  <TextSectionEditor
-                    value={localTextValues[key] ?? String((activeForm as unknown as Record<string, unknown>)[key] ?? '')}
-                    readOnly={readOnly}
-                    onFocus={() => handleFocus(key)}
-                    onChange={(v) => handleTextChange(key, v)}
-                    onBlur={() => handleTextBlur(key)}
-                  />
-                ) : (
-                  <TableSectionRouter
-                    sectionKey={key}
-                    form={activeForm}
-                    locked={readOnly}
-                    saving={st === 'saving'}
-                    onFocus={() => handleFocus(key)}
-                    onSave={(rows) => handleTableSave(key, rows)}
-                    visit={visit}
-                  />
-                )}
-              </Card>
-            );
-          })}
+          {showOtherFields && otherFilled.map(renderSection)}
         </Stack>
         );
       })()}

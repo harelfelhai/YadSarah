@@ -20,8 +20,8 @@ import WorkstationSetupModal from '../components/WorkstationSetupModal';
 import type { UserRole } from '../types';
 
 const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[] = [
-  { href: '/queue', label: 'תור', icon: <IconList size={18} /> },
   { href: '/reception', label: 'קבלה ושחרור', icon: <IconUserPlus size={18} />, roles: ['Reception', 'ShiftManager', 'Admin'] },
+  { href: '/queue', label: 'תור', icon: <IconList size={18} /> },
   { href: '/history', label: 'היסטוריית מטופלים', icon: <IconHistory size={18} /> },
   { href: '/shift-status', label: 'סטטוס משמרת', icon: <IconLayoutDashboard size={18} />, roles: ['Admin', 'ShiftManager'] },
   { href: '/analytics', label: 'ניתוח נתונים', icon: <IconChartHistogram size={18} />, roles: ['Admin', 'ShiftManager'] },
