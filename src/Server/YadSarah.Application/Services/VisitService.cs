@@ -39,15 +39,18 @@ public class VisitService(AppDbContext db, SettingsService settings)
 
     public async Task<List<Visit>> GetQueueAsync(bool includeDischarged = false)
     {
-        // The queue board keeps showing every patient who hasn't been DISCHARGED — they
-        // stay on the board until discharge, even across the daily reset boundary (only the
-        // numbering resets each queue-day, not the patient list). includeDischarged ("הצג הכול")
+        // A non-discharged patient stays on the live board across the daily reset boundary — so an
+        // evening patient doesn't vanish at the 06:00 rollover — but the carry-over is bounded to the
+        // current + previous queue-day. Without that bound the board resurrects EVERY never-discharged
+        // visit in history (abandoned/forgotten-discharge visits pile up indefinitely). Only the
+        // numbering resets per queue-day, not the patient list. includeDischarged ("הצג הכול")
         // additionally surfaces patients DISCHARGED during the current queue-day.
         var queueDate = await CurrentQueueDateAsync();
+        var prevQueueDate = queueDate.AddDays(-1);
         var query = db.Visits
             .Include(v => v.Patient)
             .Include(v => v.CareSteps)
-            .AsQueryable();
+            .Where(v => v.AdmissionDate >= prevQueueDate);
         query = includeDischarged
             ? query.Where(v => v.Status != VisitStatus.Discharged || v.AdmissionDate == queueDate)
             : query.Where(v => v.Status != VisitStatus.Discharged);
