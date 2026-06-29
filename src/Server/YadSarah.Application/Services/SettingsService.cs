@@ -41,7 +41,7 @@ public class SettingsService(AppDbContext db)
     // Defaults seeded on startup so the admin screen always shows them
     private static readonly (string Key, string Value, string Description)[] Defaults =
     [
-        (QueueResetHourKey, "18", "שעת איפוס מונה התור היומי (0–23, שעון ישראל)"),
+        (QueueResetHourKey, "6", "שעת איפוס מונה התור היומי (0–23, שעון ישראל)"),
         (ShiftStartHoursKey, "07,15,23", "שעות תחילת משמרת (0–23, מופרדות בפסיק) — לקביעת מי 'במשמרת' בלוח הסטטוס"),
         (MedSyncIntervalDaysKey, "7", "תדירות סנכרון מסד התרופות (בימים)"),
         (MedApiUrlKey, MedApiUrlDefault, "כתובת API למשיכת מאגר התרופות של משרד הבריאות"),

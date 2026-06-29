@@ -39,16 +39,18 @@ public class VisitService(AppDbContext db, SettingsService settings)
 
     public async Task<List<Visit>> GetQueueAsync(bool includeDischarged = false)
     {
-        // The queue board shows the current queue-day's visits. By default only
-        // non-discharged ones (the active board); includeDischarged shows everyone
-        // admitted since the running queue started today.
+        // The queue board keeps showing every patient who hasn't been DISCHARGED — they
+        // stay on the board until discharge, even across the daily reset boundary (only the
+        // numbering resets each queue-day, not the patient list). includeDischarged ("הצג הכול")
+        // additionally surfaces patients DISCHARGED during the current queue-day.
         var queueDate = await CurrentQueueDateAsync();
         var query = db.Visits
             .Include(v => v.Patient)
             .Include(v => v.CareSteps)
-            .Where(v => v.AdmissionDate == queueDate);
-        if (!includeDischarged)
-            query = query.Where(v => v.Status != VisitStatus.Discharged);
+            .AsQueryable();
+        query = includeDischarged
+            ? query.Where(v => v.Status != VisitStatus.Discharged || v.AdmissionDate == queueDate)
+            : query.Where(v => v.Status != VisitStatus.Discharged);
         return await query.OrderBy(v => v.QueueLetter).ThenBy(v => v.QueueNumber).ToListAsync();
     }
 

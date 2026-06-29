@@ -629,3 +629,30 @@ features/treatment/VisitSummaryPage.tsx,features/history/HistoryPage.tsx}`.
 
 קובץ: `Client/src/features/treatment/TreatmentFormPage.tsx`. (שינוי נוסף ללא-אבטחה באותה אצווה: החלפת
 סדר טאבי-הניווט "קבלה ושחרור"/"תור" ב-`layout/AppShell.tsx` — תצוגה בלבד.)
+
+## 26. תיקוני קבלה/תור: שמירת מטופלים-פתוחים בתור, הידוקי-קלט בקבלה, וניתוב-אוטומטי (2026-06-29)
+
+אצווה בת 7 פריטים סביב הקבלה והתור. כולם **שומרים RBAC/audit/PHI ללא הרחבת-גישה**, וחלקם דווקא
+**מהדקים קלט**:
+
+- **חלון-התור מציג מטופלים לא-משוחררים מעבר לגבול-האיפוס (`VisitService.GetQueueAsync`):** קודם
+  הסינון היה `AdmissionDate == queueDate` בלבד, כך שביקורים פתוחים מ"יום-התור" הקודם נעלמו מהלוח
+  בשעת-האיפוס. כעת הלוח מציג **כל ביקור שלא שוחרר** (ו-`includeDischarged` מוסיף את משוחררי-היום).
+  **אין מחלקת-PHI חדשה ואין נתיב חדש** — אותו `GET /api/visits/queue` המוגן-RBAC, רק קריטריון-סינון רחב
+  יותר על אותה רשומה. רק המספור היומי מתאפס (`QueueCounter`), לא רשימת-המטופלים. ברירת-המחדל של
+  `queue.resetHour` שונתה ל-06:00 (`SettingsService`) — פרמטר-תפעולי, לא אבטחה.
+- **קופ"ח כשדה-חובה + חסימת תאריך-לידה עתידי (`ReceptionPage.validate`, `BirthDateField`):** הידוקי-קלט
+  בלבד בלקוח — שדה-חובה נוסף ל-`healthFund` (רשימה סגורה הכוללת "ללא"), ותאריך-לידה עתידי נדחה (גם
+  בשדה וגם בכלל-הולידציה). אין הרחבת over-posting/PHI/נתיב-גישה; השרת נשאר הסמכות (תאריך-לידה-חובה כבר
+  נאכף ב-`Create` — §20). זיהוי-תאריך-ללא-מפריד (`utils/hebrewDate.ts`) הוא ניתוח-קלט מקומי בלבד.
+- **ניתוב-מחלקה אוטומטי באישור טופס-מקוון (`ReceptionPage` prefill → `runRouting`):** אחרי שקבלה מאשרת
+  הגשת-אינטייק, הניתוב מורץ מיידית (במקום רק אחרי עריכה ידנית). זו **קריאת-LLM יחידה לכל אישור** (זהה
+  לטריגר-ה-blur הקיים), מאחורי אותם config-gates (`DepartmentRouting:{Enabled,ApiKey}`), עם אותו
+  collapse-to-one + fallback דטרמיניסטי — לא bulk, ולא נתיב חדש.
+- **הנחה/פטור (אישור-מנהל) — ללא שינוי-קוד:** הזרימה הקיימת (`POST /reception/authorize-discount`,
+  `AuthService.VerifyCredentialsAsync` + בדיקת תפקיד ShiftManager/Admin, rate-limited, השרת מאמת-מחדש
+  ב-create) כבר עומדת בדרישה; אומת חי בלבד.
+
+קבצים: `Application/Services/{VisitService,SettingsService}.cs`,
+`Client/src/{utils/hebrewDate.ts,components/BirthDateField.tsx,features/reception/{ReceptionPage,StickerPrint}.tsx}`.
+(`StickerPrint` — חזרה-אוטומטית לקבלה אחרי סגירת חלון-ההדפסה: תצוגה/ניווט בלבד, ללא-אבטחה.)

@@ -31,13 +31,23 @@ export default function StickerPrint({ patient, visit, onContinue, onAdmitAnothe
   // Tracks which created-visit we've already auto-printed for, so the dialog opens
   // exactly once per admission (and never re-opens on an incidental re-render).
   const printedVisitId = useRef<string | null>(null);
+  // Fire the return-to-reception exactly once when the print dialog closes.
+  const returnedRef = useRef(false);
 
   // Print via a hidden iframe (not window.open) so it can also be triggered
   // automatically on mount without being blocked as a pop-up.
   const handlePrint = () => {
     const content = printRef.current;
-    const doc = frameRef.current?.contentWindow?.document;
-    if (!content || !doc) return;
+    const win = frameRef.current?.contentWindow;
+    const doc = win?.document;
+    if (!content || !win || !doc) return;
+    // Once the print dialog closes (print OR cancel), return to a fresh reception form for the
+    // next patient. afterprint isn't universal — the on-screen buttons remain as a fallback.
+    win.onafterprint = () => {
+      if (returnedRef.current) return;
+      returnedRef.current = true;
+      onAdmitAnother();
+    };
     doc.open();
     doc.write(`
       <html dir="rtl">
@@ -65,8 +75,8 @@ export default function StickerPrint({ patient, visit, onContinue, onAdmitAnothe
         <body><div class="sticker-page">${content.innerHTML}</div></body>
       </html>`);
     doc.close();
-    frameRef.current?.contentWindow?.focus();
-    frameRef.current?.contentWindow?.print();
+    win.focus();
+    win.print();
   };
 
   // Auto-open the print dialog exactly once, only after the sticker screen for a

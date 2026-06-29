@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Text, TextInput } from '@mantine/core';
+import { Text, TextInput } from '@mantine/core';
 import { parseFlexibleDate, isoToDisplay } from '../utils/hebrewDate';
+
+/** Today as a local ISO `YYYY-MM-DD` — birth dates may not be in the future. */
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 interface BirthDateFieldProps {
   label?: string;
@@ -31,6 +37,9 @@ export default function BirthDateField({ label, value, onChange, error, withAste
   }, [value]);
 
   const parsed = parseFlexibleDate(text);
+  // A future date can't be a birth date — treat it as unresolved (emit '' so the required
+  // rule catches it) and flag it inline.
+  const isFuture = !!parsed && parsed.iso > todayIso();
 
   const emit = (iso: string) => {
     lastIso.current = iso;
@@ -40,14 +49,7 @@ export default function BirthDateField({ label, value, onChange, error, withAste
   const handleText = (raw: string) => {
     setText(raw);
     const p = parseFlexibleDate(raw);
-    emit(p ? p.iso : '');
-  };
-
-  const setToday = () => {
-    const d = new Date();
-    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    setText(isoToDisplay(iso));
-    emit(iso);
+    emit(p && p.iso <= todayIso() ? p.iso : '');
   };
 
   return (
@@ -58,18 +60,13 @@ export default function BirthDateField({ label, value, onChange, error, withAste
       value={text}
       onChange={(e) => handleText(e.currentTarget.value)}
       error={error}
-      rightSectionWidth={52}
-      rightSectionPointerEvents="auto"
-      rightSection={
-        <Button size="compact-xs" variant="subtle" px={6} onClick={setToday} tabIndex={-1}>
-          היום
-        </Button>
-      }
       description={
         text.trim()
-          ? parsed
-            ? <Text component="span" size="xs" c="teal">{isoToDisplay(parsed.iso)} · {parsed.hebrew}</Text>
-            : <Text component="span" size="xs" c="orange">לא זוהה תאריך</Text>
+          ? isFuture
+            ? <Text component="span" size="xs" c="orange">תאריך עתידי — לא תקין ללידה</Text>
+            : parsed
+              ? <Text component="span" size="xs" c="teal">{isoToDisplay(parsed.iso)} · {parsed.hebrew}</Text>
+              : <Text component="span" size="xs" c="orange">לא זוהה תאריך</Text>
           : undefined
       }
       inputWrapperOrder={['label', 'input', 'description', 'error']}

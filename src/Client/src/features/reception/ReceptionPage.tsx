@@ -73,6 +73,9 @@ export default function ReceptionPage() {
   // blur don't fire the paid LLM call twice for the same input.
   const routingTimer = useRef<number | undefined>(undefined);
   const lastRoutedKey = useRef<string>('');
+  // Seeded by the intake-prefill effect; consumed once (after runRouting is declared) to route the
+  // department immediately on approval — without referencing runRouting before it exists.
+  const intakePendingRoute = useRef<{ reason: string; birthDate?: string; gender?: string } | null>(null);
 
   // City picker ordered by registration frequency (most-used first), full catalog as the tail.
   const { data: frequentCities = [] } = useQuery({
@@ -190,8 +193,10 @@ export default function ReceptionPage() {
       firstName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       lastName: (v) => (!v.trim() ? 'שדה חובה' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
       fatherName: (v) => (!v.trim() ? 'שדה חובה (אפשר "לא ידוע")' : /[<>]/.test(v) ? 'אסור להשתמש ב-< או >' : null),
-      birthDate: (v) => (!v?.trim() ? 'שדה חובה' : null),
+      birthDate: (v) =>
+        !v?.trim() ? 'שדה חובה' : v > new Date().toLocaleDateString('en-CA') ? 'תאריך עתידי לא תקין' : null,
       gender: (v) => (!v?.trim() ? 'שדה חובה' : null),
+      healthFund: (v) => (!v?.trim() ? 'שדה חובה' : null),
       // Need 2 numbers total: טלפון 1 is always required; the second may be either
       // טלפון 2 OR the digital-contact's mobile. Any number entered must be well-formed.
       phoneMobile: (v) => phoneValidationError(v ?? '', true),
@@ -295,6 +300,11 @@ export default function ReceptionPage() {
       healthFund: s.healthFund ?? '',
     }));
     visitForm.setFieldValue('admissionReason', s.admissionReason ?? '');
+    // Approving an online form should route the department immediately — no manual edit needed. We
+    // stash the intent (raw age source + gender) and let a one-shot effect below fire runRouting once.
+    intakePendingRoute.current = (s.admissionReason ?? '').trim()
+      ? { reason: s.admissionReason ?? '', birthDate: s.birthDate, gender: s.gender || undefined }
+      : null;
     setStep(0);
     // Drop the nav state so a refresh / "admit another" doesn't re-prefill.
     window.history.replaceState({}, '');
@@ -321,12 +331,14 @@ export default function ReceptionPage() {
     return a >= 0 && a < 130 ? a : undefined;
   };
 
-  const runRouting = async (reason: string) => {
+  // `override` lets a caller pass age/gender directly (e.g. seeding from an intake submission,
+  // where the form state hasn't committed yet); otherwise we read them from the live form.
+  const runRouting = async (reason: string, override?: { age?: number; gender?: string }) => {
     visitForm.setFieldValue('admissionReason', reason);
     const trimmed = reason.trim();
     if (!trimmed) { return; }
-    const age = ageFromBirth(patientForm.values.birthDate);
-    const gender = patientForm.values.gender || undefined;
+    const age = override ? override.age : ageFromBirth(patientForm.values.birthDate);
+    const gender = override ? override.gender : (patientForm.values.gender || undefined);
     // Skip an identical re-route (same reason + age + gender) — so the 2s debounce and a following blur
     // don't both hit the paid classifier for the same input. Reset on failure so a retry is allowed.
     const key = `${trimmed}|${age ?? ''}|${gender ?? ''}`;
@@ -353,6 +365,16 @@ export default function ReceptionPage() {
       setRouting(false);
     }
   };
+
+  // One-shot: if an intake approval seeded a reason, route the department once on mount (after the
+  // prefill effect ran). Declared here so runRouting/ageFromBirth already exist.
+  useEffect(() => {
+    const p = intakePendingRoute.current;
+    if (!p) return;
+    intakePendingRoute.current = null;
+    void runRouting(p.reason, { age: ageFromBirth(p.birthDate), gender: p.gender });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Admission-reason typing → route the department 2s after the user stops typing (debounced), instead
   // of only when the field loses focus. Blur still routes immediately (see the field's onBlur).
@@ -668,7 +690,7 @@ export default function ReceptionPage() {
                 </Group>
                 <Grid>
                   <Grid.Col span={3}>
-                    <Select label="קופת חולים" data={HEALTH_FUNDS} clearable {...patientForm.getInputProps('healthFund')} />
+                    <Select label="קופת חולים" withAsterisk data={HEALTH_FUNDS} {...patientForm.getInputProps('healthFund')} />
                   </Grid.Col>
                   <Grid.Col span={9}>
                     <Checkbox

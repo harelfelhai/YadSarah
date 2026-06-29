@@ -64,6 +64,17 @@ function parseGregorian(input: string): Date | null {
   if (iso) return validGregorian(+iso[1], +iso[2], +iso[3]);
   const dmy = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/.exec(input);
   if (dmy) return validGregorian(+dmy[3], +dmy[2], +dmy[1]);
+  // Separator-less digits, resolved by length: 8 → ddmmyyyy, 6 → ddmmyy (2-digit year →
+  // 20yy if not in the future, else 19yy). Lets the clerk type "01012020" / "010120".
+  const digits = /^(\d{6}|\d{8})$/.exec(input);
+  if (digits) {
+    const d = +input.slice(0, 2);
+    const mo = +input.slice(2, 4);
+    if (input.length === 8) return validGregorian(+input.slice(4), mo, d);
+    const yy = +input.slice(4);
+    const year = yy <= new Date().getFullYear() % 100 ? 2000 + yy : 1900 + yy;
+    return validGregorian(year, mo, d);
+  }
   return null;
 }
 
