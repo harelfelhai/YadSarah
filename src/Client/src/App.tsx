@@ -1,7 +1,8 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MantineProvider } from '@mantine/core';
-import { Notifications } from '@mantine/notifications';
+import { Notifications, notifications } from '@mantine/notifications';
+import ErrorBoundary from './components/ErrorBoundary';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import '@mantine/charts/styles.css';
@@ -27,7 +28,29 @@ import PatientEditPage from './features/reception/PatientEditPage';
 import PublicIntakePage from './features/intake/PublicIntakePage';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 10_000 } },
+  // Surface failures instead of letting them fail silently: when a query errors after its retries,
+  // show a single toast. 401 is excluded — the api client already clears the token and redirects, so
+  // toasting over the redirect would be noise. Mutations keep their own per-call onError handlers.
+  queryCache: new QueryCache({
+    onError: (error) => {
+      const status = (error as { status?: number }).status;
+      if (status === 401) return;
+      notifications.show({ color: 'red', message: (error as Error).message || 'אירעה שגיאה בטעינת נתונים מהשרת.' });
+    },
+  }),
+  defaultOptions: {
+    queries: {
+      staleTime: 10_000,
+      // Retry transient/network/5xx failures a few times with exponential backoff, but NOT 4xx —
+      // a 403/404 won't fix itself, so retrying it just delays the error the user needs to see.
+      retry: (failureCount, error) => {
+        const status = (error as { status?: number }).status;
+        if (status && status >= 400 && status < 500) return false;
+        return failureCount < 3;
+      },
+      retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10_000),
+    },
+  },
 });
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -57,9 +80,14 @@ export default function App() {
   return (
     <MantineProvider theme={theme} defaultColorScheme="light">
       <Notifications position="top-center" />
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <Routes>
+      {/* App-wide safety net: ANY render crash on ANY page is contained as a recoverable panel and
+          reported to the server log — never a white screen. Inside MantineProvider so the fallback
+          is themed; the finer-grained boundary inside the treatment form still handles section-level
+          crashes locally. */}
+      <ErrorBoundary title="אירעה שגיאה במערכת — נסו לרענן את הדף">
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <Routes>
             <Route path="/login" element={<LoginPage />} />
             {/* Public, no-login patient self-service intake (reached via the QR at reception). */}
             <Route path="/intake" element={<PublicIntakePage />} />
@@ -89,9 +117,10 @@ export default function App() {
                 </RequireAuth>
               }
             />
-          </Routes>
-        </BrowserRouter>
-      </QueryClientProvider>
+            </Routes>
+          </BrowserRouter>
+        </QueryClientProvider>
+      </ErrorBoundary>
     </MantineProvider>
   );
 }

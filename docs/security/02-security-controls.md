@@ -658,3 +658,42 @@ features/treatment/VisitSummaryPage.tsx,features/history/HistoryPage.tsx}`.
 קבצים: `Application/Services/{VisitService,SettingsService}.cs`,
 `Client/src/{utils/hebrewDate.ts,components/BirthDateField.tsx,features/reception/{ReceptionPage,StickerPrint}.tsx}`.
 (`StickerPrint` — חזרה-אוטומטית לקבלה אחרי סגירת חלון-ההדפסה: תצוגה/ניווט בלבד, ללא-אבטחה.)
+
+## 27. הקשחת עמידות-תפעולית: בריאות, ניסיון-חוזר ל-DB, ודיווח-קריסות-לקוח (2026-06-29)
+
+אצווה שמטרתה **רציפות-תפקוד** (עמידוּת מול באגי-שימוש ותקלות-תשתית), לא הרחבת-גישה. רוב הפריטים
+חסרי היבט-אבטחה (זמינות בלבד); שניים מוסיפים נתיב חדש ולכן מתועדים כאן במפורש:
+
+- **נקודת-קצה ציבורית חדשה לדיווחי-קריסה בלקוח (`POST /api/client-errors`, `ClientErrorController`,
+  `[AllowAnonymous]`, כתיבה-בלבד):** ה-error-boundary השורשי של React שולח לכאן את עקבות-המחסנית של
+  קריסת-רינדור, כדי שתופיע ביומן-השרת (Render) במקום למות בשקט ב-console של המשתמש. **חסום היטב:**
+  מדיניות rate-limit ייעודית `clientErrors` (30/דק'/IP, ב-`Program.cs`); תקרת-אורך קשיחה לכל שדה
+  (`[StringLength]` ב-DTO → 400 על חריגה, מונע הצפת-יומן); ו**ניקוי תווי-בקרה** (CR/LF וכו') מכל טקסט
+  לפני הרישום — מניעת *log-forging*. הדיווח נכתב **ליומן-היישום בלבד**: אינו נשמר ב-DB, אינו מוחזר
+  ללקוח, ו**אינו נוגע ביומן-הביקורת ולא בשום מאגר-PHI**. הצמדת-המשתמש נעשית מה-token אם נשלח (האימות
+  עדיין רץ תחת `[AllowAnonymous]`), אחרת "אנונימי". **שיקול-PHI:** הודעת-קריסה עלולה להכיל PHI אגבי,
+  ולכן יומן-השרת נושא את **אותו גבול-אמון** כשאר לוגי-השרת (אין אגרגציה חיצונית; ה-stdout נאסף ע"י
+  הפלטפורמה בלבד). במכוון **לא** נבחר שירות-שגיאות חיצוני (Sentry) — שליחת עקבות-מחסנית מטופס רפואי
+  החוצה היא דליפת-פרטיות.
+- **`GET /health` (`MapHealthChecks`, אנונימי, פטור מ-rate-limit):** בודק חיוּת + הישׂגוּת-DB
+  (`AddDbContextCheck`) כדי שהפלטפורמה תזהה מופע תקוע/מנותק-DB ותאתחל — במקום לבדוק את קליפת-ה-SPA
+  הסטטית. **אינו חושף PHI ולא פרטים-פנימיים** — ברירת-המחדל מחזירה טקסט-סטטוס בלבד (`Healthy`/
+  `Unhealthy`). הפטור מ-rate-limit בטוח: בדיקה בעלות-קבועה, ללא-PHI, ללא קלט.
+- **עמידוּת-DB ואתחול (`Program.cs`):** `EnableRetryOnFailure` + `CommandTimeout(30)` על ה-DbContext,
+  ולולאת-ניסיון-חוזר חסומה סביב `Database.Migrate()` באתחול. זמינות בלבד — אין שינוי הרשאות/קלט/PHI.
+- **רשת-ביטחון בלקוח (`App.tsx`, `ErrorBoundary`, QueryClient):** error-boundary שורשי שמכיל כל
+  קריסת-רינדור (במקום מסך-לבן) + ניסיון-חוזר-מדורג לשאילתות (לא ל-4xx). שינוי תצוגה/חוסן בלבד; השרת
+  נשאר גבול-האמון לכל גישה.
+
+קבצים: `Api/Program.cs`, `Api/Controllers/ClientErrorController.cs`, `Api/YadSarah.Api.csproj`,
+`render.yaml`, `Client/src/{App.tsx,api/errors.ts,components/ErrorBoundary.tsx,features/treatment/TreatmentFormPage.tsx}`.
+
+## 28. כותרות-Cache להגשת ה-SPA (2026-06-30)
+
+הגשת ה-SPA מ-wwwroot (`Program.cs`, `UseStaticFiles`+`MapFallbackToFile`) מקבלת כותרות-Cache: ה-shell
+`index.html` מוגש `no-cache, no-store, must-revalidate` (הדפדפן תמיד מאמת מול השרת → פריסה חדשה
+נתפסת מיד, בלי גרסה תקועה ב-cache / בלי רענון-קשיח), והקבצים תחת `/assets` (שמות-קובץ עם hash-תוכן,
+immutable) מקבלים `public, max-age=31536000, immutable`. **ללא היבט-אבטחה:** הכותרות חלות על
+**קבצים-סטטיים ציבוריים בלבד** (קליפת-ה-SPA + JS/CSS עם hash) — אין בהם PHI ואין סודות (ה-JWT-secret/
+מחרוזת-ה-DB/מפתח-ה-LLM הם env-vars בצד-שרת, לעולם לא ב-bundle). אין נגיעה ב-RBAC/audit/קלט/DB;
+`no-store` על ה-shell הוא דווקא שמרני יותר.

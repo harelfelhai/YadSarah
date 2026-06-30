@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { Alert, Button, Stack, Text } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
+import { reportClientError } from '../api/errors';
 
 interface Props {
   children: ReactNode;
@@ -27,6 +28,15 @@ export default class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo) {
     // eslint-disable-next-line no-console
     console.error('ErrorBoundary caught an error:', error, info.componentStack);
+    // Ship the crash to the server log so an operator can SEE it (Render) instead of it dying in the
+    // user's console. Best-effort — reportClientError never throws and never blocks.
+    reportClientError({
+      message: error.message,
+      stack: error.stack ?? undefined,
+      componentStack: info.componentStack ?? undefined,
+      url: window.location.href,
+      userAgent: navigator.userAgent,
+    });
   }
 
   reset = () => this.setState({ error: null });

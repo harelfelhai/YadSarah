@@ -81,6 +81,16 @@ function cellText(v: unknown, dash = '—'): string {
   return String(v);
 }
 
+// Defensive read of a JSON table-section by key: always an array of plain objects — never null and
+// never a poisoned scalar/legacy row of the wrong shape. Pairs with cellText (which sanitizes each
+// cell): this guards the ROW level so a bad row can't throw while building the print HTML, which
+// runs in a click handler where React error boundaries can't catch it.
+function tableRows(form: MedicalForm, key: string): Record<string, unknown>[] {
+  const raw = (form as unknown as Record<string, unknown>)[key];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((r): r is Record<string, unknown> => r != null && typeof r === 'object');
+}
+
 // The form serving a department track. A pre-dual single form has a null department, so it
 // stands in for the primary track.
 function formForDept(list: MedicalForm[], dept: string, primaryDept?: string): MedicalForm | undefined {
@@ -932,8 +942,8 @@ function printForm(form: MedicalForm, visit: import('../../types').Visit) {
         parts.push(`<section><h2>${esc(label)}</h2><p>${esc(val).replace(/\n/g, '<br/>')}</p></section>`);
       }
     } else {
-      const rows = (form as unknown as Record<string, unknown[]>)[key];
-      if (Array.isArray(rows) && rows.length > 0) {
+      const rows = tableRows(form, key);
+      if (rows.length > 0) {
         parts.push(renderTablePrint(label, key, rows, esc));
       }
     }

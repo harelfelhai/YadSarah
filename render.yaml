@@ -9,7 +9,7 @@ services:
     region: frankfurt              # closest Render region to Israel
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /
+    healthCheckPath: /health        # real readiness probe (verifies DB) — not the static SPA shell
     autoDeploy: true
     envVars:
       - key: ASPNETCORE_ENVIRONMENT

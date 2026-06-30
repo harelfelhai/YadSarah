@@ -16,8 +16,22 @@ var builder = WebApplication.CreateBuilder(args);
 // Accept either an Npgsql key-value string or a postgres:// URL — managed hosts
 // (Render/Neon) hand out the URL form, which Npgsql does not parse natively.
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseNpgsql(NormalizePostgresConnectionString(
-        builder.Configuration.GetConnectionString("Default"))));
+    opt.UseNpgsql(
+        NormalizePostgresConnectionString(builder.Configuration.GetConnectionString("Default")),
+        npgsql =>
+        {
+            // Connection resiliency: a transient Postgres blip (brief network hiccup, managed-host
+            // failover/maintenance, a just-woken free instance) retries a few times with backoff
+            // instead of failing the request outright. Safe here because the app uses no explicit
+            // multi-statement transactions (BeginTransaction), which the retrying execution strategy
+            // would reject — verified across the solution.
+            npgsql.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorCodesToAdd: null);
+            // Bound a single command so a pathological/locked query can't hang a request forever.
+            npgsql.CommandTimeout(30);
+        }));
 
 // ── Services ───────────────────────────────────────────────────────────────
 builder.Services.AddScoped<AuthService>();
@@ -145,6 +159,13 @@ builder.Services.AddControllers()
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// ── Health checks (real readiness signal for the host / load-balancer) ─────
+// Verifies the app can actually reach the database — so the platform (Render) can tell a
+// hung or DB-disconnected instance from a healthy one and restart it, instead of probing
+// the static SPA shell (which stays "up" even when the API is dead). Exposed at /health below.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>("database");
+
 // ── Rate limiting (brute-force / abuse protection) ─────────────────────────
 builder.Services.AddRateLimiter(opt =>
 {
@@ -156,6 +177,18 @@ builder.Services.AddRateLimiter(opt =>
         factory: _ => new FixedWindowRateLimiterOptions
         {
             PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
+    // Client-side crash reports (anonymous /api/client-errors) — per-IP cap. A genuine render bug
+    // can fire a small burst (a few boundaries + retries); this bounds a flood that would spam the
+    // server log without dropping real reports.
+    opt.AddPolicy("clientErrors", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        factory: _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0,
         }));
@@ -214,15 +247,36 @@ builder.Services.AddCors(opt => opt.AddDefaultPolicy(p =>
 
 var app = builder.Build();
 
-// ── Migrate on startup ─────────────────────────────────────────────────────
-using (var scope = app.Services.CreateScope())
+// ── Migrate on startup (bounded retry) ─────────────────────────────────────
+// A managed Postgres (Render free tier) can be unreachable for several seconds exactly at boot —
+// freshly provisioned, or waking from idle. Without a retry the app crash-loops on the very first
+// connection and the whole service never comes up. Retry with backoff before giving up; if it
+// still fails after all attempts, let it throw so the platform surfaces a failed start (a restart
+// is the right move when the DB is genuinely gone) rather than serving a half-initialized app.
 {
-    var dbCtx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    dbCtx.Database.Migrate();
-    await scope.ServiceProvider.GetRequiredService<SettingsService>().EnsureDefaultsAsync();
-    // Seed the curated Hebrew ED diagnosis catalog on first run (closed picker needs a
-    // catalog to be usable; no live Hebrew ICD source exists). No-op once populated.
-    await scope.ServiceProvider.GetRequiredService<DiagnosisCatalogService>().SeedDefaultsAsync();
+    const int maxAttempts = 10;
+    for (var attempt = 1; ; attempt++)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var dbCtx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            dbCtx.Database.Migrate();
+            await scope.ServiceProvider.GetRequiredService<SettingsService>().EnsureDefaultsAsync();
+            // Seed the curated Hebrew ED diagnosis catalog on first run (closed picker needs a
+            // catalog to be usable; no live Hebrew ICD source exists). No-op once populated.
+            await scope.ServiceProvider.GetRequiredService<DiagnosisCatalogService>().SeedDefaultsAsync();
+            break;
+        }
+        catch (Exception ex) when (attempt < maxAttempts)
+        {
+            var delay = TimeSpan.FromSeconds(Math.Min(30, attempt * 3));
+            app.Logger.LogWarning(ex,
+                "Startup DB initialization failed (attempt {Attempt}/{Max}); retrying in {Delay}s.",
+                attempt, maxAttempts, delay.TotalSeconds);
+            await Task.Delay(delay);
+        }
+    }
 }
 
 // Behind a TLS-terminating proxy (Render) the app receives plain HTTP with the real scheme in
@@ -276,17 +330,34 @@ app.UseSecurityHeaders();
 
 // Serve the bundled React SPA (copied into wwwroot by the Docker build). Static assets
 // are public and served before the rate limiter so a page's asset burst isn't throttled.
+// Caching: the index.html shell is `no-cache` so the browser always revalidates and picks up a
+// new deploy's hashed-asset references immediately (no stale app after deploy / no hard-refresh).
+// The Vite-emitted, content-hashed files under /assets are immutable → cache them aggressively.
+var spaCache = new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var headers = ctx.Context.Response.Headers;
+        if (ctx.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase))
+            headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        else if (ctx.Context.Request.Path.StartsWithSegments("/assets"))
+            headers["Cache-Control"] = "public, max-age=31536000, immutable";
+    },
+};
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(spaCache);
 
 app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+// Liveness/readiness probe — anonymous, and exempt from the rate limiter so a frequent
+// health poll is never throttled. Returns 200 only when the DB check passes (see above).
+app.MapHealthChecks("/health").DisableRateLimiting();
 app.MapHub<MainHub>("/hubs/main");
 // Client-side routes (e.g. /queue) on full page load fall through to the SPA shell.
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", spaCache);
 
 app.Run();
 
