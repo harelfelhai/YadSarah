@@ -55,6 +55,15 @@ export const theme = createTheme({
 
   fontFamily: 'Assistant, "Segoe UI", Arial, sans-serif',
   fontFamilyMonospace: 'ui-monospace, "Cascadia Code", Consolas, monospace',
+  // Nudge the SMALL steps up a touch for legibility (xs 12→13, sm 14→15) without growing
+  // md/lg/xl — so dense layouts (tables/badges) shift only ~1px. md+ stay at Mantine defaults.
+  fontSizes: {
+    xs: '0.8125rem', // 13px (was 12)
+    sm: '0.9375rem', // 15px (was 14)
+    md: '1rem',      // 16px
+    lg: '1.125rem',  // 18px
+    xl: '1.25rem',   // 20px
+  },
   headings: {
     fontFamily: '"Frank Ruhl Libre", Georgia, serif',
     fontWeight: '700',

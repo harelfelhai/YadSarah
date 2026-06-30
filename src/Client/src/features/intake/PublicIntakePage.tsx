@@ -205,7 +205,9 @@ export default function PublicIntakePage() {
               <TextInput
                 label="מספר תעודה"
                 withAsterisk={!noId}
-                inputMode="numeric"
+                // Passport numbers contain letters — give those a full keyboard on mobile
+                // (a numeric keypad would block letters); IDs / insurance numbers stay numeric.
+                inputMode={form.values.identityType === 'דרכון' ? 'text' : 'numeric'}
                 disabled={noId}
                 placeholder={noId ? 'מספר זמני יוקצה בדלפק הקבלה' : undefined}
                 {...form.getInputProps('identityNumber')}
