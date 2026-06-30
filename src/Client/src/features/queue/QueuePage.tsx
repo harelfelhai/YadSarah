@@ -24,6 +24,11 @@ const RAIL = 'var(--mantine-color-slate-3)';
 // A waiting patient past this many minutes is "overdue" → the wait chip gets a subtle emphasis.
 const OVERDUE_MIN = 30;
 
+// Per-request: a few queue columns (id/age/reason/department + the 3 status columns + responsible
+// party) render 1.5× larger via CSS zoom — scales their text AND any badges/labels uniformly,
+// which a font-size bump can't (Mantine sizes are rem-based, not em-relative to the cell).
+const BIG_COL = 1.5;
+
 
 export default function QueuePage() {
   const navigate = useNavigate();
@@ -364,21 +369,21 @@ export default function QueuePage() {
                         {visit.patient ? `${visit.patient.firstName} ${visit.patient.lastName}` : '—'}
                       </Text>
                     </Table.Td>
-                    <Table.Td rowSpan={rowSpan} style={{ fontVariantNumeric: 'tabular-nums' }}>{visit.patient?.identityNumber ?? '—'}</Table.Td>
-                    <Table.Td rowSpan={rowSpan} style={{ fontVariantNumeric: 'tabular-nums' }}>{calcAge(visit.patient?.birthDate)}</Table.Td>
+                    <Table.Td rowSpan={rowSpan} style={{ fontVariantNumeric: 'tabular-nums', zoom: BIG_COL }}>{visit.patient?.identityNumber ?? '—'}</Table.Td>
+                    <Table.Td rowSpan={rowSpan} style={{ fontVariantNumeric: 'tabular-nums', zoom: BIG_COL }}>{calcAge(visit.patient?.birthDate)}</Table.Td>
                     <Table.Td rowSpan={rowSpan}>{waitChip(visit, wait, overdue)}</Table.Td>
-                    <Table.Td rowSpan={rowSpan}>{visit.admissionReason ?? '—'}</Table.Td>
+                    <Table.Td rowSpan={rowSpan} style={{ zoom: BIG_COL }}>{visit.admissionReason ?? '—'}</Table.Td>
                   </>
                 );
 
                 // Department label — uniform tone, no border (a single consistent look for every dept).
                 const deptCell = (name?: string | null) => (
-                  <Table.Td>
+                  <Table.Td style={{ zoom: BIG_COL }}>
                     {name ? <Badge variant="light" color="slate" size="sm">{name}</Badge> : <Text c="dimmed">—</Text>}
                   </Table.Td>
                 );
                 const stepsCell = (steps: CareStep[], fallback?: React.ReactNode) => (
-                  <Table.Td onClick={guard}>
+                  <Table.Td onClick={guard} style={{ zoom: BIG_COL }}>
                     <CareStepList
                       steps={steps}
                       isClinical={isClinical}
@@ -390,7 +395,7 @@ export default function QueuePage() {
                   </Table.Td>
                 );
                 const respCell = (stepFilter?: (s: CareStep) => boolean, showMp = true) => (
-                  <Table.Td onClick={guard}>
+                  <Table.Td onClick={guard} style={{ zoom: BIG_COL }}>
                     <ResponsibleParty
                       visit={visit}
                       canClaim={canClaim}
