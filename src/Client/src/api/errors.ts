@@ -11,6 +11,10 @@ export interface ClientErrorReport {
   componentStack?: string;
   url: string;
   userAgent: string;
+  /** Server correlation id ("מספר תקלה") when the crash originated from a failed API call. */
+  correlationId?: string;
+  /** 'Info' | 'Warning' | 'Error' | 'Fatal' — defaults to Error server-side when omitted. */
+  severity?: string;
 }
 
 export function reportClientError(report: ClientErrorReport): void {

@@ -7,6 +7,7 @@ import { useDisclosure } from '@mantine/hooks';
 import {
   IconList, IconUserPlus, IconLogout, IconUsers, IconSettings, IconHistory,
   IconShieldLock, IconMessageReport, IconClock, IconLayoutDashboard, IconChartHistogram, IconWifiOff,
+  IconBug,
 } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
@@ -28,6 +29,7 @@ const NAV: { href: string; label: string; icon: ReactNode; roles?: UserRole[] }[
   { href: '/admin/users', label: 'ניהול משתמשים', icon: <IconUsers size={18} />, roles: ['Admin', 'ShiftManager'] },
   { href: '/admin/settings', label: 'הגדרות מערכת', icon: <IconSettings size={18} />, roles: ['Admin'] },
   { href: '/admin/feedback', label: 'דיווחי משתמשים', icon: <IconMessageReport size={18} />, roles: ['Admin'] },
+  { href: '/admin/errors', label: 'שגיאות מערכת', icon: <IconBug size={18} />, roles: ['Admin'] },
   { href: '/admin/audit', label: 'יומן ביקורת', icon: <IconShieldLock size={18} />, roles: ['Admin'] },
 ];
 

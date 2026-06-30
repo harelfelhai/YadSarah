@@ -3,14 +3,32 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using YadSarah.Application.Services;
 using YadSarah.Infrastructure.Data;
 using YadSarah.Api.Hubs;
 using YadSarah.Api.Middleware;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ── Structured logging ─────────────────────────────────────────────────────
+// Serilog → stdout (captured by Render). Compact JSON in non-Development for machine parsing
+// (search by CorrelationId/user/level); a readable template in Development. stdout is the PRIMARY
+// and ONLY Serilog sink — error→DB persistence (ErrorReport) is a SEPARATE best-effort path, so
+// logging keeps working even when the DB (the thing that usually fails) is down. LogContext carries
+// the per-request CorrelationId stamped by CorrelationIdMiddleware.
+builder.Host.UseSerilog((ctx, cfg) =>
+{
+    cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
+    if (ctx.HostingEnvironment.IsDevelopment())
+        cfg.WriteTo.Console();
+    else
+        cfg.WriteTo.Console(new CompactJsonFormatter());
+});
 
 // ── Database ───────────────────────────────────────────────────────────────
 // Accept either an Npgsql key-value string or a postgres:// URL — managed hosts
@@ -67,8 +85,23 @@ builder.Services.AddHttpClient<IDepartmentClassifier, YadSarah.Api.Services.LlmD
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<YadSarah.Api.Services.FormPresenceService>();
 
-// Sanitized error responses (no stack traces) in production
-builder.Services.AddProblemDetails();
+// Sanitized error responses (no stack traces) in production. Surface the request correlation id
+// ("מספר תקלה") in the body so support can cross-reference it against the server log / ErrorReport.
+builder.Services.AddProblemDetails(opt =>
+    opt.CustomizeProblemDetails = ctx =>
+    {
+        var id = CorrelationId.Get(ctx.HttpContext);
+        if (!string.IsNullOrEmpty(id)) ctx.ProblemDetails.Extensions["correlationId"] = id;
+    });
+
+// Observe + persist every unhandled exception (logs with correlation id, writes a server ErrorReport);
+// returns false so ProblemDetails still produces the sanitized response.
+builder.Services.AddExceptionHandler<YadSarah.Api.Infrastructure.GlobalExceptionHandler>();
+
+// Captures client crashes + unhandled server exceptions into the ErrorReport table (admin board).
+builder.Services.AddScoped<ErrorReportService>();
+// Prunes the ErrorReport table on a retention schedule (age + hard row cap).
+builder.Services.AddHostedService<YadSarah.Api.Services.ErrorReportRetentionBackgroundService>();
 
 // In-memory store for the per-manager discount re-auth throttle (VisitsController.Create) —
 // keyed on the target manager username, independent of the (spoofable) client IP.
@@ -145,7 +178,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddSignalR();
+// Hub filter centralizes logging of exceptions thrown by any hub method.
+builder.Services.AddSignalR(o => o.AddFilter<YadSarah.Api.Hubs.HubErrorFilter>());
 builder.Services.AddControllers()
     .AddJsonOptions(opts =>
     {
@@ -313,6 +347,15 @@ if (knownProxyCidrs is { Length: > 0 })
 }
 app.UseForwardedHeaders(forwardedOptions);
 
+// Correlation id first — so every log line, ProblemDetails body, and persisted ErrorReport for this
+// request share one id. Must precede the exception handler and everything downstream.
+app.UseCorrelationId();
+
+// Run the exception handler in ALL environments so unhandled exceptions are logged (structured) and
+// persisted as server ErrorReports in Development too — not only in production. ProblemDetails emits
+// the sanitized body; GlobalExceptionHandler only observes + records.
+app.UseExceptionHandler();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -320,8 +363,7 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    // Sanitized ProblemDetails (no stack traces) + HTTP Strict Transport Security
-    app.UseExceptionHandler();
+    // HTTP Strict Transport Security + HTTPS redirect (production only).
     app.UseHsts();
     app.UseHttpsRedirection();
 }

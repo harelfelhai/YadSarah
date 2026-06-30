@@ -1,8 +1,9 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MantineProvider } from '@mantine/core';
 import { Notifications, notifications } from '@mantine/notifications';
 import ErrorBoundary from './components/ErrorBoundary';
+import { reportClientError } from './api/errors';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import '@mantine/charts/styles.css';
@@ -23,6 +24,7 @@ import AnalyticsPage from './features/analytics/AnalyticsPage';
 import SettingsPage from './features/admin/SettingsPage';
 import AuditPage from './features/admin/AuditPage';
 import FeedbackPage from './features/admin/FeedbackPage';
+import ErrorsPage from './features/admin/ErrorsPage';
 import HistoryPage from './features/history/HistoryPage';
 import PatientEditPage from './features/reception/PatientEditPage';
 import PublicIntakePage from './features/intake/PublicIntakePage';
@@ -35,7 +37,27 @@ const queryClient = new QueryClient({
     onError: (error) => {
       const status = (error as { status?: number }).status;
       if (status === 401) return;
-      notifications.show({ color: 'red', message: (error as Error).message || 'אירעה שגיאה בטעינת נתונים מהשרת.' });
+      const correlationId = (error as { correlationId?: string }).correlationId;
+      const base = (error as Error).message || 'אירעה שגיאה בטעינת נתונים מהשרת.';
+      notifications.show({
+        color: 'red',
+        message: correlationId ? `${base} (מספר תקלה: ${correlationId})` : base,
+      });
+    },
+  }),
+  // Report-only safety net for mutation failures (no toast — each mutation owns its own user-facing
+  // onError). Funnels otherwise-unobserved errors to the server crash log so they're not lost.
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      const status = (error as { status?: number }).status;
+      if (status === 401) return; // expected session-expiry redirect, not a crash
+      reportClientError({
+        message: `Mutation error: ${(error as Error).message}`,
+        stack: (error as Error).stack ?? undefined,
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+        correlationId: (error as { correlationId?: string }).correlationId,
+      });
     },
   }),
   defaultOptions: {
@@ -76,6 +98,37 @@ function DefaultRedirect() {
   return <Navigate to={dest} replace />;
 }
 
+// Authenticated app shell + a per-route ErrorBoundary INSIDE the shell, so a crash in one screen
+// shows a contained, recoverable panel while the nav/header stay usable (vs. the root boundary which
+// would replace the whole app). Keyed by pathname so navigating to another screen resets it.
+function ShellRoutes() {
+  const location = useLocation();
+  return (
+    <AppShellLayout>
+      <ErrorBoundary key={location.pathname} title="אירעה שגיאה בעמוד זה — נסו שוב או רעננו את הדף">
+        <Routes>
+          <Route path="/queue" element={<QueuePage />} />
+          <Route path="/reception" element={<RequireRole roles={['Reception', 'ShiftManager', 'Admin']}><ReceptionDeskPage /></RequireRole>} />
+          <Route path="/reception/discharge/:visitId" element={<RequireRole roles={['ShiftManager', 'Admin']}><DischargePage /></RequireRole>} />
+          <Route path="/reception/new" element={<Navigate to="/reception" replace />} />
+          <Route path="/visits/:visitId" element={<TreatmentFormPage />} />
+          <Route path="/visits/:visitId/summary" element={<VisitSummaryPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/admin/users" element={<AdminPage />} />
+          <Route path="/shift-status" element={<ShiftStatusPage />} />
+          <Route path="/analytics" element={<RequireRole roles={['ShiftManager', 'Admin']}><AnalyticsPage /></RequireRole>} />
+          <Route path="/admin/settings" element={<SettingsPage />} />
+          <Route path="/admin/audit" element={<AuditPage />} />
+          <Route path="/admin/feedback" element={<FeedbackPage />} />
+          <Route path="/admin/errors" element={<ErrorsPage />} />
+          <Route path="/patients/:id/edit" element={<PatientEditPage />} />
+          <Route path="*" element={<DefaultRedirect />} />
+        </Routes>
+      </ErrorBoundary>
+    </AppShellLayout>
+  );
+}
+
 export default function App() {
   return (
     <MantineProvider theme={theme} defaultColorScheme="light">
@@ -95,25 +148,7 @@ export default function App() {
               path="/*"
               element={
                 <RequireAuth>
-                  <AppShellLayout>
-                    <Routes>
-                      <Route path="/queue" element={<QueuePage />} />
-                      <Route path="/reception" element={<RequireRole roles={['Reception', 'ShiftManager', 'Admin']}><ReceptionDeskPage /></RequireRole>} />
-                      <Route path="/reception/discharge/:visitId" element={<RequireRole roles={['ShiftManager', 'Admin']}><DischargePage /></RequireRole>} />
-                      <Route path="/reception/new" element={<Navigate to="/reception" replace />} />
-                      <Route path="/visits/:visitId" element={<TreatmentFormPage />} />
-                      <Route path="/visits/:visitId/summary" element={<VisitSummaryPage />} />
-                      <Route path="/history" element={<HistoryPage />} />
-                      <Route path="/admin/users" element={<AdminPage />} />
-                      <Route path="/shift-status" element={<ShiftStatusPage />} />
-                      <Route path="/analytics" element={<RequireRole roles={['ShiftManager', 'Admin']}><AnalyticsPage /></RequireRole>} />
-                      <Route path="/admin/settings" element={<SettingsPage />} />
-                      <Route path="/admin/audit" element={<AuditPage />} />
-                      <Route path="/admin/feedback" element={<FeedbackPage />} />
-                      <Route path="/patients/:id/edit" element={<PatientEditPage />} />
-                      <Route path="*" element={<DefaultRedirect />} />
-                    </Routes>
-                  </AppShellLayout>
+                  <ShellRoutes />
                 </RequireAuth>
               }
             />

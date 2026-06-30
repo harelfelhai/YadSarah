@@ -6,7 +6,7 @@ using YadSarah.Api.Services;
 namespace YadSarah.Api.Hubs;
 
 [Authorize]
-public class MainHub(FormPresenceService presence) : Hub
+public class MainHub(FormPresenceService presence, ILogger<MainHub> logger) : Hub
 {
     // Form groups carry clinical PHI (FormSectionUpdated + presence). Reception may
     // connect to the hub for queue updates (class-level [Authorize] + Clients.All
@@ -36,6 +36,11 @@ public class MainHub(FormPresenceService presence) : Hub
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
+        // A non-null exception means the connection dropped abnormally (not a clean client stop) —
+        // surface it so transient realtime failures are visible instead of silently swallowed.
+        if (exception is not null)
+            logger.LogWarning(exception, "Hub connection dropped | connectionId={ConnectionId}", Context.ConnectionId);
+
         presence.RemoveConnection(Context.ConnectionId);
         await base.OnDisconnectedAsync(exception);
     }

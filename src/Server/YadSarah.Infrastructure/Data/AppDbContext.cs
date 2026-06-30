@@ -19,6 +19,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Diagnosis> Diagnoses => Set<Diagnosis>();
     public DbSet<Street> Streets => Set<Street>();
     public DbSet<FeedbackReport> FeedbackReports => Set<FeedbackReport>();
+    public DbSet<ErrorReport> ErrorReports => Set<ErrorReport>();
     public DbSet<Workstation> Workstations => Set<Workstation>();
     public DbSet<PatientIntakeSubmission> PatientIntakeSubmissions => Set<PatientIntakeSubmission>();
     public DbSet<CareStep> CareSteps => Set<CareStep>();
@@ -181,6 +182,34 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(f => f.Status).HasConversion<string>();
             e.HasIndex(f => f.Status);
             e.HasIndex(f => f.CreatedAt);
+        });
+
+        // ErrorReport — append-only capture of client crashes + unhandled server exceptions.
+        // PHI-capable (message/stack may contain identifiers) → Admin-only + audited (like FeedbackReport).
+        b.Entity<ErrorReport>(e =>
+        {
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).UseIdentityAlwaysColumn();
+            e.Property(r => r.Source).HasConversion<string>();
+            e.Property(r => r.Severity).HasConversion<string>();
+            e.Property(r => r.Status).HasConversion<string>();
+            e.Property(r => r.CorrelationId).HasMaxLength(128);
+            e.Property(r => r.Message).HasMaxLength(2000).IsRequired();
+            e.Property(r => r.Stack).HasMaxLength(16000);
+            e.Property(r => r.ComponentStack).HasMaxLength(16000);
+            e.Property(r => r.RouteUrl).HasMaxLength(1000);
+            e.Property(r => r.UserAgent).HasMaxLength(1000);
+            e.Property(r => r.UserName).HasMaxLength(200);
+            e.Property(r => r.UserRole).HasMaxLength(100);
+            e.Property(r => r.IpAddress).HasMaxLength(64);
+            e.Property(r => r.Fingerprint).HasMaxLength(64).IsRequired();
+            e.Property(r => r.AdminNotes).HasMaxLength(4000);
+            e.HasIndex(r => r.Status);
+            e.HasIndex(r => r.Source);
+            e.HasIndex(r => r.Severity);
+            e.HasIndex(r => r.LastSeenAt);
+            e.HasIndex(r => r.CorrelationId);
+            e.HasIndex(r => r.Fingerprint);   // dedup lookup of an open row in the same storm
         });
 
         // Workstation — one row per LAN computer (device id → fixed room)

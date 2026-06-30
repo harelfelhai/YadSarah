@@ -28,6 +28,10 @@ public class SettingsService(AppDbContext db)
     // Public self-service intake: per-device submission cap + its rolling window (anti-abuse).
     public const string IntakeDeviceLimitKey = "intake.deviceLimit";
     public const string IntakeDeviceWindowMinutesKey = "intake.deviceWindowMinutes";
+    // Error-report retention: rows older than N days are pruned, and a hard row cap bounds growth
+    // on free-tier Postgres + limits how long PHI-capable error text lingers (ErrorReport table).
+    public const string ErrorRetentionDaysKey = "errors.retentionDays";
+    public const string ErrorMaxRowsKey = "errors.maxRows";
 
     // Default MoH drug-registry endpoint (paged JSON). Configurable because it sits
     // behind a WAF and may change; the file-import path is the offline fallback.
@@ -59,6 +63,8 @@ public class SettingsService(AppDbContext db)
         (StreetsLastSyncStatusKey, "", "סטטוס הסנכרון האחרון של הרחובות"),
         (IntakeDeviceLimitKey, "3", "מספר מרבי של טפסי קבלה-עצמית מאותו מכשיר בתוך חלון הזמן"),
         (IntakeDeviceWindowMinutesKey, "60", "חלון הזמן (בדקות) לספירת טפסי קבלה-עצמית מאותו מכשיר"),
+        (ErrorRetentionDaysKey, "30", "מספר הימים לשמירת דיווחי שגיאות לפני מחיקה אוטומטית"),
+        (ErrorMaxRowsKey, "50000", "מספר השורות המרבי בטבלת השגיאות (מחיקת הישנות ביותר מעבר לכך)"),
     ];
 
     public async Task EnsureDefaultsAsync()
