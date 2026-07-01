@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using YadSarah.Api.Infrastructure;
 using YadSarah.Api.Middleware;
 using YadSarah.Application.Services;
 using YadSarah.Domain.Entities;
@@ -60,7 +61,7 @@ public class ClientErrorController(
                 componentStack: report.ComponentStack,
                 routeUrl: report.Url,
                 userAgent: report.UserAgent,
-                userId: TryGetUserId(),
+                userId: User.TryGetUserId(),
                 userName: authed ? userName : null,
                 userRole: authed ? User.FindFirstValue(ClaimTypes.Role) : null,
                 ipAddress: ip,
@@ -73,12 +74,6 @@ public class ClientErrorController(
 
         // 204 — fire-and-forget; the client never blocks on or branches on the response.
         return NoContent();
-    }
-
-    private Guid? TryGetUserId()
-    {
-        var raw = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
-        return Guid.TryParse(raw, out var id) ? id : null;
     }
 
     // Collapse control chars (CR/LF/etc.) to spaces — anti log-forging — and hard-cap length.

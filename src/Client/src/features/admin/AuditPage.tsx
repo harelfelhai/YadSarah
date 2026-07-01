@@ -7,6 +7,7 @@ import { IconLock, IconRefresh } from '@tabler/icons-react';
 import { auditApi } from '../../api/audit';
 import { useAuthStore } from '../../store/auth';
 import { hasAnyRole } from '../../constants/roles';
+import { formatDateTime } from '../../utils/dateTime';
 
 const ENTITY_OPTIONS = [
   { value: '', label: 'הכול' },
@@ -23,12 +24,6 @@ const ACTION_COLOR: Record<string, string> = {
   Viewed: 'gray', Searched: 'gray', Created: 'blue',
   Updated: 'yellow', StatusChanged: 'cyan', Signed: 'teal',
 };
-
-function fmt(iso: string): string {
-  return new Date(iso).toLocaleString('he-IL', {
-    day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
-  });
-}
 
 export default function AuditPage() {
   const roles = useAuthStore((s) => s.user?.roles);
@@ -95,7 +90,7 @@ export default function AuditPage() {
               <Table.Tbody>
                 {entries.map((e) => (
                   <Table.Tr key={e.id}>
-                    <Table.Td>{fmt(e.timestamp)}</Table.Td>
+                    <Table.Td>{formatDateTime(e.timestamp, { seconds: true })}</Table.Td>
                     <Table.Td>{e.userName}</Table.Td>
                     <Table.Td>
                       <Badge size="sm" variant="light" color={ACTION_COLOR[e.action] ?? 'gray'}>

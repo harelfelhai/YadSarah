@@ -13,6 +13,7 @@ import {
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { useAuthStore } from '../../store/auth';
 import { hasAnyRole } from '../../constants/roles';
+import { formatDateTime } from '../../utils/dateTime';
 
 const TYPE_COLOR: Record<FeedbackType, string> = {
   Bug: 'red', FixNeeded: 'orange', Improvement: 'blue', Other: 'gray',
@@ -25,13 +26,6 @@ const TYPE_OPTIONS = (Object.keys(FEEDBACK_TYPE_LABELS) as FeedbackType[])
   .map((value) => ({ value, label: FEEDBACK_TYPE_LABELS[value] }));
 const STATUS_OPTIONS = (Object.keys(FEEDBACK_STATUS_LABELS) as FeedbackStatus[])
   .map((value) => ({ value, label: FEEDBACK_STATUS_LABELS[value] }));
-
-function fmt(iso?: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('he-IL', {
-    day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
-  });
-}
 
 export default function FeedbackPage() {
   const qc = useQueryClient();
@@ -109,7 +103,7 @@ export default function FeedbackPage() {
               <Table.Tbody>
                 {reports.map((r) => (
                   <Table.Tr key={r.id}>
-                    <Table.Td style={{ whiteSpace: 'nowrap' }}>{fmt(r.createdAt)}</Table.Td>
+                    <Table.Td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(r.createdAt)}</Table.Td>
                     <Table.Td style={{ whiteSpace: 'nowrap' }}>{r.createdByName}<Text span c="dimmed"> ({r.createdByRole})</Text></Table.Td>
                     <Table.Td>{r.screen}</Table.Td>
                     <Table.Td>{r.fieldName}</Table.Td>
@@ -142,7 +136,7 @@ export default function FeedbackPage() {
         {editing && (
           <Stack gap="sm">
             <Text size="xs" c="dimmed">
-              דווח ע"י {editing.createdByName} ({editing.createdByRole}) — {fmt(editing.createdAt)}
+              דווח ע"י {editing.createdByName} ({editing.createdByRole}) — {formatDateTime(editing.createdAt)}
               {editing.routeUrl ? ` · נתיב: ${editing.routeUrl}` : ''}
             </Text>
             <Group grow>

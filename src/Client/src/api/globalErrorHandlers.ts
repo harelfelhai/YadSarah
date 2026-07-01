@@ -32,6 +32,13 @@ function isNoise(message: string, stack?: string): boolean {
 
 function shouldSend(fingerprint: string): boolean {
   const now = Date.now();
+  // Bound memory: on a long-lived tab the dedup map would otherwise grow one entry per unique error
+  // forever. Once it's large, drop entries past the dedup window — they no longer suppress anything.
+  if (recentByFingerprint.size > 500) {
+    for (const [fp, ts] of recentByFingerprint) {
+      if (now - ts >= DEDUP_WINDOW_MS) recentByFingerprint.delete(fp);
+    }
+  }
   const last = recentByFingerprint.get(fingerprint);
   if (last !== undefined && now - last < DEDUP_WINDOW_MS) return false;
   recentByFingerprint.set(fingerprint, now);

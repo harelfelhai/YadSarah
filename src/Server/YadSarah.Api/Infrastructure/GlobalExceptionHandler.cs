@@ -41,7 +41,7 @@ public sealed class GlobalExceptionHandler(
                 message: exception.Message,
                 stack: exception.ToString(),
                 routeUrl: route,
-                userId: TryGetUserId(user),
+                userId: user.TryGetUserId(),
                 userName: userName,
                 userRole: user?.FindFirstValue(ClaimTypes.Role),
                 ipAddress: httpContext.Connection.RemoteIpAddress?.ToString(),
@@ -55,11 +55,5 @@ public sealed class GlobalExceptionHandler(
 
         // Let UseExceptionHandler + ProblemDetails own the response.
         return false;
-    }
-
-    private static Guid? TryGetUserId(ClaimsPrincipal? user)
-    {
-        var raw = user?.FindFirstValue(ClaimTypes.NameIdentifier) ?? user?.FindFirstValue("sub");
-        return Guid.TryParse(raw, out var id) ? id : null;
     }
 }

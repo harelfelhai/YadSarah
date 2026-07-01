@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using YadSarah.Api.Infrastructure;
 using YadSarah.Application.Services;
 using YadSarah.Domain.Entities;
 
@@ -20,7 +20,7 @@ namespace YadSarah.Api.Controllers;
 public class ErrorReportController(ErrorReportService svc, AuditService audit) : ControllerBase
 {
     private Guid UserId =>
-        Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub")!);
+        User.TryGetUserId() ?? throw new InvalidOperationException("Authenticated request has no user id.");
 
     private static object Map(ErrorReport r) => new
     {

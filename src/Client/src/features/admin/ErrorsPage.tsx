@@ -13,6 +13,7 @@ import {
 import { apiErrorMessage } from '../../constants/formPolicy';
 import { useAuthStore } from '../../store/auth';
 import { hasAnyRole } from '../../constants/roles';
+import { formatDateTime } from '../../utils/dateTime';
 
 const PAGE_SIZE = 100;
 
@@ -30,14 +31,24 @@ const SOURCE_OPTIONS = toOptions(ERROR_SOURCE_LABELS);
 const SEVERITY_OPTIONS = toOptions(ERROR_SEVERITY_LABELS);
 const STATUS_OPTIONS = toOptions(ERROR_STATUS_LABELS);
 
-function fmt(iso?: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString('he-IL', {
-    day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit',
-  });
+// "name (role)" or "אנונימי" when no user was attached (e.g. a crash on the login page).
+function formatUser(userName?: string | null, userRole?: string | null): string {
+  if (!userName) return 'אנונימי';
+  return userRole ? `${userName} (${userRole})` : userName;
 }
 
 const mono = { fontFamily: 'monospace', direction: 'ltr' as const };
+
+// A labelled, scrollable code block for a stack / component-stack — nothing rendered when empty.
+function StackBlock({ title, stack, maxHeight }: { title: string; stack?: string | null; maxHeight: number }) {
+  if (!stack) return null;
+  return (
+    <>
+      <Text size="sm" fw={600}>{title}</Text>
+      <Code block style={{ ...mono, maxHeight, overflow: 'auto' }}>{stack}</Code>
+    </>
+  );
+}
 
 export default function ErrorsPage() {
   const qc = useQueryClient();
@@ -139,14 +150,14 @@ export default function ErrorsPage() {
               <Table.Tbody>
                 {items.map((r) => (
                   <Table.Tr key={r.id}>
-                    <Table.Td style={{ whiteSpace: 'nowrap' }}>{fmt(r.lastSeenAt)}</Table.Td>
+                    <Table.Td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(r.lastSeenAt)}</Table.Td>
                     <Table.Td><Badge size="sm" variant="light" color={SOURCE_COLOR[r.source]}>{ERROR_SOURCE_LABELS[r.source]}</Badge></Table.Td>
                     <Table.Td><Badge size="sm" color={SEVERITY_COLOR[r.severity]}>{ERROR_SEVERITY_LABELS[r.severity]}</Badge></Table.Td>
                     <Table.Td>{r.correlationId ? <Code style={mono}>{r.correlationId}</Code> : <Text c="dimmed">—</Text>}</Table.Td>
                     <Table.Td style={{ maxWidth: 340 }}><Text size="xs" lineClamp={2}>{r.message}</Text></Table.Td>
                     <Table.Td ta="center">{r.occurrenceCount > 1 ? <Badge size="sm" variant="filled" color="red">{r.occurrenceCount}</Badge> : r.occurrenceCount}</Table.Td>
                     <Table.Td style={{ maxWidth: 180 }}><Text size="xs" lineClamp={1} style={{ direction: 'ltr' }}>{r.routeUrl ?? '—'}</Text></Table.Td>
-                    <Table.Td style={{ whiteSpace: 'nowrap' }}>{r.userName ?? <Text span c="dimmed">אנונימי</Text>}{r.userRole ? <Text span c="dimmed"> ({r.userRole})</Text> : ''}</Table.Td>
+                    <Table.Td style={{ whiteSpace: 'nowrap' }}>{formatUser(r.userName, r.userRole)}</Table.Td>
                     <Table.Td><Badge size="sm" color={STATUS_COLOR[r.status]}>{ERROR_STATUS_LABELS[r.status]}</Badge></Table.Td>
                     <Table.Td>
                       <Button size="compact-xs" variant="subtle" leftSection={<IconEdit size={14} />} onClick={() => setEditing({ ...r })}>
@@ -175,8 +186,8 @@ export default function ErrorsPage() {
               {editing.occurrenceCount > 1 && <Badge color="red" variant="filled">{editing.occurrenceCount} מופעים</Badge>}
             </Group>
             <Text size="xs" c="dimmed">
-              ראשון: {fmt(editing.firstSeenAt)} · אחרון: {fmt(editing.lastSeenAt)}
-              {editing.userName ? ` · ${editing.userName}${editing.userRole ? ` (${editing.userRole})` : ''}` : ' · אנונימי'}
+              ראשון: {formatDateTime(editing.firstSeenAt)} · אחרון: {formatDateTime(editing.lastSeenAt)}
+              {` · ${formatUser(editing.userName, editing.userRole)}`}
               {editing.ipAddress ? ` · ${editing.ipAddress}` : ''}
             </Text>
             {editing.correlationId && (
@@ -200,8 +211,8 @@ export default function ErrorsPage() {
             <Text size="sm" fw={600}>הודעה</Text>
             <Code block style={mono}>{editing.message}</Code>
 
-            {editing.stack && (<><Text size="sm" fw={600}>Stack</Text><Code block style={{ ...mono, maxHeight: 240, overflow: 'auto' }}>{editing.stack}</Code></>)}
-            {editing.componentStack && (<><Text size="sm" fw={600}>Component stack</Text><Code block style={{ ...mono, maxHeight: 200, overflow: 'auto' }}>{editing.componentStack}</Code></>)}
+            <StackBlock title="Stack" stack={editing.stack} maxHeight={240} />
+            <StackBlock title="Component stack" stack={editing.componentStack} maxHeight={200} />
             {editing.userAgent && <Text size="xs" c="dimmed" style={{ direction: 'ltr' }}>{editing.userAgent}</Text>}
 
             <Text size="xs" c="dimmed">שים לב: הטקסט עלול להכיל מידע רפואי מזהה (PHI) — לטיפול בהתאם.</Text>
