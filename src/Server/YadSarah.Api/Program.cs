@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using YadSarah.Application.Services;
 using YadSarah.Infrastructure.Data;
+using YadSarah.Domain.Entities;
 using YadSarah.Api.Hubs;
 using YadSarah.Api.Middleware;
 using Serilog;
@@ -300,6 +301,57 @@ var app = builder.Build();
             // Seed the curated Hebrew ED diagnosis catalog on first run (closed picker needs a
             // catalog to be usable; no live Hebrew ICD source exists). No-op once populated.
             await scope.ServiceProvider.GetRequiredService<DiagnosisCatalogService>().SeedDefaultsAsync();
+            // Bootstrap the FIRST admin ONLY when the user table is empty (a fresh production DB has
+            // no users — the Demo seed is the sole user-creating path and it's Demo+Admin gated, a
+            // chicken-and-egg for prod). The credential comes solely from config (Bootstrap:AdminPassword)
+            // so NO known/default password is ever created; if it isn't set, nothing is created and a
+            // warning is logged. Idempotent — skipped the instant any user exists. The password is
+            // never logged. Operator must change it on first login and remove the setting afterwards.
+            // See docs/security/02-security-controls.md.
+            if (!await dbCtx.Users.AnyAsync())
+            {
+                var bootstrapPassword = app.Configuration["Bootstrap:AdminPassword"];
+                var bootstrapUsername = app.Configuration["Bootstrap:AdminUsername"] ?? "admin";
+                var (policyOk, policyError) = PasswordPolicy.Validate(bootstrapPassword);
+                if (string.IsNullOrWhiteSpace(bootstrapPassword))
+                {
+                    app.Logger.LogWarning(
+                        "User table is empty and Bootstrap:AdminPassword is not configured — no admin " +
+                        "created. Set Bootstrap__AdminPassword to bootstrap the first admin.");
+                }
+                else if (!policyOk)
+                {
+                    // Enforce the SAME complexity policy as every other credential path (UserService) so a
+                    // weak bootstrap password can't create the highest-privilege account. Value never logged.
+                    app.Logger.LogError(
+                        "Bootstrap admin NOT created: Bootstrap__AdminPassword fails the password policy " +
+                        "({Error}). Set a compliant password (>=12 chars, with upper/lower/digit/special).",
+                        policyError);
+                }
+                else
+                {
+                    var auth = scope.ServiceProvider.GetRequiredService<AuthService>();
+                    var admin = new User
+                    {
+                        Username = bootstrapUsername,
+                        PasswordHash = auth.HashPassword(bootstrapPassword),
+                        FirstName = "מנהל",
+                        LastName = "מערכת",
+                        FullName = "מנהל מערכת",
+                        Roles = new List<UserRole> { UserRole.Admin },
+                    };
+                    dbCtx.Users.Add(admin);
+                    await dbCtx.SaveChangesAsync();
+                    // System-attributed audit record for the genesis of the super-admin (append-only
+                    // trail), matching the audit coverage of the normal user-creation path.
+                    await scope.ServiceProvider.GetRequiredService<AuditService>().LogAsync(
+                        Guid.Empty, "system", AuditService.Created, "User", admin.Id,
+                        newValue: $"Roles={string.Join(",", admin.Roles)}; bootstrap");
+                    app.Logger.LogWarning(
+                        "Bootstrap admin '{User}' created (user table was empty). Change its password on " +
+                        "first login and remove Bootstrap__AdminPassword.", bootstrapUsername);
+                }
+            }
             break;
         }
         catch (Exception ex) when (attempt < maxAttempts)
